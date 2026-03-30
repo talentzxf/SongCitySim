@@ -1,0 +1,65 @@
+# Node dependencies
+/node_modules/
+
+# Build outputs
+/dist/
+/build/
+/out/
+/.vite/
+/.parcel-cache/
+/.cache/
+
+# Vite dev server cache
+/.vite
+
+# Environment files
+.env
+.env.*.local
+.env.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# TypeScript
+*.tsbuildinfo
+
+# Test artifacts (Playwright, coverage)
+/playwright-report/
+/test-results/
+/.playwright/
+/coverage/
+/.nyc_output/
+
+# Temp and cache
+/tmp/
+/temp/
+
+# Archive files
+*.tgz
+
+# Claude local settings (harness hooks, local state)
+.claude/
+
+# Other generated files
+/dist-*
+
+# Keep lockfiles and package.json checked in
+!package-lock.json
+!pnpm-lock.yaml
+!yarn.lock
