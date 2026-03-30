@@ -5,7 +5,7 @@ import { SIM_TICK_MS } from '../config/simulation'
 import {
   useSimulation, logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos,
   RIVER_TILES, isRiverAt, isNearRiverFive, RIVER_CENTER_LINE,
-  MOUNTAIN_TILES, ORE_VEIN_TILES, isMountainAt, isOreVeinAt, getMountainHeight,
+  MOUNTAIN_TILES, ORE_VEIN_TILES, isMountainAt, isOreVeinAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y,
   BUILDING_COST, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CityState,
 } from '../state/simulation'
 import { palette } from '../theme/palette'
@@ -633,11 +633,14 @@ function TerrainSuitabilityMark({ x, y, suitable }: { x: number; y: number; suit
 
 // ─── Mountain height helper ────────────────────────────────────────────────
 // tileH maps the Diamond-Square normalised value [0,1] → visual geometry height [0.04, 0.28]
+import worldGenConfig from '../config/world-gen'
+
 function tileH(x: number, y: number): number {
   const BASE = 0.04
-  const SCALE = 0.6
+  const SCALE = worldGenConfig.mountain.tileScale
   return BASE + getMountainHeight(x, y) * SCALE
 }
+const _MAX_MOUNTAIN_H = 0.04 + worldGenConfig.mountain.tileScale
 
 // ─── 3-D Mountain terrain (instanced rock boxes + optional snow caps) ──────
 
@@ -668,7 +671,7 @@ function MountainInstances({ tiles }: { tiles: [number, number][] }) {
       temp.rotation.set(0, 0, 0)
       temp.updateMatrix()
       mesh.setMatrixAt(i, temp.matrix)
-      const t2 = h / 0.28
+      const t2 = h / _MAX_MOUNTAIN_H
       const noise = 0.88 + (Math.abs((x * 7 + y * 13) % 14)) / 100
       color.setRGB((0.44 - t2 * 0.10) * noise, (0.38 - t2 * 0.07) * noise, (0.32 - t2 * 0.03) * noise)
       mesh.setColorAt(i, color)
@@ -698,7 +701,7 @@ const _riverRibbonGeo: THREE.BufferGeometry | null = (() => {
   if (!RIVER_CURVE) return null
   const WATER_Y = 0.030, WIDTH = 2.15
   // increase sampling for smoother ribbon (was *8)
-  const SAMPLES = RIVER_CENTER_LINE.length * 12
+  const SAMPLES = Math.max( Math.floor(RIVER_CENTER_LINE.length * 12 * ( (MAP_SIZE_X * MAP_SIZE_Y) / (120 * 90) )), 48 ) // scale sampling to map size, min 48
   // sample curve points and use curve tangents for stable local normals
   const cpts = RIVER_CURVE.getPoints(SAMPLES)
   const pos: number[] = [], uvs: number[] = [], idx: number[] = []
@@ -1320,13 +1323,14 @@ function SickHouseMarker({ x, y, deadCount }: { x: number; y: number; deadCount:
 // ─── Map scene ────────────────────────────────────────────────────────────
 
 export default function MapScene() {
-  const SIZE_X = 80; const SIZE_Y = 60
+  const halfX = Math.floor(MAP_SIZE_X / 2)
+  const halfY = Math.floor(MAP_SIZE_Y / 2)
   const tiles = React.useMemo(() => {
     const all: [number, number][] = []
-    for (let i = -SIZE_X / 2; i < SIZE_X / 2; i++)
-      for (let j = -SIZE_Y / 2; j < SIZE_Y / 2; j++) all.push([i, j])
+    for (let i = -halfX; i < halfX; i++)
+      for (let j = -halfY; j < halfY; j++) all.push([i, j])
     return all
-  }, [])
+  }, [MAP_SIZE_X, MAP_SIZE_Y])
 
   const { state, placeBuilding, placeRoad, removeBuilding, removeRoad, placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectTool, selectFarmZone } = useSimulation()
   const { gl, camera, scene } = useThree()

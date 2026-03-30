@@ -209,8 +209,10 @@ const PROFESSION_BY_BUILDING: Partial<Record<BuildingType, Profession>> = Object
 
 const CROP_KEYS = Object.keys(configData.crops) as CropType[]
 
-const MAP_SIZE_X = 80
-const MAP_SIZE_Y = 60
+// Increase map size to give more room for rivers and mountains
+import worldGenConfig from '../config/world-gen'
+export const MAP_SIZE_X = worldGenConfig.mapSizeX
+export const MAP_SIZE_Y = worldGenConfig.mapSizeY
 
 function createRng(seed: number) {
   let t = seed >>> 0
@@ -290,6 +292,7 @@ const {
 
   // ── 1. Perlin fBm heightmap ──────────────────────────────────────────────
   const hArr = new Float32Array(N)
+  const cityMask = new Uint8Array(N) // 1 = inside city flat
   const toI   = (x: number, y: number) => (y - minY) * W + (x - minX)
   const atH   = (x: number, y: number) => hArr[toI(x, y)]
   const setH  = (x: number, y: number, v: number) => { hArr[toI(x, y)] = Math.max(0, Math.min(1, v)) }
@@ -306,7 +309,8 @@ const {
       // 2) smooth base terrain (fbm)
       const base = fbm(fx * 0.7, fy * 0.7, perm, 5, 2.0, 0.55) * 0.45
       // 3) ridged fBm for sharper crests (mountain peaks)
-      const ridge = ridgedFbm(fx * 1.2, fy * 1.2, perm, 6, 2.0, 0.55) * 1.1
+      // make ridges stronger and a bit more frequent for taller mountains
+const ridge = ridgedFbm(fx * 1.5, fy * 1.5, perm, 7, 2.0, 0.55) * 1.5
       // radial bias: keep central city flat, encourage mountains further from center
       const maxDist = Math.sqrt((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY)) / 2
       const nd = Math.sqrt(ix * ix + iy * iy) / (maxDist || 1)
@@ -314,24 +318,115 @@ const {
       // combine components; clamp to [0,1]
       let h = clamp01(base * (0.7 - radial * 0.4) + ridge * (0.6 + radial * 0.8) + large * 0.12)
 
-      // Keep the starting city area (around origin) flat
-      const d = Math.sqrt(ix * ix + iy * iy)
-      if      (d < 12) h *= 0.05
-      else if (d < 22) { const t = (d - 12) / 10; h *= t * t * (3 - 2 * t) }
+      // Keep the starting city area flat using a softened blob/ellipse mask from config
+      const cx = ix, cy = iy
+      const cm = worldGenConfig.city
+      let inMask = false
+      if (cm.shape === 'circle') {
+        const d = Math.sqrt(cx*cx + cy*cy)
+        inMask = d <= cm.flatOuter
+      } else if (cm.shape === 'ellipse') {
+        const rx = cm.flatOuter * 1.2, ry = cm.flatOuter
+        const d = (cx*cx)/(rx*rx) + (cy*cy)/(ry*ry)
+        inMask = d <= 1
+      } else if (cm.shape === 'rect') {
+        inMask = Math.abs(cx) <= cm.flatOuter && Math.abs(cy) <= cm.flatOuter
+      } else {
+        // blob: procedural blob mask using a low-frequency noise fn mixed with radial falloff
+        const fxn = (cx - minX) / W, fyn = (cy - minY) / H
+        const noise = perlin2(fxn / (cm.blobFreq || 0.05), fyn / (cm.blobFreq || 0.05), perm) * 0.5 + 0.5
+        const dx = cx, dy = cy
+        const maxD = Math.sqrt((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY)) / 2
+        const radial = Math.max(0, Math.min(1, Math.sqrt(dx*dx + dy*dy) / (maxD || 1)))
+        const radialFactor = 1 - (cm.radialK || 0.9) * radial
+        const mixed = (noise * (cm.noiseWeight || 0.7)) + (radialFactor * (1 - (cm.noiseWeight || 0.7)))
+        inMask = mixed > (cm.blobThreshold || 0.42)
+      }
+      if (inMask) {
+        // inner flat region: very small height
+        h *= 0.02
+        cityMask[toI(ix, iy)] = 1
+      }
+      // NOTE: when using a procedural city mask ('blob'), we rely on the post-process
+      // smoothing below to create organic boundaries. Do not apply a radial fallback here.
+      // amplify mountain heights (use config)
+      h = clamp01(h * (worldGenConfig.mountain.amplify || 1.6))
       setH(ix, iy, h)
     }
   }
 
+  // Post-process city mask smoothing: blend heights near the procedural city mask so boundary is organic
+  ((): void => {
+    const inner = worldGenConfig.city.flatInner || 12
+    const outer = worldGenConfig.city.flatOuter || 28
+    const smoothR = worldGenConfig.city.smoothRadius || Math.max(1, Math.floor((outer - inner) / 2))
+    const area = (2 * smoothR + 1) * (2 * smoothR + 1)
+    for (let ix = minX; ix <= maxX; ix++) {
+      for (let iy = minY; iy <= maxY; iy++) {
+        const idx = toI(ix, iy)
+        const h0 = atH(ix, iy)
+        if (cityMask[idx]) { setH(ix, iy, h0 * 0.02); continue }
+        // compute local mask coverage
+        let sum = 0
+        for (let dx = -smoothR; dx <= smoothR; dx++) for (let dy = -smoothR; dy <= smoothR; dy++) {
+          const nx = ix + dx, ny = iy + dy
+          if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
+          sum += cityMask[toI(nx, ny)]
+        }
+        const frac = Math.max(0, Math.min(1, sum / area))
+        if (frac > 0) {
+          // blend toward flat: frac==1 -> flat (h*0.02), frac==0 -> original h
+          const newH = h0 * (1 - frac * 0.98)
+          setH(ix, iy, newH)
+        }
+      }
+    }
+  })()
+
   // ── 2. River extraction: find a natural left→right valley path using Dijkstra on the heightmap ─
-  // Build 8-neighbour offsets
+  // Also compute steepest-descent directions and flow accumulation to allow tributary generation
   const DIRS8: [number, number][] = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+
+  // compute steepest-descent direction (dirIdx) for each cell
+  const dirIdx = new Int8Array(N).fill(-1)
+  for (let iy = minY; iy <= maxY; iy++) {
+    for (let ix = minX; ix <= maxX; ix++) {
+      const i = toI(ix, iy)
+      const curH = atH(ix, iy)
+      let bestDrop = 0
+      let best = -1
+      for (let di = 0; di < DIRS8.length; di++) {
+        const dx = DIRS8[di][0], dy = DIRS8[di][1]
+        const nx = ix + dx, ny = iy + dy
+        if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
+        const nh = atH(nx, ny)
+        const drop = curH - nh
+        if (drop > bestDrop) { bestDrop = drop; best = di }
+      }
+      dirIdx[i] = best
+    }
+  }
+
+  // Flow accumulation
+  const acc = new Float32Array(N)
+  for (let i = 0; i < N; i++) acc[i] = 1.0
+  const order = Array.from({ length: N }, (_, i) => i).sort((a, b) => atH(b % W + minX, Math.floor(b / W) + minY) - atH(a % W + minX, Math.floor(a / W) + minY))
+  for (const i of order) {
+    const d = dirIdx[i]
+    if (d >= 0) {
+      const ix = (i % W) + minX, iy = Math.floor(i / W) + minY
+      const [dx, dy] = DIRS8[d]
+      const ni = toI(ix + dx, iy + dy)
+      acc[ni] += acc[i]
+    }
+  }
 
   // Dijkstra from all left-edge cells to any right-edge cell, minimizing sum of elevation (prefers low valleys)
   const dist = new Float32Array(N).fill(Number.POSITIVE_INFINITY)
   const prev = new Int32Array(N).fill(-1)
   const seen = new Uint8Array(N).fill(0)
 
-  // Min-heap implementation
+  // Min-heap implementation (compare by dist)
   class Heap {
     data: number[] = []
     push(v: number) { this.data.push(v); this._siftUp(this.data.length - 1) }
@@ -341,9 +436,7 @@ const {
     _cmp(a:number,b:number){ return (dist[a] ?? Infinity) - (dist[b] ?? Infinity) }
   }
 
-  // We'll store heap items as packed (distIndex = distVal * 1e6 + index) to avoid separate tuple storage
   const heap = new Heap()
-  // initialize left-edge sources
   for (let y = minY; y <= maxY; y++) {
     const i = toI(minX, y)
     const h = Math.max(0, atH(minX, y))
@@ -365,7 +458,6 @@ const {
       if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
       const vIdx = toI(nx, ny)
       if (seen[vIdx]) continue
-      // weight = neighbor elevation + small movement cost
       const w = Math.max(0, atH(nx, ny)) + 0.01
       const nd = dist[u] + w
       if (nd < dist[vIdx]) { dist[vIdx] = nd; prev[vIdx] = u; heap.push(vIdx) }
@@ -375,7 +467,6 @@ const {
   const riverSet = new Set<string>()
   const riverTiles: RiverTile[] = []
   if (targetIndex >= 0) {
-    // reconstruct path
     let cur = targetIndex
     const rev: { x: number; y: number }[] = []
     while (cur >= 0) {
@@ -385,17 +476,105 @@ const {
       cur = prev[cur]
     }
     rev.reverse()
-    // ensure monotonic left→right per column: average y per x and smooth
     const perX = new Map<number, number[]>()
     for (const p of rev) { if (!perX.has(p.x)) perX.set(p.x, []); perX.get(p.x)!.push(p.y) }
     const xs = Array.from(perX.keys()).sort((a,b)=>a-b)
     const pts = xs.map(x => { const ys = perX.get(x)!; const avg = ys.reduce((s,v)=>s+v,0)/ys.length; return { x, y: avg } })
-    // moving average smoothing
     const smoothed = pts.map((pt,i)=>{ const y0=pts[i-1]?.y??pt.y; const y1=pt.y; const y2=pts[i+1]?.y??pt.y; return { x: pt.x, y: (y0*0.25+y1*0.5+y2*0.25) } })
     for (const p of smoothed) { const iy = Math.round(p.y); riverTiles.push({ x: p.x, y: iy }); riverSet.add(`${p.x},${iy}`) }
   }
 
-  // Fallback: if no path found or river too short, fallback to per-column max-elevation accumulation (robust)
+  // Add tributaries from high-accumulation seeds (limit number and length)
+  let maxAcc = 0
+  for (let i = 0; i < N; i++) if (acc[i] > maxAcc) maxAcc = acc[i]
+  const TRIB_THRESHOLD = Math.max(2, maxAcc * 0.02)
+  const seedIdxs = Array.from({ length: N }, (_, i) => i).filter(i => acc[i] >= TRIB_THRESHOLD)
+  seedIdxs.sort((a,b)=>acc[b]-acc[a])
+
+  // New: limit tributaries to a seeded 2-4 branches and protect central city area
+  const RIVER_BRANCH_MIN = 2
+  const RIVER_BRANCH_MAX = 4
+  const TRIB_MAX_LENGTH = 240
+  const TRIB_MIN_LENGTH = 3
+  const TRIB_PROTECT_RADIUS = (worldGenConfig.river && worldGenConfig.river.protectRadius) || 28
+  const TRIB_ATTEMPT_LIMIT = 2000
+  const TRIB_SNAP_DIST = 3
+  const seedRand = createRng(WORLD_SEED ^ 0x9e3779b9)
+  const desiredBranches = RIVER_BRANCH_MIN + Math.floor(seedRand() * (RIVER_BRANCH_MAX - RIVER_BRANCH_MIN + 1))
+
+  let addedTribs = 0
+  let attempts = 0
+  // read river params from config (fallback to current values)
+  const rcfg = worldGenConfig.river || {}
+  const cfgBranchMin = rcfg.branchMin || 4
+  const cfgBranchMax = rcfg.branchMax || 8
+  const actualDesiredBranches = cfgBranchMin + Math.floor(seedRand() * (cfgBranchMax - cfgBranchMin + 1))
+  const actualSnapDist = rcfg.snapDist || TRIB_SNAP_DIST
+  const actualMaxLen = rcfg.maxLength || TRIB_MAX_LENGTH
+  const actualAttemptLimit = rcfg.attemptLimit || TRIB_ATTEMPT_LIMIT
+  const protectRadiusFromCity = (worldGenConfig.city && (worldGenConfig.city.flatOuter || 0)) + (worldGenConfig.city?.protectPadding || 0)
+  const finalProtectRadius = Math.max(TRIB_PROTECT_RADIUS, protectRadiusFromCity || 0)
+  for (const si of seedIdxs) {
+    if (addedTribs >= actualDesiredBranches) break
+    if (attempts++ > actualAttemptLimit) break
+    const sx = (si % W) + minX, sy = Math.floor(si / W) + minY
+    const sk = `${sx},${sy}`
+    if (riverSet.has(sk)) continue
+    // skip seeds too close to central city
+    if (Math.hypot(sx, sy) < finalProtectRadius) continue
+    // follow downhill until hitting main river or sink, cap length
+    const path: { x:number;y:number }[] = []
+    let curi = si
+    const visited = new Set<number>()
+    let joined = false
+    for (let steps=0; steps<actualMaxLen; steps++) {
+      if (visited.has(curi)) break
+      visited.add(curi)
+      const cx = (curi % W) + minX, cy = Math.floor(curi / W) + minY
+      // abort if path dips into protected city radius
+      if (Math.hypot(cx, cy) < TRIB_PROTECT_RADIUS + (worldGenConfig.city.protectPadding || 0)) break
+      path.push({ x: cx, y: cy })
+      if (riverSet.has(`${cx},${cy}`)) { // joined main river
+        if (path.length >= TRIB_MIN_LENGTH) {
+          for (const p of path) { const kk=`${p.x},${p.y}`; if (!riverSet.has(kk)) { riverSet.add(kk); riverTiles.push({ x:p.x, y:p.y }) } }
+          addedTribs++
+        }
+        joined = true
+        break
+      }
+      const di = dirIdx[curi]
+      if (di < 0) break
+      const [dx, dy] = DIRS8[di]
+      curi = toI(cx+dx, cy+dy)
+    }
+    // If we didn't join main river, try snapping to nearest river tile within TRIB_SNAP_DIST
+    if (!joined && path.length >= Math.max(2, Math.floor(TRIB_MIN_LENGTH/2))) {
+      const last = path[path.length - 1]
+      let snapped = false
+      for (let rx = last.x - actualSnapDist; rx <= last.x + actualSnapDist; rx++) {
+        for (let ry = last.y - actualSnapDist; ry <= last.y + actualSnapDist; ry++) {
+          if (rx < minX || rx > maxX || ry < minY || ry > maxY) continue
+          if (riverSet.has(`${rx},${ry}`)) {
+            // connect straight line from last to (rx,ry)
+            const dx = rx - last.x, dy = ry - last.y
+            const steps = Math.max(Math.abs(dx), Math.abs(dy))
+            for (let s = 1; s <= steps; s++) {
+              const tx = last.x + Math.round(dx * (s/steps))
+              const ty = last.y + Math.round(dy * (s/steps))
+              const kk = `${tx},${ty}`
+              if (!riverSet.has(kk)) { riverSet.add(kk); riverTiles.push({ x: tx, y: ty }) }
+            }
+            addedTribs++
+            snapped = true
+            break
+          }
+        }
+        if (snapped) break
+      }
+    }
+  }
+
+  // Fallback if river too short
   const riverMapWidth = maxX - minX + 1
   if (riverTiles.length < Math.max(6, Math.floor(riverMapWidth * 0.3))) {
     riverTiles.length = 0; riverSet.clear()
@@ -410,7 +589,7 @@ const {
   }
 
   // Widen river one tile to river-side (prefer downhill side) and carve valley
-  const CARVE_R = 6, CARVE_D = 0.36
+  const CARVE_R = 8, CARVE_D = 0.45
   const addR = (x: number, y: number) => { if (x < minX || x > maxX || y < minY || y > maxY) return; const k = `${x},${y}`; if (!riverSet.has(k)) { riverSet.add(k); riverTiles.push({ x, y }) } }
   for (const rt of [...riverTiles]) {
     const x = rt.x, y = rt.y
@@ -437,13 +616,14 @@ const {
   }
 
   // ── 4. Classify mountains from the carved heightmap ──────────────────────
-  const MTHRESH = 0.60
+  const MTHRESH = worldGenConfig.mountain.threshold ?? 0.56
   const mountainTiles:    { x: number; y: number }[] = []
   const mountainHeightMap = new Map<string, number>()
   for (let ix = minX; ix <= maxX; ix++) for (let iy = minY; iy <= maxY; iy++) {
-    if (riverSet.has(`${ix},${iy}`)) continue
+    const key = `${ix},${iy}`
+    if (riverSet.has(key)) continue
     const h = atH(ix, iy)
-    if (h >= MTHRESH) { mountainTiles.push({ x: ix, y: iy }); mountainHeightMap.set(`${ix},${iy}`, (h - MTHRESH) / (1 - MTHRESH)) }
+    if (h >= MTHRESH) { mountainTiles.push({ x: ix, y: iy }); mountainHeightMap.set(key, (h - MTHRESH) / (1 - MTHRESH)) }
   }
 
   // ── 5. River centre-line: one midpoint per x-column, sorted left→right ──
@@ -479,16 +659,140 @@ const {
     riverCenterLine = fallback
   }
 
+  // ── Provisional highway path (avoid rivers) so mountains will avoid the road corridor ──
+  const HIGHWAY_CANDIDATE: { x: number; y: number }[] = (() => {
+    const minX = -Math.floor(MAP_SIZE_X / 2)
+    const maxX = Math.floor(MAP_SIZE_X / 2) - 1
+    const minY = -Math.floor(MAP_SIZE_Y / 2)
+    const maxY = Math.floor(MAP_SIZE_Y / 2) - 1
+    const DIR4 = [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]
+    function inBounds(x:number,y:number){ return x>=minX&&x<=maxX&&y>=minY&&y<=maxY }
+    function bfsAvoidRiver(start:{x:number;y:number}, goal:{x:number;y:number}): {x:number;y:number}[]|null {
+      const q: {x:number;y:number}[] = [start]
+      const parent = new Map<string,string|null>()
+      parent.set(`${start.x},${start.y}`, null)
+      while (q.length>0) {
+        const p = q.shift()!
+        if (p.x === goal.x && p.y === goal.y) break
+        for (const [dx,dy] of DIR4) {
+          const nx = p.x + dx, ny = p.y + dy
+          if (!inBounds(nx,ny)) continue
+          const k = `${nx},${ny}`
+          if (parent.has(k)) continue
+          if (riverSet.has(k)) continue
+          parent.set(k, `${p.x},${p.y}`)
+          q.push({ x: nx, y: ny })
+        }
+      }
+      const goalKey = `${goal.x},${goal.y}`
+      if (!parent.has(goalKey)) return null
+      const rev: {x:number;y:number}[] = []
+      let curk: string | null = goalKey
+      while (curk !== null) {
+        const [sx,sy] = curk.split(',').map(Number)
+        rev.push({ x: sx, y: sy })
+        curk = parent.get(curk) ?? null
+      }
+      rev.reverse()
+      return rev
+    }
+    const maxEdgeColsToTry = 8
+    for (let dx = 0; dx < maxEdgeColsToTry; dx++) {
+      const x = minX + dx
+      const candidates: {x:number;y:number}[] = []
+      for (let y = minY; y <= maxY; y++) {
+        const k = `${x},${y}`
+        if (!riverSet.has(k)) candidates.push({x,y})
+      }
+      if (candidates.length === 0) continue
+      candidates.sort((a,b)=>Math.abs(a.y) - Math.abs(b.y))
+      for (const s of candidates) {
+        const path = bfsAvoidRiver(s, { x: 0, y: 0 })
+        if (path && path.length>0) return path
+      }
+    }
+    // fallback: try nearest clear neighbor from leftmost column
+    const fallbackX = minX
+    const fallbackYs = Array.from({length: maxY-minY+1}, (_,i)=>minY+i).sort((a,b)=>Math.abs(a)-Math.abs(b))
+    for (const y of fallbackYs) {
+      // find nearest clear tile to (fallbackX,y)
+      const q: {x:number;y:number}[] = [{x:fallbackX,y}]
+      const visited = new Set<string>(); visited.add(`${fallbackX},${y}`)
+      while (q.length>0) {
+        const p = q.shift()!
+        for (const [dx,dy] of DIR4) {
+          const nx = p.x + dx, ny = p.y + dy
+          if (!inBounds(nx,ny)) continue
+          const k = `${nx},${ny}`
+          if (visited.has(k)) continue
+          if (!riverSet.has(k)) {
+            const path = bfsAvoidRiver({x:nx,y:ny},{x:0,y:0})
+            if (path && path.length>0) return path
+          }
+          visited.add(k)
+          q.push({x:nx,y:ny})
+        }
+      }
+    }
+    return []
+  })()
+
+  // Build a quick set of highway-protected keys (buffered) so mountain classification will avoid them
+  const HW_BUFFER = 2
+  const HIGHWAY_KEYS = new Set<string>()
+  for (const p of HIGHWAY_CANDIDATE) for (let dx = -HW_BUFFER; dx <= HW_BUFFER; dx++) for (let dy = -HW_BUFFER; dy <= HW_BUFFER; dy++) HIGHWAY_KEYS.add(`${p.x+dx},${p.y+dy}`)
+
+  // Remove any mountain tiles that fall within the highway buffer so mountains "wrap around" the road corridor
+  if (HIGHWAY_KEYS.size > 0 && mountainTiles.length > 0) {
+    const kept: { x: number; y: number }[] = []
+    for (const t of mountainTiles) {
+      const k = `${t.x},${t.y}`
+      if (!HIGHWAY_KEYS.has(k)) kept.push(t)
+      else mountainHeightMap.delete(k)
+    }
+    mountainTiles.length = 0
+    mountainTiles.push(...kept)
+  }
+
   // ── 6. Ore vein clusters within mountain tiles ────────────────────────────
   const mKeys  = new Set(mountainTiles.map(t => `${t.x},${t.y}`))
   const oreSet = new Set<string>()
-  const NUM_VEINS = 7, VEIN_R = 4
-  for (let v = 0; v < NUM_VEINS && mountainTiles.length > 0; v++) {
+  // Generate main veins within mountains, but scale with mountain area so big maps don't oversaturate
+  const numVeins = Math.max(3, Math.floor(mountainTiles.length * 0.004))
+  const VEIN_R = 3
+  for (let v = 0; v < numVeins && mountainTiles.length > 0; v++) {
     const c = mountainTiles[Math.floor(oreRand() * mountainTiles.length)]
     for (let dx = -VEIN_R; dx <= VEIN_R; dx++) for (let dy = -VEIN_R; dy <= VEIN_R; dy++) {
       if (dx * dx + dy * dy > VEIN_R * VEIN_R * 1.1 || oreRand() > 0.60) continue
       const k = `${c.x + dx},${c.y + dy}`; if (mKeys.has(k)) oreSet.add(k)
     }
+  }
+  // Add occasional ore at mountain foothills (outside mountain tiles) — sample candidates then cap total
+  const foothillChance = (worldGenConfig.ore && worldGenConfig.ore.foothillChance) || 0.02
+  const foothillR = (worldGenConfig.ore && worldGenConfig.ore.foothillRadius) || 2
+  const candidates = new Set<string>()
+  for (const m of mountainTiles) {
+    for (let dx = -foothillR; dx <= foothillR; dx++) for (let dy = -foothillR; dy <= foothillR; dy++) {
+      const x = m.x + dx, y = m.y + dy
+      const k = `${x},${y}`
+      if (mKeys.has(k)) continue
+      if (riverSet.has(k)) continue
+      if (oreSet.has(k)) continue
+      // prefer foothill tiles with lower mountain height or proximity to mountain edge
+      candidates.add(k)
+    }
+  }
+  const candidateArr = Array.from(candidates)
+  const cap = Math.max(1, Math.floor(mountainTiles.length * 0.06)) // cap foothill ore to 6% of mountain tiles
+  // Shuffle deterministically using oreRand
+  for (let i = candidateArr.length - 1; i > 0; i--) {
+    const j = Math.floor(oreRand() * (i + 1))
+    const t = candidateArr[i]; candidateArr[i] = candidateArr[j]; candidateArr[j] = t
+  }
+  let added = 0
+  for (const k of candidateArr) {
+    if (added >= cap) break
+    if (oreRand() < foothillChance) { oreSet.add(k); added++ }
   }
   const oreVeinTiles = Array.from(oreSet).map(k => { const [x, y] = k.split(',').map(Number); return { x, y } })
 
@@ -510,6 +814,15 @@ export function isMountainAt(x: number, y: number): boolean { return MOUNTAIN_TI
 export function isOreVeinAt(x: number, y: number): boolean  { return ORE_VEIN_TILE_KEYS.has(`${x},${y}`) }
 /** Normalised [0,1] height for mountain tiles (0 = just above threshold, 1 = peak). */
 export function getMountainHeight(x: number, y: number): number { return MOUNTAIN_HEIGHT_MAP.get(`${x},${y}`) ?? 0 }
+
+// Expose helpers for quick debugging in browser console (no git ops). Use only in dev.
+if (typeof window !== 'undefined') {
+  ;(window as any).__RIVER_TILES__ = _RIVER_TILES
+  ;(window as any).__RIVER_CENTER_LINE__ = _RIVER_CENTER_LINE
+  ;(window as any).getMountainHeight = (x: number, y: number) => MOUNTAIN_HEIGHT_MAP.get(`${x},${y}`) ?? 0
+  ;(window as any).MAP_SIZE_X = MAP_SIZE_X
+  ;(window as any).MAP_SIZE_Y = MAP_SIZE_Y
+}
 
 // ─── Within-5-tiles-of-river set (Chebyshev distance ≤ 5) ────────────────
 const NEAR_RIVER_FIVE_KEYS = (() => {
@@ -551,7 +864,9 @@ function bfsHighwayPath(
       if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
       const k = mk(nx, ny)
       if (parent.has(k)) continue
-      if (isMountainAt(nx, ny)) continue   // 绕过山地
+      // Allow mountain traversal for highways when configured
+      const allowMtnRoad = Boolean(worldGenConfig.road && worldGenConfig.road.allowOnMountains)
+      if (isMountainAt(nx, ny) && !allowMtnRoad) continue   // 绕过山地（默认）
       parent.set(k, mk(cur.x, cur.y))
       if (nx === to.x && ny === to.y) { found = true; break outer }
       queue.push({ x: nx, y: ny })
@@ -582,7 +897,7 @@ function bfsHighwayPath(
  * closest to y = 0.  Exported so the HUD / spawn logic can reference it.
  */
 export const ENTRY_TILE: { x: number; y: number } = (() => {
-  const edgeX = -Math.floor(MAP_SIZE_X / 2)          // = -40 (left boundary)
+  const edgeX = -Math.floor(MAP_SIZE_X / 2)          // entry placed at left edge (closer to map border)
   const minY  = -Math.floor(MAP_SIZE_Y / 2)           // = -30
   const maxY  =  Math.floor(MAP_SIZE_Y / 2) - 1       // = 29
   const candidates: { x: number; y: number }[] = []
@@ -799,6 +1114,7 @@ function createCitizenProfile(seed: number): { name: string; age: number; gender
   const age = 16 + (Math.floor(n * 3.1) % 40)
   return { name: `${surname}${given}`, age, gender }
 }
+let HIGHWAY_MAIN_PATH: { x: number; y: number }[] = [];
 function createHighwayRoads() {
   const r: { x: number; y: number }[] = []
   const seen = new Set<string>()
@@ -806,13 +1122,115 @@ function createHighwayRoads() {
     const k = `${x},${y}`
     if (!seen.has(k)) { seen.add(k); r.push({ x, y }) }
   }
-  // BFS 避山路径：从地图左侧入口 → 城区中心 (0,0)
-  const path = bfsHighwayPath(ENTRY_TILE, { x: 0, y: 0 })
-  for (const pt of path) add(pt.x, pt.y)
-  // 城区内短固定段（原点附近半径<12，地形恒为平地）
-  for (let x = 0; x <= 5; x++) add(x, 0)
-  add(1, 1)   // 连接房屋 (0,1) 的支路
-  add(3, 1)   // 连接集市 (3,2) 的支路，让居民能通勤上班
+
+  const minX = -Math.floor(MAP_SIZE_X / 2)
+  const maxX = Math.floor(MAP_SIZE_X / 2) - 1
+  const minY = -Math.floor(MAP_SIZE_Y / 2)
+  const maxY = Math.floor(MAP_SIZE_Y / 2) - 1
+
+  function inBounds(x:number,y:number){ return x>=minX&&x<=maxX&&y>=minY&&y<=maxY }
+  const DIR4 = [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]
+
+  // Find shortest 4-neighbour path from any start in left edge columns to center avoiding mountains/rivers
+  function bfsPathAvoiding(start:{x:number;y:number}, goal:{x:number;y:number}) : {x:number;y:number}[] | null {
+    const q: {x:number;y:number}[] = [start]
+    const parent = new Map<string,string|null>()
+    parent.set(`${start.x},${start.y}`, null)
+    while (q.length>0) {
+      const p = q.shift()!
+      if (p.x === goal.x && p.y === goal.y) break
+      for (const [dx,dy] of DIR4) {
+        const nx = p.x + dx, ny = p.y + dy
+        if (!inBounds(nx,ny)) continue
+        const k = `${nx},${ny}`
+        if (parent.has(k)) continue
+        // avoid mountains and rivers
+        if (isMountainAt(nx,ny) || isRiverAt(nx,ny)) continue
+        parent.set(k, `${p.x},${p.y}`)
+        q.push({ x: nx, y: ny })
+      }
+    }
+    const goalKey = `${goal.x},${goal.y}`
+    if (!parent.has(goalKey)) return null
+    const rev: {x:number;y:number}[] = []
+    let curk: string | null = goalKey
+    while (curk !== null) {
+      const [sx,sy] = curk.split(',').map(Number)
+      rev.push({ x: sx, y: sy })
+      curk = parent.get(curk) ?? null
+    }
+    rev.reverse()
+    return rev
+  }
+
+  // Try each left-edge column (prefer exact leftmost) for a clear start tile; use first column that yields a path
+  const maxEdgeColsToTry = 8
+  for (let dx = 0; dx < maxEdgeColsToTry; dx++) {
+    const x = minX + dx
+    // collect clear tiles in this column (prefer y closest to 0)
+    const candidates: {x:number;y:number}[] = []
+    for (let y = minY; y <= maxY; y++) {
+      if (!isMountainAt(x,y) && !isRiverAt(x,y)) candidates.push({x,y})
+    }
+    // if no clear tiles, skip this column
+    if (candidates.length === 0) continue
+    candidates.sort((a,b)=>Math.abs(a.y) - Math.abs(b.y))
+    // try BFS from each candidate (closest to center first)
+    for (const s of candidates) {
+      const path = bfsPathAvoiding(s, { x: 0, y: 0 })
+      if (path && path.length > 0) {
+        HIGHWAY_MAIN_PATH = path.slice()
+        for (const pt of path) add(pt.x, pt.y)
+        // keep small fixed center segments
+        for (let cx = 0; cx <= 5; cx++) add(cx, 0)
+        add(1,1)
+        add(3,1)
+        return r
+      }
+    }
+  }
+
+  // If we reach here, no clear path from first N edge columns. As a fallback try any tile in leftmost column even if mountain/river by finding nearest clear neighbor then BFS.
+  const fallbackX = minX
+  const fallbackYs = Array.from({length: maxY-minY+1}, (_,i)=>minY+i).sort((a,b)=>Math.abs(a)-Math.abs(b))
+  for (const y of fallbackYs) {
+    // find nearest clear tile to (fallbackX,y)
+    const q: {x:number;y:number}[] = [{x:fallbackX,y}]
+    const parent = new Map<string,string|null>(); parent.set(`${fallbackX},${y}`, null)
+    let foundStart: {x:number;y:number}|null = null
+    while (q.length>0 && foundStart===null) {
+      const p = q.shift()!
+      for (const [dx,dy] of DIR4) {
+        const nx = p.x + dx, ny = p.y + dy
+        if (!inBounds(nx,ny)) continue
+        const k = `${nx},${ny}`
+        if (parent.has(k)) continue
+        if (!isMountainAt(nx,ny) && !isRiverAt(nx,ny)) { foundStart = {x:nx,y:ny}; break }
+        parent.set(k, `${p.x},${p.y}`)
+        q.push({x:nx,y:ny})
+      }
+    }
+    if (foundStart) {
+      const path = bfsPathAvoiding(foundStart, { x:0,y:0 })
+      if (path && path.length>0) {
+        HIGHWAY_MAIN_PATH = path.slice()
+        for (const pt of path) add(pt.x, pt.y)
+        for (let cx = 0; cx <= 5; cx++) add(cx, 0)
+        add(1,1); add(3,1)
+        return r
+      }
+    }
+  }
+
+  // No highway could be routed without crossing mountains/rivers
+  // As a final fallback, place a short visible entrance near the edge (nearest clear tile) so user sees an entry point
+  for (let dx = 0; dx < 6; dx++) {
+    const x = minX + dx
+    for (let y = minY; y <= maxY; y++) {
+      if (!isMountainAt(x,y) && !isRiverAt(x,y)) { add(x,y); HIGHWAY_MAIN_PATH = [{x,y}]; return r }
+    }
+  }
+
   return r
 }
 
@@ -861,24 +1279,16 @@ function isPeddlerCargoEmpty(c: PeddlerCargo): boolean { return inventoryTotal(c
 // ─── Initial state ────────────────────────────────────────────────────────
 
 const initial:CityState = {
-  money:5000, population:2, tick:0, running:false,
-  buildings:[
-    {id:'b-house-1',  type:'house',   x:0, y:1, capacity:6, occupants:2, workerSlots:0, cost:100},
-    {id:'b-market-1', type:'market',  x:3, y:2, capacity:0, occupants:0, workerSlots:4, cost:300},
-  ],
+  money:5000, population:0, tick:0, running:false,
+  buildings:[],
   roads: createHighwayRoads(),
   farmZones: [],
   selectedBuildingType:null, selectedTool:'pan', selectedBuildingId:null, selectedCitizenId:null, selectedFarmZoneId:null,
   lastAction:null, lastBuildAttempt:null,
-  citizens:[
-    {id:'c-1',name:'赵景行',age:28,gender:'male',houseId:'b-house-1',workplaceId:'b-market-1',farmZoneId:null,profession:'merchant',
-     satisfaction:72,needs:{food:0.68,safety:0.72,culture:0.55},isAtHome:true,isSick:false,sickTicks:0},
-    {id:'c-2',name:'李清婉',age:24,gender:'female',houseId:'b-house-1',workplaceId:'b-market-1',farmZoneId:null,profession:'merchant',
-     satisfaction:70,needs:{food:0.62,safety:0.7,culture:0.56},isAtHome:true,isSick:false,sickTicks:0},
-  ],
-  houseFood:{'b-house-1':15},
-  houseCrops:{'b-house-1':{rice:15,millet:0,wheat:0,soybean:0,vegetable:0}},
-  houseSavings:{'b-house-1':200},
+  citizens:[],
+  houseFood:{},
+  houseCrops:{},
+  houseSavings:{},
   taxRates:{ding:5,tian:0.10,shang:0.05},
   monthlyFarmOutput:0, monthlyFarmValue:0, monthlyMarketSales:0,
   lastMonthlyFarmValue:0, lastMonthlyMarketSales:0,
@@ -886,13 +1296,13 @@ const initial:CityState = {
   lastMonthlyExpenseBreakdown:{yangmin:0,jianshe:0,total:0},
   monthlyConstructionCost:0,
   mineInventory:0, smithInventory:0,
-  houseTools:{'b-house-1':0},
+  houseTools:{},
   farmInventory:createEmptyInventory(),
   granaryInventory:createEmptyInventory(),
   marketInventory:{rice:10, millet:0, wheat:0, soybean:0, vegetable:0},
   migrants:[], walkers:[], peddlers:[],
   farmPiles:[], oxCarts:[], marketBuyers:[],
-  marketConfig:{'b-market-1': DEFAULT_MARKET_CFG},
+  marketConfig:{},
   month:1, dayTime:0.5, dayCount:1,
   lastHouseholdBuyDay:0,
   lastMonthlyTax:0, avgSatisfaction:71, needPressure:{food:32,safety:28,culture:44},
@@ -1754,14 +2164,18 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
         const ba={success:false,reason:'',buildType:bt,x,y,ts:Date.now()}
         if(!bt)                          {action.reason='no-build-type-selected';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         const def=BUILDING_DEFS[bt]
-        if(s.money<def.cost)             {action.reason='insufficient-funds';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
+        // Compute effective cost (extra for mountain builds)
+        const isMtn = isMountainAt(x,y)
+        const mountainMultiplier = (worldGenConfig.building && worldGenConfig.building.mountainMultiplier) || 1
+        const effectiveCost = Math.ceil(def.cost * (isMtn ? mountainMultiplier : 1))
+        if(s.money<effectiveCost)             {action.reason='insufficient-funds';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         if(isBuildingAt(s.buildings,x,y)){action.reason='tile-occupied';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         if(isRoadAt(s.roads,x,y))        {action.reason='road-occupied';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         if(isRiverAt(x,y))               {action.reason='tile-occupied';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         if(s.farmZones.some(z=>z.x===x&&z.y===y)){action.reason='tile-occupied';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         if(bt==='mine'&&!isOreVeinAt(x,y)){action.reason='no-ore-vein';return{...s,lastBuildAttempt:{...ba,reason:action.reason}}}
         const id=`${Date.now()}-${Math.floor(Math.random()*10000)}`
-        const newB:Building={id,type:bt,x,y,capacity:def.capacity,occupants:0,workerSlots:def.workerSlots,cost:def.cost}
+        const newB:Building={id,type:bt,x,y,capacity:def.capacity,occupants:0,workerSlots:def.workerSlots,cost:effectiveCost}
         // 新建民居给予一个月的基础口粮，避免居民刚入住就饿死
         const houseFood    = bt==='house' ? {...s.houseFood,   [id]:15}  : s.houseFood
         const houseCrops   = bt==='house' ? {...s.houseCrops,  [id]:{rice:15,millet:0,wheat:0,soybean:0,vegetable:0}} : s.houseCrops
