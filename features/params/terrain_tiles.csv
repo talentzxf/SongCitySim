@@ -1,0 +1,12 @@
+id,type,elevation,fertility,water_proximity,buildable,buildability_constraints,soil_stability,resource_tags,aesthetic_value,notes
+T001,plain,10,50,400,allowed,,80,fertile;spring,60,通用平地，适合建造与农业
+T002,hill,30,30,600,conditional,"slope<=30%",60,timber;clay,55,缓坡，可建小型建筑，需坡地支护
+T003,mountain,80,5,2000,restricted,"elevation>60",20,iron;rock,30,高海拔，限于矿产开采与观景
+T004,water,0,10,0,restricted,,0,fish;salt,70,河流/湖泊/海面，不可建造（可建码头/桥梁）
+T005,wetland,5,70,50,conditional,"requires_drainage",40,peat;spring,45,湿地肥沃但不稳固，需排水或保护
+T006,marsh,2,60,20,conditional,"requires_drainage",35,peat,40,沼泽地，改造成本高且生态代价大
+T007,fertile_plain,8,85,300,allowed,,85,fertile;spring,75,高肥力平原，农业产出优
+T008,rocky,25,10,800,restricted,,25,rock;iron,20,岩石地，基础施工成本高
+T009,coastal,3,40,10,conditional,"sea_defenses_required",50,salt;fish,80,海岸线，旅游价值与洪水/风暴风险并存
+T010,clay_flat,6,45,500,allowed,,70,clay,50,适合制陶/作坊用地
+

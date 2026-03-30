@@ -1,0 +1,13 @@
+param_name,default,min,max,type,description
+seed,0,0,2147483647,int,随机地图种子（0=使用时间戳作为默认）
+river_density,0.15,0.00,1.00,float,河网密度（0-1），越高河流越多
+mountain_density,0.08,0.00,1.00,float,山体密度（0-1），越高地形起伏越大
+coastal_percent,12,0,100,int,地图沿海占比（%），决定海岸线长度
+plain_patchiness,0.6,0.0,1.0,float,平原连片性，值越高平原区域更大更连续
+resource_density,0.12,0.00,1.00,float,资源节点总体密度（矿脉/泉眼/良田）
+settlement_seed_count,6,0,50,int,初始村落/遗迹/城镇种子数量
+relic_density,0.02,0.00,1.00,float,历史遗迹密度，影响剧情节点分布
+wetland_frequency,0.05,0.00,1.00,float,湿地/沼泽出现频率
+river_meandering,0.4,0.0,1.0,float,河流弯曲度（0=直线,1=极度曲折）
+shoreline_erosion_factor,0.02,0.0,1.0,float,海岸侵蚀系数（影响长期海平面上升或风暴侵害）
+

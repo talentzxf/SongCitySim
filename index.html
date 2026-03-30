@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CitySimWeb (Prototype)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // ensure E2E hook exists early to avoid race conditions
+      try {
+        window.__CITY_STATE__ = { buildings: [], roads: [] }
+        window.__GET_CITY_STATE__ = () => window.__CITY_STATE__
+      } catch (e) {}
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

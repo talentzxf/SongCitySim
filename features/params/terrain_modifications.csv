@@ -1,0 +1,8 @@
+id,project_name,cost_per_unit_volume,unit_volume_unit,time_per_unit_hours,ecological_impact,required_tech,maintenance_per_year,protection_radius,notes
+M001,flatten,cost=10(materials);labor=2,1,cubic_meter,0.02,土方作业基础技术,0.01,0,将地表平整为可建造地块；单位：立方米
+M002,reclaim,cost=45(materials);labor=5,1,cubic_meter,0.12,需要先进堤坝/填海技术,0.05,0,填海造地，长期海平面风险增加
+M003,levee,cost=200,1,linear_meter,0.10,需要水利工程学,0.03,100,修建堤坝/防洪墙，保护一定半径内地块
+M004,channeling,cost=150,1,linear_meter,0.08,土木与疏浚设备,0.02,0,挖渠改道以控制水流，可能增加下游风险
+M005,pumping,cost=80,1,facility_unit,0.06,抽水站/排水泵,0.10,0,用于排水与季节性干旱管理，消耗能源
+M006,retaining_wall,cost=120,1,linear_meter,0.04,有坡支护技术,0.01,0,用于山坡支护，允许在斜坡上建造
+

@@ -1,0 +1,31 @@
+id,category,subtype,name,resolution,frames_or_skeleton,format,LOD_levels,priority,estimated_size_kb,required_by,notes
+core_building_house_lvl1,building,residential,House_Level1,512x512,static,PNG,3,P0,180,MVP,Base residential building (level 1)
+core_building_house_lvl2,building,residential,House_Level2,512x512,static,PNG,3,P0,220,MVP,Upgraded residential visual variant
+core_building_market,building,commercial,Market_Stalls,1024x1024,static,PNG,3,P0,420,MVP,Market cluster with stalls and awnings
+core_building_workshop,building,industrial,Small_Workshop,512x512,static,PNG,2,P0,200,MVP,Produces basic goods
+core_building_temple,building,cultural,Temple,1024x1024,static,PNG,3,P0,580,MVP,Cultural landmark
+core_building_bridge_small,infrastructure,bridge,Small_Bridge,1024x256,static,PNG,2,P0,240,MVP,Small river crossing
+tile_atlas_core_buildings,atlas,building,CoreBuildings_Atlas,2048x2048,NA,WebP;KTX2,1,P0,2500,MVP,Atlas for core buildings (used for web/engine)
+terrain_tile_plain,terrain,texture,Plain_Tile,1024x1024,NA,WebP,3,P0,350,MVP,Base ground texture
+terrain_tile_hill,terrain,texture,Hill_Tile,1024x1024,NA,WebP,3,P0,360,MVP,Hill ground texture
+terrain_tile_coastal,terrain,texture,Coastal_Tile,1024x1024,NA,WebP,3,P0,380,MVP,Coastal/shoreline texture
+road_tile_alley,infrastructure,road,Alley_Road,512x512,NA,WebP,2,P0,90,MVP,Narrow alley tile
+road_tile_street,infrastructure,road,Street_Road,512x512,NA,WebP,2,P0,120,MVP,Standard street tile
+road_tile_avenue,infrastructure,road,Avenue_Road,1024x1024,NA,WebP,2,P1,260,MVP,Main thoroughfare tile
+decoration_tree,decoration,scenery,Tree_01,512x512,static,PNG,2,P0,80,MVP,Common street tree
+decoration_lantern,decoration,scenery,Lantern_Hanging,256x256,static,PNG,1,P0,24,MVP,Street lantern decoration
+decoration_bench,decoration,scenery,Bench_01,256x128,static,PNG,1,P1,18,MVP,Small bench prop
+decoration_bridge_stone,decoration,scenery,Stone_Bridge_Decor,1024x512,static,PNG,2,P1,220,MVP,Decorative footbridge
+people_spritesheet,characters,citizen,People_Common_Sheet,1024x1024,8_frames,PNG,2,P0,400,MVP,Sprite sheet for crowd and NPCs
+people_spine,characters,citizen,People_Citizen_Spine,2048x2048,skeleton,Spine,3,P1,750,MVP,Bone-based variant for smoother animation (optional)
+ui_hud_kit,ui,components,HUD_Kit,1920x1080,NA,PNG;SVG,1,P0,600,MVP,HUD panels and common UI elements
+ui_icons_atlas,ui,icons,Icons_Atlas,1024x1024,NA,PNG,1,P0,180,MVP,Small icons atlas for toolbar and HUD
+font_main,ui,font,Main_Font,TTF,NA,TTF,1,P0,90,MVP,Primary UI font (supports Chinese + Latin)
+sfx_click,sound,ui,SFX_Click,16kHz,NA,OGG,1,P0,12,MVP,UI click sound
+sfx_construct,sound,fx,SFX_Construct,22kHz,NA,OGG,1,P0,48,MVP,Construction/build complete sound
+music_day_loop,sound,music,Music_Day_Loop,stereo_44kHz,NA,OGG,1,P0,650,MVP,Background day music loop (~60s)
+music_night_loop,sound,music,Music_Night_Loop,stereo_44kHz,NA,OGG,1,P1,650,MVP,Background night music loop (~60s)
+particle_pack,fx,particles,Particle_Basics,NA,NA,JSON;PNG,1,P0,120,MVP,Particle sprites + config for fire/smoke/snow
+festival_pack,assets,seasonal,Festival_Assets,2048x2048,NA,WebP;PNG,2,P1,1200,MVP,Lanterns,fireworks and special decals (initial festival skin)
+snapshot_template,ui,export,Share_Snapshot_Template,1200x630,NA,PNG,1,P0,180,MVP,Template for sharing city snapshots
+icon_app,ui,icon,App_Icon,1024x1024,NA,PNG,1,P0,120,MVP,App launcher/store icon (various sizes derived)

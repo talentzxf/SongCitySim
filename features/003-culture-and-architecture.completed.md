@@ -1,0 +1,1 @@
+(placeholder) Converted 3D camera and tiles to isometric/3D placement and added OrbitControls for 3D navigation. This file is marked completed to record the change toward 3D visuals. Further art/architecture theming to be completed later.
