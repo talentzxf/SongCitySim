@@ -8,8 +8,10 @@ import {
   MOUNTAIN_TILES, ORE_VEIN_TILES, isMountainAt, isOreVeinAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y,
   BUILDING_COST, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CityState,
 } from '../state/simulation'
+import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { SpatialBST, type RangeRect } from './spatialBst'
+import { message } from 'antd'
 
 // ─── Smooth river curve (computed once at module load) ─────────────────────
 // Build a softened centre-line from the discrete per-column centre points.
@@ -92,6 +94,8 @@ const RIVER_FOAM_POSITIONS: { x: number; y: number }[] = RIVER_CURVE
 if (typeof window !== 'undefined') {
   ;(window as any).__RIVER_CENTER_LINE__ = RIVER_CENTER_LINE
   ;(window as any).__RIVER_TILES__ = RIVER_TILES
+  // Debug overlay for culling and controls (read by debug UI in App)
+  ;(window as any).__MAP_DEBUG__ = (window as any).__MAP_DEBUG__ || {}
 }
 
 type ResidentRenderItem = { id: string; x: number; y: number; seed: number }
@@ -633,8 +637,6 @@ function TerrainSuitabilityMark({ x, y, suitable }: { x: number; y: number; suit
 
 // ─── Mountain height helper ────────────────────────────────────────────────
 // tileH maps the Diamond-Square normalised value [0,1] → visual geometry height [0.04, 0.28]
-import worldGenConfig from '../config/world-gen'
-
 function tileH(x: number, y: number): number {
   const BASE = 0.04
   const SCALE = worldGenConfig.mountain.tileScale
@@ -829,15 +831,19 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
     if (isBuildingTool) {
       const mesh = buildingRef.current; if (!mesh) return
       const bt = tool as BuildingType
+      // Compute effective cost (mountain builds cost more)
+      const isMtn = isMountainAt(tx, ty)
+      const mountainMultiplier = (worldGenConfig.building && worldGenConfig.building.mountainMultiplier) || 1
+      const effectiveCost = Math.ceil(BUILDING_COST[bt] * (isMtn ? mountainMultiplier : 1))
       const valid =
-        s.money >= BUILDING_COST[bt] &&
+        s.money >= effectiveCost &&
         !isRiverAt(tx, ty) &&
         !s.buildings.some(b => b.x === tx && b.y === ty) &&
         !s.roads.some(r => r.x === tx && r.y === ty) &&
         !s.farmZones.some(z => z.x === tx && z.y === ty) &&
         (bt !== 'mine' || isOreVeinAt(tx, ty))
       // Hover above terrain surface (mountain or flat ground)
-      const baseY = isMountainAt(tx, ty) ? tileH(tx, ty) : 0
+      const baseY = isMtn ? tileH(tx, ty) : 0
       mesh.position.set(tx, baseY + 0.32, ty)
       mesh.visible = true
       ;(mesh.material as THREE.MeshBasicMaterial).color.set(valid ? '#52c41a' : '#ff4d4f')
@@ -1035,8 +1041,10 @@ function MarketBuyerMesh({ x, y, loaded }: { x: number; y: number; loaded: boole
 // ─── Building meshes (宋朝低模) ────────────────────────────────────────────
 
 function HouseMesh({ x, y, occupants }: { x: number; y: number; occupants: number }) {
+  // snap visual to mountain height if present so houses on peaks don't overlap
+  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
   return (
-    <group position={[x, 0, y]}>
+    <group position={[x, baseY, y]}>
       <mesh position={[0, 0.35, 0]} castShadow>
         <boxGeometry args={[0.8, 0.7, 0.8]} />
         <meshStandardMaterial color={palette.building.houseBody} />
@@ -1054,8 +1062,9 @@ function HouseMesh({ x, y, occupants }: { x: number; y: number; occupants: numbe
 }
 
 function MarketMesh({ x, y }: { x: number; y: number }) {
+  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
   return (
-    <group position={[x, 0, y]}>
+    <group position={[x, baseY, y]}>
       <mesh position={[0, 0.25, 0]} castShadow>
         <boxGeometry args={[0.9, 0.5, 0.9]} />
         <meshStandardMaterial color={palette.building.marketBody} />
@@ -1109,8 +1118,9 @@ function TavernMesh({ x, y }: { x: number; y: number }) {
 }
 
 function BlacksmithMesh({ x, y }: { x: number; y: number }) {
+  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
   return (
-    <group position={[x, 0, y]}>
+    <group position={[x, baseY, y]}>
       <mesh position={[0, 0.22, 0]} castShadow>
         <boxGeometry args={[0.85, 0.44, 0.85]} />
         <meshStandardMaterial color={palette.building.blacksmithBody} />
@@ -1130,8 +1140,9 @@ function BlacksmithMesh({ x, y }: { x: number; y: number }) {
 }
 
 function MineMesh({ x, y }: { x: number; y: number }) {
+  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
   return (
-    <group position={[x, 0, y]}>
+    <group position={[x, baseY, y]}>
       {/* 矿洞主体 — 深灰石块 */}
       <mesh position={[0, 0.18, 0]} castShadow>
         <boxGeometry args={[0.9, 0.36, 0.9]} />
@@ -1230,8 +1241,9 @@ function PharmacyMesh({ x, y }: { x: number; y: number }) {
 }
 
 function GranaryMesh({ x, y }: { x: number; y: number }) {
+  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
   return (
-    <group position={[x, 0, y]}>
+    <group position={[x, baseY, y]}>
       <mesh position={[0, 0.3, 0]} castShadow>
         <boxGeometry args={[0.9, 0.6, 0.9]} />
         <meshStandardMaterial color={palette.building.granaryBody} />
@@ -1463,14 +1475,74 @@ export default function MapScene() {
     const pts: { x: number; y: number }[] = []
     for (const [ndcX, ndcY] of corners) {
       raycasterRef.current.setFromCamera({ x: ndcX, y: ndcY } as any, camera as THREE.Camera)
-      if (!raycasterRef.current.ray.intersectPlane(planeRef.current, hitRef.current)) return
+      // Try the canonical intersectPlane first. If it fails (ray parallel / numerical),
+      // compute a safe fallback intersection point on the y=0 plane so we still
+      // produce a sensible view rect near map edges.
+      const ray = raycasterRef.current.ray
+      const intersect = ray.intersectPlane(planeRef.current, hitRef.current)
+      if (!intersect) {
+        // Fallback: compute t such that origin.y + dir.y * t = 0 (plane y=0).
+        // Only accept that t if it's > 0 (intersection in front of camera).
+        // Otherwise use a forward fallback distance so the corner point is in front.
+        const origin = ray.origin.clone()
+        const dir = ray.direction.clone()
+        let tY = Infinity
+        if (Math.abs(dir.y) > 1e-6) tY = -origin.y / dir.y
+        let t: number
+        if (tY > 0 && isFinite(tY) && tY < 1e7) {
+          t = tY
+        } else {
+          // pick a positive forward distance (half camera.far if available, else 1000)
+          const cam = camera as THREE.PerspectiveCamera | THREE.Camera
+          const far = (cam as any).far ?? 2000
+          t = Math.max(50, Math.min(10000, far * 0.5))
+        }
+        ray.at(t, hitRef.current)
+      }
       pts.push({ x: hitRef.current.x, y: hitRef.current.z })
     }
 
-    const minX = Math.floor(Math.min(...pts.map(p => p.x)))
-    const maxX = Math.ceil(Math.max(...pts.map(p => p.x)))
-    const minY = Math.floor(Math.min(...pts.map(p => p.y)))
-    const maxY = Math.ceil(Math.max(...pts.map(p => p.y)))
+    // Remove any bad points (NaN / Infinite) that may arise from numerical edge cases
+    const finitePts = pts.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y))
+
+    const halfX = Math.floor(MAP_SIZE_X / 2)
+    const halfY = Math.floor(MAP_SIZE_Y / 2)
+    const MAP_MIN_X = -halfX, MAP_MAX_X = halfX - 1
+    const MAP_MIN_Y = -halfY, MAP_MAX_Y = halfY - 1
+
+    let minX: number, maxX: number, minY: number, maxY: number
+    if (finitePts.length >= 3) {
+      minX = Math.floor(Math.min(...finitePts.map(p => p.x)))
+      maxX = Math.ceil(Math.max(...finitePts.map(p => p.x)))
+      minY = Math.floor(Math.min(...finitePts.map(p => p.y)))
+      maxY = Math.ceil(Math.max(...finitePts.map(p => p.y)))
+    } else {
+      // Fallback: use camera center projection to ground; if that fails, use camera position
+      const rc = raycasterRef.current
+      rc.setFromCamera({ x: 0, y: 0 } as any, camera as THREE.Camera)
+      const ok = rc.ray.intersectPlane(planeRef.current, hitRef.current)
+      const cx = ok ? hitRef.current.x : (camera.position.x ?? 0)
+      const cy = ok ? hitRef.current.z : (camera.position.z ?? 0)
+      const W = Math.max(8, Math.floor((MAP_MAX_X - MAP_MIN_X) * 0.2))
+      const H = Math.max(6, Math.floor((MAP_MAX_Y - MAP_MIN_Y) * 0.15))
+      minX = Math.floor(cx - W)
+      maxX = Math.ceil(cx + W)
+      minY = Math.floor(cy - H)
+      maxY = Math.ceil(cy + H)
+    }
+
+    // Clamp to map bounds to avoid extreme cull rects
+    minX = Math.max(minX, MAP_MIN_X)
+    maxX = Math.min(maxX, MAP_MAX_X)
+    minY = Math.max(minY, MAP_MIN_Y)
+    maxY = Math.min(maxY, MAP_MAX_Y)
+
+    // If clamping produced an invalid rect (min>max), fallback to a small centered rect
+    if (minX > maxX || minY > maxY) {
+      const cx = Math.round((MAP_MIN_X + MAP_MAX_X) / 2)
+      const cy = Math.round((MAP_MIN_Y + MAP_MAX_Y) / 2)
+      minX = cx - 16; maxX = cx + 16; minY = cy - 12; maxY = cy + 12
+    }
 
     setViewRect(prev => {
       if (Math.abs(prev.minX - minX) < 1 && Math.abs(prev.maxX - maxX) < 1 && Math.abs(prev.minY - minY) < 1 && Math.abs(prev.maxY - maxY) < 1) {
@@ -1512,7 +1584,20 @@ export default function MapScene() {
         return
       }
       if (tool === 'house' || tool === 'market' || tool === 'granary' || tool === 'blacksmith' || tool === 'mine') {
-        actionsRef.current.placeBuilding(wx, wy, tool)
+        const action = actionsRef.current.placeBuilding(wx, wy, tool)
+        // show immediate toast on failure so user gets feedback at click location
+        if (action && !action.success) {
+          const reasonMap: Record<string,string> = {
+            'no-build-type-selected': '请先选择建造类型。',
+            'insufficient-funds': '资金不足，无法建造。',
+            'tile-occupied': '该格子已有建筑或占用。',
+            'road-occupied': '该格已有道路，请先推平。',
+            'river-occupied': '该处为河流，无法建造。',
+            'no-ore-vein': '此处无铁矿脉，冶铁厂只能建于矿脉上。',
+          }
+          const msg = reasonMap[action.reason] ?? action.reason
+          try { message.warning(msg) } catch (e) { /* ignore if running headless/test */ }
+        }
       } else if (tool === 'road') {
         actionsRef.current.placeRoad(wx, wy)
       } else if (tool === 'farmZone') {
@@ -1825,6 +1910,7 @@ export default function MapScene() {
         mouseNDCRef={mouseNDCRef}
         mouseOnCanvasRef={mouseOnCanvasRef}
       />
+      {/* Debug overlay DOM element (non-R3F) — renders outside the canvas */}
     </group>
   )
 }

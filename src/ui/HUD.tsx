@@ -6,6 +6,7 @@ import {
   PauseCircleOutlined, PlayCircleOutlined, ShopOutlined, StarOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons'
 import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, logicalPeddlerPos } from '../state/simulation'
+import SeedDebug from './SeedDebug'
 import configData from '../config/buildings-and-citizens.json'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ export default function HUD() {
       'insufficient-funds': '资金不足，无法建造。',
       'tile-occupied': '格子已被建筑占用。',
       'road-occupied': '格子已有道路，请先推平。',
+      'river-occupied': '该处为河流，无法建造。',
       'no-ore-vein': '此处无铁矿脉，冶铁厂只能建于铁矿脉（山地红色标记）之上。',
     }
     return { type: 'warning' as const, message: `建造失败: ${reasonMap[attempt.reason] ?? attempt.reason}` }
@@ -167,6 +169,9 @@ export default function HUD() {
             {state.running
               ? <Button block icon={<PauseCircleOutlined />} onClick={stop}>停止</Button>
               : <Button block type="primary" icon={<PlayCircleOutlined />} onClick={start}>开始</Button>}
+
+            {/* Debug: seed control (URL param + UI) */}
+            <SeedDebug />
 
             <Divider style={{ margin: '4px 0' }}>工具</Divider>
 
