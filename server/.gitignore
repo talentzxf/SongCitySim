@@ -1,0 +1,48 @@
+# Python virtualenvs
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Flask / instance folder
+instance/
+.webassets-cache/
+
+# sqlite / db files created by the service (do not commit generated DBs)
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+/tmp/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads / temp
+uploads/
+public/resource/meta_data/tmp/
+
+# Build / distribution
+dist/
+build/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*.swo
+
+# Secrets / env
+.env
+.env.local
+.env.*.local

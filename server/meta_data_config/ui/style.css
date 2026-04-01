@@ -1,0 +1,4 @@
+body { font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin: 0; padding: 24px; background: #f5f7fa; }
+#root { max-width: 1200px; margin: 0 auto; }
+.header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 16px; }
+.panel { background: white; padding:16px; border-radius:8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
