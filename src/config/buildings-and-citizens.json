@@ -14,7 +14,7 @@
       "labelEn": "market",
       "cost": 300,
       "capacity": 0,
-      "workerSlots": 4,
+      "workerSlots": 6,
       "needBonus": { "food": 0.02 },
       "desc": "满足粮食需求"
     },

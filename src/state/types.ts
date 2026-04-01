@@ -149,8 +149,21 @@ export type PeddlerCargo = {
 
 export type MarketConfig = { shopkeepers: number; peddlers: number }
 
+/** Stats recorded for a single peddler round-trip. */
+export type PeddlerTripStat = {
+  peddlerId:    string
+  citizenId?:   string
+  dayCount:     number
+  cargoAtStart: number   // food units loaded at departure
+  housesServed: number   // unique households with a paid sale
+  foodSold:     number   // food units sold (paid)
+  revenue:      number   // money collected (文)
+  toolsSold:    number
+}
+
 export type Peddler = {
   id: string; marketId: string
+  citizenId?: string          // 挑担的真实市民 id（绑定集市工人）
   cargo: PeddlerCargo
   phase: 'outbound' | 'returning'
   stepsLeft: number
@@ -160,6 +173,13 @@ export type Peddler = {
   prevTile: { x: number; y: number } | null
   returnRoute: { x: number; y: number }[]
   returnIdx: number
+  // ── trip statistics (reset each departure) ───────────────────────────────
+  statsCargoAtStart: number
+  statsHousesServed: number
+  statsFoodSold:     number
+  statsRevenue:      number
+  statsToolsSold:    number
+  statsDayCount:     number
 }
 
 export type Tool = 'pan' | 'road' | 'bulldoze' | 'farmZone' | BuildingType
@@ -214,6 +234,7 @@ export type CityState = {
   oxCarts: OxCart[]
   marketBuyers: MarketBuyer[]
   marketConfig: Record<string, MarketConfig>
+  peddlerTripLog: Record<string, PeddlerTripStat[]>  // marketId -> last N trips
   month: number
   dayTime: number
   dayCount: number

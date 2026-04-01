@@ -7,7 +7,7 @@
  */
 import type {
   Building, Citizen, Walker, Migrant, FarmZone,
-  OxCart, MarketBuyer, Peddler, CropInventory, CityState, FarmPile,
+  OxCart, MarketBuyer, Peddler, CropInventory, CityState, FarmPile, PeddlerTripStat,
 } from '../types'
 export interface TickContext {
   // read-only: original state snapshot & tick metadata
@@ -37,6 +37,7 @@ export interface TickContext {
   peddlers: Peddler[]
   farmPiles: FarmPile[]
   farmZones: FarmZone[]
+  peddlerTripLog: Record<string, PeddlerTripStat[]>  // marketId -> last N trips
   // mutable: per-household ledgers
   houseFood: Record<string, number>
   houseCrops: Record<string, CropInventory>

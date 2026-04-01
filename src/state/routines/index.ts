@@ -80,6 +80,7 @@ export function buildTickContext(s: CityState): TickContext {
     peddlers:     s.peddlers,
     farmPiles:    s.farmPiles,
     farmZones:    s.farmZones,
+    peddlerTripLog: s.peddlerTripLog ?? {},
     houseFood:    { ...s.houseFood },
     houseCrops:   Object.fromEntries(Object.entries(s.houseCrops).map(([k, v]) => [k, { ...v }])),
     houseSavings: { ...s.houseSavings },
@@ -156,5 +157,6 @@ export function applyTickResult(ctx: TickContext): CityState {
     needPressure:    ctx.needPressure,
     lastHouseholdBuyDay: s.lastHouseholdBuyDay,
     marketConfig:        s.marketConfig,
+    peddlerTripLog:      ctx.peddlerTripLog,
   }
 }

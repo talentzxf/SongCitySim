@@ -2,7 +2,7 @@
 import type { CitizenStatus } from '../types'
 import type { TickRoutine } from './types'
 import { WALKER_SPEED, SIM_TICK_MS } from '../../config/simulation'
-import { CROP_KEYS, FARM_TOOL_PRICE, clampCrop, clampFood, cropPrice, inventoryTotal, createEmptyInventory } from '../helpers'
+import { CROP_KEYS, FARM_TOOL_PRICE, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, clampCrop, clampFood, cropPrice, inventoryTotal, createEmptyInventory } from '../helpers'
 export const walkerRoutine: TickRoutine = (ctx) => {
   const { nextTick, houseMap } = ctx
   let citizens        = ctx.citizens
@@ -50,13 +50,13 @@ export const walkerRoutine: TickRoutine = (ctx) => {
         }
       }
       houseSavings = { ...houseSavings, [houseId]: Math.max(0, (houseSavings[houseId] ?? 0) - totalCost) }
-      // also buy a farm tool if the farmer needs one
-      if (citizens[idx].farmZoneId && smithInventory > 0 && (houseTools[houseId] ?? 0) === 0) {
+      // also buy a farm tool if the farmer needs one (no tool or low durability)
+      if (citizens[idx].farmZoneId && smithInventory > 0 && (houseTools[houseId] ?? 0) < TOOL_DURABILITY_LOW) {
         const savingsNow = houseSavings[houseId] ?? 0
         if (savingsNow >= FARM_TOOL_PRICE) {
           smithInventory = Math.max(0, smithInventory - 1)
           houseSavings   = { ...houseSavings, [houseId]: Math.max(0, savingsNow - FARM_TOOL_PRICE) }
-          houseTools     = { ...houseTools,   [houseId]: (houseTools[houseId] ?? 0) + 1 }
+          houseTools     = { ...houseTools,   [houseId]: TOOL_DURABILITY_MAX }
         }
       }
       // spawn the return walk

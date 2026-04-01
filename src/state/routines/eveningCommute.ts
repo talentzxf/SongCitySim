@@ -8,9 +8,11 @@ export const eveningCommuteRoutine: TickRoutine = (ctx) => {
   let walkers    = ctx.walkers
   const citizens = ctx.citizens
   const activeIds = new Set(walkers.map(w => w.citizenId))
+  // citizens who are still out as peddlers must NOT get a duplicate toHome walker
+  const peddlingIds = new Set(ctx.peddlers.filter(p => p.citizenId).map(p => p.citizenId!))
   // workers return home
   for (const c of citizens) {
-    if (!c.workplaceId || c.isAtHome || activeIds.has(c.id)) continue
+    if (!c.workplaceId || c.isAtHome || activeIds.has(c.id) || peddlingIds.has(c.id)) continue
     const house = houseMap.get(c.houseId); const wp = buildingMap.get(c.workplaceId)
     if (!house || !wp) continue
     const route = bestPath(s.roads, wp, house); if (!route || route.length < 2) continue

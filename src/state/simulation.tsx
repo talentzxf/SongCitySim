@@ -45,6 +45,7 @@ const initial: CityState = {
   migrants: [], walkers: [], peddlers: [],
   farmPiles: [], oxCarts: [], marketBuyers: [],
   marketConfig: {},
+  peddlerTripLog: {},
   month: 1, dayTime: 0.5, dayCount: 1,
   lastHouseholdBuyDay: 0,
   lastMonthlyTax: 0, avgSatisfaction: 71, needPressure: { food: 32, safety: 28, culture: 44 },

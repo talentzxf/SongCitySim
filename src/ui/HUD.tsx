@@ -5,7 +5,7 @@ import {
   ExperimentOutlined, FireOutlined, HomeOutlined, InboxOutlined, MedicineBoxOutlined,
   PauseCircleOutlined, PlayCircleOutlined, ShopOutlined, StarOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons'
-import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, logicalPeddlerPos } from '../state/simulation'
+import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, logicalPeddlerPos } from '../state/simulation'
 import configData from '../config/buildings-and-citizens.json'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1002,7 +1002,7 @@ function FarmZonePanel() {
         const hasMine       = state.buildings.some(b => b.type === 'mine')
         const hasSmith      = state.buildings.some(b => b.type === 'blacksmith')
         const cityToolStock = state.smithInventory
-        // 判断此田的农夫是否持有铁器
+        // 判断此田的农夫是否持有铁器（durability > 0）
         const farmerHasTools = assignedFarmers.some(c => (state.houseTools[c.houseId] ?? 0) > 0)
         const bonusPct = Math.round((TOOL_EFFICIENCY_BONUS - 1) * 100)
 
@@ -1028,17 +1028,38 @@ function FarmZonePanel() {
                   : <Tag color="default" style={{ fontSize: 12 }}>+0%（无加成）</Tag>}
               </div>
 
-              {/* 农具明细 */}
+              {/* 农具耐久明细 */}
               {assignedFarmers.length > 0 && (
                 <div style={{ background: '#fafafa', borderRadius: 6, padding: '4px 8px' }}>
                   {assignedFarmers.map(c => {
-                    const toolCount = state.houseTools[c.houseId] ?? 0
+                    const dur = state.houseTools[c.houseId] ?? 0
+                    const durPct = Math.round((dur / TOOL_DURABILITY_MAX) * 100)
+                    const isLow = dur > 0 && dur < TOOL_DURABILITY_LOW
+                    const isBroken = dur === 0
+                    const barColor = dur >= 60 ? '#52c41a' : dur >= TOOL_DURABILITY_LOW ? '#faad14' : '#ff4d4f'
                     return (
-                      <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', fontSize: 12 }}>
-                        <Typography.Text style={{ fontSize: 12 }}>{c.name}</Typography.Text>
-                        {toolCount > 0
-                          ? <Tag color="green" style={{ fontSize: 10 }}>持有铁器 ×{toolCount}</Tag>
-                          : <Tag color="default" style={{ fontSize: 10 }}>尚未购置</Tag>}
+                      <div key={c.id} style={{ padding: '4px 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                          <Typography.Text style={{ fontSize: 12 }}>{c.name}</Typography.Text>
+                          {isBroken
+                            ? <Tag color="error"   style={{ fontSize: 10 }}>⚠ 农具毁损</Tag>
+                            : isLow
+                              ? <Tag color="warning" style={{ fontSize: 10 }}>🔧 即将损耗 {durPct}%</Tag>
+                              : <Tag color="success" style={{ fontSize: 10 }}>耐久 {durPct}%</Tag>}
+                        </div>
+                        {!isBroken && (
+                          <Progress
+                            percent={durPct}
+                            size="small"
+                            showInfo={false}
+                            strokeColor={barColor}
+                          />
+                        )}
+                        {isBroken && (
+                          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                            农具已毁损，产量下降 {bonusPct}%。请前往集市购置新农器。
+                          </Typography.Text>
+                        )}
                       </div>
                     )
                   })}
@@ -1182,6 +1203,13 @@ function BuildingPanel() {
   const myMarketBuyers   = state.marketBuyers.filter(mb => mb.marketId === b.id)
   const myPeddlers       = state.peddlers.filter(p => p.marketId === b.id)
 
+  // Deterministic role designation: sort workers by id, last cfg.peddlers = 行商, rest = 坐贾
+  // This matches the morningCommute selection (.slice from tail) so display = behaviour.
+  const workersSortedById = isMarket ? [...workers].sort((a, b2) => a.id.localeCompare(b2.id)) : workers
+  const peddlerWorkerIds  = isMarket
+    ? new Set(workersSortedById.slice(workersSortedById.length - marketCfg.peddlers).map(w => w.id))
+    : new Set<string>()
+
 
   const hasRoadAccess = state.roads.some(r =>
     Math.abs(r.x - b.x) + Math.abs(r.y - b.y) === 1
@@ -1207,7 +1235,11 @@ function BuildingPanel() {
         <Tag>造价 ¥{b.cost}</Tag>
         {isHouse
           ? <Tag color="blue">住户 {residents.length}/{b.capacity}</Tag>
-          : <Tag color="purple">仓丁 {workers.length}/{b.workerSlots}</Tag>}
+          : <Tag color="purple">
+              {isMarket
+                ? `在岗 ${workers.length}/${MARKET_TOTAL_SLOTS}`
+                : `仓丁 ${workers.length}/${b.workerSlots}`}
+            </Tag>}
         {isHouse && <Tag color="gold">💰 积蓄 ¥{houseSavings.toFixed(2)}</Tag>}
         {isHouse && dietVarietyCount > 0 && (
           <Tag color={dietVarietyInfo(dietVarietyCount).color}>
@@ -1592,6 +1624,107 @@ function BuildingPanel() {
                 </Space>
               ),
             },
+            {
+              key: 'peddler_stats',
+              label: <span>📊 行商统计</span>,
+              children: (() => {
+                const tripLog   = (state.peddlerTripLog ?? {})[b.id] ?? []
+                const activePeddlers = myPeddlers
+                return (
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    {/* ── 在途行商实时进度 ── */}
+                    {activePeddlers.length > 0 && (
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 12 }}>🧺 本轮出行中</Typography.Text>
+                        {activePeddlers.map(p => {
+                          const citizen = p.citizenId ? state.citizens.find(c => c.id === p.citizenId) : null
+                          const cargoLeft = Object.values(p.cargo.crops).reduce((s, v) => s + v, 0)
+                          return (
+                            <div key={p.id} style={{ background: '#f9f0ff', borderRadius: 6, padding: '6px 8px', marginTop: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography.Text strong style={{ fontSize: 12 }}>
+                                  {citizen?.name ?? '行商'} · {p.phase === 'outbound' ? `剩 ${p.stepsLeft} 步` : '折返中'}
+                                </Typography.Text>
+                                <Tag color="purple" style={{ fontSize: 10 }}>{p.phase === 'outbound' ? '出行' : '返回'}</Tag>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                                出发带货：{p.statsCargoAtStart.toFixed(1)} 担 ·
+                                剩余：{cargoLeft.toFixed(1)} 担 ·
+                                铁器×{p.cargo.ironTools}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#52c41a', marginTop: 1 }}>
+                                ✅ 已服务 {p.statsHousesServed} 户 ·
+                                售粮 {p.statsFoodSold.toFixed(1)} 担 ·
+                                收入 {p.statsRevenue.toFixed(1)} 文
+                                {p.statsToolsSold > 0 && ` · 售器×${p.statsToolsSold}`}
+                              </div>
+                              {p.statsCargoAtStart < 0.1 && (
+                                <div style={{ fontSize: 11, color: '#ff4d4f', marginTop: 1 }}>
+                                  ⚠ 出发时市场无粮，空手出行
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* ── 历史行程记录 ── */}
+                    {tripLog.length > 0 && (
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 12 }}>📋 近期行程记录</Typography.Text>
+                        {[...tripLog].reverse().map((t, i) => {
+                          const citizen = t.citizenId ? state.citizens.find(c => c.id === t.citizenId) : null
+                          return (
+                            <div key={i} style={{ background: '#f6ffed', borderRadius: 6, padding: '6px 8px', marginTop: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography.Text strong style={{ fontSize: 12 }}>
+                                  {citizen?.name ?? t.citizenId?.slice(-4) ?? '行商'} · 第 {t.dayCount} 天
+                                </Typography.Text>
+                                <Tag color={t.housesServed > 0 ? 'success' : 'default'} style={{ fontSize: 10 }}>
+                                  {t.housesServed > 0 ? `售货 ${t.housesServed} 户` : '零成交'}
+                                </Tag>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                                出发带货：{t.cargoAtStart.toFixed(1)} 担
+                                {t.cargoAtStart < 0.1 && <Tag color="error" style={{ fontSize: 10, marginLeft: 4 }}>市场空仓</Tag>}
+                              </div>
+                              {t.housesServed > 0
+                                ? <div style={{ fontSize: 11, color: '#52c41a', marginTop: 1 }}>
+                                    ✅ 售粮 {t.foodSold.toFixed(1)} 担 · 收入 {t.revenue.toFixed(1)} 文
+                                    {t.toolsSold > 0 && ` · 售农器×${t.toolsSold}`}
+                                  </div>
+                                : <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
+                                    未售出（见下方条件说明）
+                                  </div>
+                              }
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {activePeddlers.length === 0 && tripLog.length === 0 && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        行商今日尚未出发，明晨清晨（6:00）自动派出
+                      </Typography.Text>
+                    )}
+
+                    {/* ── 卖货条件说明 ── */}
+                    <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 6, padding: '8px 10px', fontSize: 11 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>📌 行商卖货条件（全部满足才成交）</div>
+                      <div>① 行商携带粮食 &gt; 0.1 担（市场出发时有库存）</div>
+                      <div>② 民居在行商当前格<b>上下左右 1 格</b>之内（斜对角无效）</div>
+                      <div>③ 民居粮食 &lt; <b>10 担</b>（已满仓则跳过）</div>
+                      <div>④ 民居积蓄 &gt; 0（无钱则仅施舍 1 担，不收费）</div>
+                      <div style={{ marginTop: 4, color: '#888' }}>
+                        常见零成交原因：市场空仓出发 / 民居粮食充足 / 民居积蓄不足
+                      </div>
+                    </div>
+                  </Space>
+                )
+              })(),
+            },
           ]} />
         </Card>
       )}
@@ -1704,7 +1837,9 @@ function BuildingPanel() {
             const profLabel = c.profession
               ? (configData.professions as any)[c.profession]?.label ?? c.profession
               : '待业'
-            const satColor = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
+            const satColor    = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
+            const isPeddlerRole   = peddlerWorkerIds.has(c.id)
+            const isOutPeddling   = isPeddlerRole && state.peddlers.some(p => p.citizenId === c.id)
             return (
               <div key={c.id} className="info-panel-citizen-row" onClick={() => selectCitizen(c.id)}>
                 <Space size={4}>
@@ -1714,7 +1849,6 @@ function BuildingPanel() {
                     <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
                       {c.age}岁 · {profLabel}
                       {isGranary && myOxCarts.length > 0 && ' · 运粮'}
-                      {isMarket  && myMarketBuyers.length > 0 && ' · 补货'}
                     </Typography.Text>
                   </div>
                 </Space>
@@ -1723,7 +1857,13 @@ function BuildingPanel() {
                     {c.isSick ? '生病' : '健康'}
                   </Tag>
                   {!c.isAtHome && isGranary && <Tag color="orange" style={{ fontSize: 10, padding: '0 4px' }}>🐂出勤</Tag>}
-                  {!c.isAtHome && isMarket  && <Tag color="purple" style={{ fontSize: 10, padding: '0 4px' }}>🛺出勤</Tag>}
+                  {isMarket && (
+                    isPeddlerRole
+                      ? <Tag color="purple" style={{ fontSize: 10, padding: '0 4px' }}>
+                          🧺行商{isOutPeddling ? ' · 出行中' : ''}
+                        </Tag>
+                      : <Tag color="cyan" style={{ fontSize: 10, padding: '0 4px' }}>🏪坐贾</Tag>
+                  )}
                   <Tag style={{ fontSize: 10, padding: '0 4px', color: satColor, borderColor: satColor }}>
                     ★{c.satisfaction}
                   </Tag>
