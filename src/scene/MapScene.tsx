@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { SIM_TICK_MS } from '../config/simulation'
 import {
   useSimulation, logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos,
+  logicalPeddlerPos, type Peddler,
   RIVER_TILES, isRiverAt, isNearRiverFive, RIVER_CENTER_LINE,
   MOUNTAIN_TILES, ORE_VEIN_TILES, isMountainAt, isOreVeinAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y,
   BUILDING_COST, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CityState,
@@ -307,10 +308,10 @@ function CommutingWalker({ x, y, purpose, selected, onClick }: {
 
   return (
     <group ref={ref} position={[x, 0, y]} onClick={onClick}>
-      {/* 不可见点击靶区：半径0.35、高0.6的圆柱体，比角色模型大~8倍，便于鼠标点中 */}
-      <mesh position={[0, 0.3, 0]} visible={false}>
-        <cylinderGeometry args={[0.35, 0.35, 0.6, 8]} />
-        <meshBasicMaterial />
+      {/* 点击靶区：透明圆柱（不用 visible=false，否则 THREE.js 不参与射线检测） */}
+      <mesh position={[0, 0.3, 0]}>
+        <cylinderGeometry args={[0.38, 0.38, 0.62, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <mesh ref={bodyRef} position={[0, 0.19, 0]}>
         <capsuleGeometry args={[0.045, 0.2, 3, 8]} />
@@ -343,10 +344,10 @@ function ResidentAvatar({ x, y, seed, selected, onClick }: {
   const color = seed % 2 === 0 ? palette.character.robe : palette.character.robeAccent
   return (
     <group position={[x + ox, 0, y + oz]} onClick={onClick}>
-      {/* 不可见点击靶区 */}
-      <mesh position={[0, 0.25, 0]} visible={false}>
-        <cylinderGeometry args={[0.32, 0.32, 0.5, 8]} />
-        <meshBasicMaterial />
+      {/* 点击靶区（透明，非 visible=false） */}
+      <mesh position={[0, 0.25, 0]}>
+        <cylinderGeometry args={[0.36, 0.36, 0.52, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <mesh position={[0, 0.17, 0]}>
         <capsuleGeometry args={[0.04, 0.12, 3, 8]} />
@@ -451,8 +452,126 @@ function FlatInstances({
   )
 }
 
+// ─── Instanced circles (flat discs on the ground) ─────────────────────────
+
+function CircleInstances({
+  items,
+  y = 0,
+  radius = 0.1,
+  color,
+  opacity = 1,
+}: {
+  items: Array<{ x: number; y: number }>
+  y?: number
+  radius?: number
+  color: string
+  opacity?: number
+}) {
+  const ref = React.useRef<THREE.InstancedMesh>(null)
+  React.useLayoutEffect(() => {
+    if (!ref.current) return
+    const mesh = ref.current
+    const temp = new THREE.Object3D()
+    mesh.count = items.length
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      temp.position.set(item.x, y, item.y)
+      temp.rotation.set(-Math.PI / 2, 0, 0)
+      temp.scale.set(1, 1, 1)
+      temp.updateMatrix()
+      mesh.setMatrixAt(i, temp.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  }, [items, y])
+
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
+      <circleGeometry args={[radius, 10]} />
+      <meshBasicMaterial color={color} transparent={opacity < 1} opacity={opacity} />
+    </instancedMesh>
+  )
+}
 
 // ─── Farm zone colour helpers ──────────────────────────────────────────────
+
+// ─── Selection ring (solid halo under selected building / citizen) ────────
+
+function SelectionRingMesh({ x, y, color = '#faad14', r = 0.52 }: {
+  x: number; y: number; color?: string; r?: number
+}) {
+  return (
+    <group>
+      {/* outer glow */}
+      <mesh position={[x, 0.04, y]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[r * 0.55, r * 1.22, 40]} />
+        <meshBasicMaterial color={color} transparent opacity={0.22} depthWrite={false} />
+      </mesh>
+      {/* main bright ring */}
+      <mesh position={[x, 0.07, y]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[r * 0.70, r, 40]} />
+        <meshBasicMaterial color={color} transparent opacity={0.92} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
+// ─── Peddler mesh (游商：市场行商，肩挑货担沿路叫卖) ─────────────────────
+
+function PeddlerMesh({ x, y }: { x: number; y: number }) {
+  const { ref, animRef } = useCharacterAnim(x, y)
+
+  useFrame((_, delta) => {
+    if (!ref.current) return
+    const a = animRef.current; a.time += delta
+    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
+    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
+    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
+    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
+    ref.current.position.y = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
+    const dx = a.targetX - a.startX, dz = a.targetY - a.startY
+    if (Math.abs(dx) + Math.abs(dz) > 0.001) {
+      a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10))
+      ref.current.rotation.y = a.facing
+    }
+    // carrying-pole bob
+    ref.current.position.y += Math.sin(a.time * 7) * 0.012
+  })
+
+  return (
+    <group ref={ref} position={[x, 0, y]} castShadow>
+      {/* 身体（棕色长袍） */}
+      <mesh position={[0, 0.22, 0]} castShadow>
+        <capsuleGeometry args={[0.054, 0.15, 3, 8]} />
+        <meshStandardMaterial color="#9c5c20" />
+      </mesh>
+      {/* 头 */}
+      <mesh position={[0, 0.37, 0]}>
+        <sphereGeometry args={[0.046, 8, 8]} />
+        <meshStandardMaterial color={palette.character.skin} />
+      </mesh>
+      {/* 斗笠 */}
+      <mesh position={[0, 0.43, 0]} rotation={[0, 0, Math.PI]}>
+        <coneGeometry args={[0.09, 0.08, 8]} />
+        <meshStandardMaterial color="#6b4010" />
+      </mesh>
+      {/* 扁担 */}
+      <mesh position={[0, 0.30, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.011, 0.011, 0.52, 4]} />
+        <meshStandardMaterial color="#8b5e2a" />
+      </mesh>
+      {/* 左篮 */}
+      <mesh position={[-0.26, 0.18, 0]}>
+        <cylinderGeometry args={[0.063, 0.05, 0.1, 8]} />
+        <meshStandardMaterial color="#c8a050" />
+      </mesh>
+      {/* 右篮 */}
+      <mesh position={[0.26, 0.18, 0]}>
+        <cylinderGeometry args={[0.063, 0.05, 0.1, 8]} />
+        <meshStandardMaterial color="#c8a050" />
+      </mesh>
+    </group>
+  )
+}
 
 function getFarmColor(cropType: string, progress: number): THREE.Color {
   // Stage 0: bare soil just sown
@@ -536,10 +655,10 @@ function FarmerAtWork({ x, y, seed, selected, onClick }: {
 
   return (
     <group position={[x + ox, 0, y + oz]} onClick={onClick}>
-      {/* Invisible hit area */}
-      <mesh position={[0, 0.22, 0]} visible={false}>
-        <cylinderGeometry args={[0.32, 0.32, 0.44, 8]} />
-        <meshBasicMaterial />
+      {/* 点击靶区（透明，非 visible=false） */}
+      <mesh position={[0, 0.22, 0]}>
+        <cylinderGeometry args={[0.36, 0.36, 0.46, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       {/* Farmer body (bent forward) */}
       <group ref={bodyRef} rotation={[-0.28, 0, 0]}>
@@ -1432,6 +1551,7 @@ function astarRoad(
   start: { x: number; y: number },
   end: { x: number; y: number },
   avoidMountains: boolean,
+  blockedTiles?: Set<string>,   // buildings + farmZone tiles (must route around them)
 ): { x: number; y: number }[] {
   const halfX = Math.floor(MAP_SIZE_X / 2)
   const halfY = Math.floor(MAP_SIZE_Y / 2)
@@ -1439,7 +1559,8 @@ function astarRoad(
     return x >= -halfX && x < halfX && y >= -halfY && y < halfY
   }
   function tileCost(x: number, y: number): number {
-    if (isRiverAt(x, y)) return Infinity
+    if (blockedTiles?.has(`${x},${y}`)) return Infinity  // buildings & farm tiles
+    if (isRiverAt(x, y)) return 8                        // bridge: costly but allowed
     if (isMountainAt(x, y)) return avoidMountains ? 100 : 2
     return 1
   }
@@ -1925,7 +2046,16 @@ export default function MapScene() {
         const startOnMtn = isMountainAt(start.x, start.y)
         // Avoid mountains unless the destination tile is itself on a mountain
         const avoidMountains = !endOnMtn && !startOnMtn
-        const path = astarRoad(start, t, avoidMountains)
+        // Buildings and farm tiles cannot be paved — route around them
+        const s = stateRef.current
+        const blockedTiles = new Set<string>([
+          ...s.buildings.map(b => `${b.x},${b.y}`),
+          ...s.farmZones.flatMap(z => [
+            `${z.x},${z.y}`, `${z.x+1},${z.y}`,
+            `${z.x},${z.y+1}`, `${z.x+1},${z.y+1}`,
+          ]),
+        ])
+        const path = astarRoad(start, t, avoidMountains, blockedTiles)
         setRoadPreview(path)
         roadPreviewRef.current = path
       } else if (tool === 'farmZone') {
@@ -2024,6 +2154,10 @@ export default function MapScene() {
     const p = logicalMarketBuyerPos(mb)
     return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
   }), [state.marketBuyers, cullRect])
+  const visiblePeddlers = React.useMemo(() => state.peddlers.filter(p => {
+    const pos = logicalPeddlerPos(p)
+    return pos.x >= cullRect.minX && pos.x <= cullRect.maxX && pos.y >= cullRect.minY && pos.y <= cullRect.maxY
+  }), [state.peddlers, cullRect])
 
   return (
     <group>
@@ -2171,6 +2305,49 @@ export default function MapScene() {
           />
         )
       })}
+
+      {/* 游商（行商，肩挑货担沿路叫卖） */}
+      {visiblePeddlers.map(p => {
+        const pos = logicalPeddlerPos(p)
+        return <PeddlerMesh key={p.id} x={pos.x} y={pos.y} />
+      })}
+
+      {/* 选中建筑高亮圈 */}
+      {(() => {
+        const b = state.selectedBuildingId
+          ? state.buildings.find(x => x.id === state.selectedBuildingId)
+          : null
+        return b ? <SelectionRingMesh x={b.x} y={b.y} color="#faad14" r={0.56} /> : null
+      })()}
+
+      {/* 选中市民高亮圈 */}
+      {(() => {
+        const cid = state.selectedCitizenId
+        if (!cid) return null
+        // walker first (moving citizen)
+        const walker = state.walkers.find(w => w.citizenId === cid)
+        if (walker) {
+          const p = logicalWalkerPos(walker)
+          return <SelectionRingMesh x={p.x} y={p.y} color="#69c0ff" r={0.34} />
+        }
+        // farmer at farm
+        const farmer = farmersAtFarm.find(f => f.id === cid)
+        if (farmer) return <SelectionRingMesh x={farmer.x} y={farmer.y} color="#69c0ff" r={0.34} />
+        // resident at home — must include the same seed-based offset as ResidentAvatar
+        const resident = visibleResidents.find(r => r.id === cid)
+        if (resident) {
+          const ox = Math.sin(resident.seed) * 0.22
+          const oz = Math.cos(resident.seed * 1.7) * 0.22
+          return <SelectionRingMesh x={resident.x + ox} y={resident.y + oz} color="#69c0ff" r={0.34} />
+        }
+        // fallback: home position
+        const citizen = state.citizens.find(c => c.id === cid)
+        if (citizen) {
+          const house = state.buildings.find(b => b.id === citizen.houseId)
+          if (house) return <SelectionRingMesh x={house.x} y={house.y} color="#69c0ff" r={0.34} />
+        }
+        return null
+      })()}
 
       {/* Road path ghost preview (A* result while dragging in road mode) */}
       <RoadPreviewInstances tiles={roadPreview} />

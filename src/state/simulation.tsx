@@ -85,6 +85,8 @@ export type Citizen = {
   isAtHome: boolean
   isSick: boolean
   sickTicks: number    // 连续患病帧数，超过阈值则死亡
+  workedToday: boolean   // 今日是否完成了上工/务农
+  shoppedToday: boolean  // 今日是否完成了出门采购
 }
 
 export type Migrant = {
@@ -183,6 +185,7 @@ export type CityState = {
   avgSatisfaction: number
   needPressure: CitizenNeeds
   houseDead: Record<string, number>   // 各房屋未清理的亡者数量（疫病传播源）
+  simSpeed: number   // 模拟速度倍率：1=正常，0.25=慢放，2=快进
 }
 
 // ─── Building definitions ─────────────────────────────────────────────────
@@ -1327,6 +1330,7 @@ const initial:CityState = {
   lastHouseholdBuyDay:0,
   lastMonthlyTax:0, avgSatisfaction:71, needPressure:{food:32,safety:28,culture:44},
   houseDead:{},
+  simSpeed: 1,
 }
 
 // If no initial buildings exist, add a small starter house adjacent to the highway so migrants can spawn.
@@ -1393,6 +1397,7 @@ try {
 
 const SimulationContext = createContext<{
   state:CityState; start:()=>void; stop:()=>void
+  setSimSpeed:(v:number)=>void
   setMoney:(v:number)=>void; setPopulation:(v:number)=>void
   placeBuilding:(x:number,y:number,type?:BuildingType)=>void
   removeBuilding:(id:string)=>void; selectBuildingType:(t:BuildingType|null)=>void
@@ -1405,7 +1410,7 @@ const SimulationContext = createContext<{
   setMarketConfig:(id:string, cfg:MarketConfig)=>void
   selectRoadMode:(mode:'around'|'over')=>void
 }>({
-  state:initial, start:()=>{}, stop:()=>{}, setMoney:()=>{}, setPopulation:()=>{},
+  state:initial, start:()=>{}, stop:()=>{}, setSimSpeed:()=>{}, setMoney:()=>{}, setPopulation:()=>{},
   placeBuilding:()=>{}, removeBuilding:()=>{}, selectBuildingType:()=>{},
   placeRoad:()=>{}, removeRoad:()=>{}, placeFarmZone:()=>{}, removeFarmZone:()=>{},
   selectFarmZone:()=>{}, setFarmCrop:()=>{}, setTaxRates:()=>{},
@@ -1652,6 +1657,18 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
                 const foodTotal = inventoryTotal(hcNow)
                 if (foodTotal >= PEDDLER_FOOD_THRESH) continue
                 const sav = houseSavings[house.id] ?? 0
+
+                // 赈济：存粮极低（< 2担）且无积蓄 → 赠送1担救急，防止饥荒恶性循环
+                if (foodTotal < 2 && sav <= 0) {
+                  const give = Math.min(1, inventoryTotal(p.cargo.crops))
+                  if (give > 0.01) {
+                    transferInventory(p.cargo.crops, hcNow, give)
+                    houseCrops[house.id] = hcNow
+                    houseFood[house.id] = clampFood(inventoryTotal(hcNow))
+                  }
+                  continue
+                }
+
                 if (sav <= 0) continue
                 const want = Math.min(PEDDLER_SELL_FOOD, PEDDLER_FOOD_THRESH - foodTotal)
                 let moved = 0, cost = 0
@@ -1770,35 +1787,26 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
             }
           }
 
-          // Needs + satisfaction
+          // ── 需求累积（每帧渐变，satisfaction 在傍晚统一结算）──────────────
           citizens = citizens.map(c=>{
             const house=houseMap.get(c.houseId); if(!house) return c
             const prevFood = houseFood[c.houseId] ?? 0
-
             const starving = prevFood <= 0.05
             let isSick = c.isSick
             if(starving && !isSick && Math.random() < 0.003) isSick = true
             if(!starving && isSick && prevFood > 2 && Math.random() < 0.0025) isSick = false
-
-            // 患病计时：恢复则清零，否则每帧递增
             const sickTicks = isSick ? (c.sickTicks ?? 0) + 1 : 0
-
             const nearWork = workplacePos.some(p=>distance(p,house)<=8) && !isSick
             const hasRoad  = adjacentHasRoad(s.roads,house.x,house.y)
+            const isIdle   = !c.workplaceId && !c.farmZoneId
             const n={...c.needs}
-            n.food    = clamp01(n.food    + (starving ? -0.03 : (nearWork ? 0.02  : -0.015)))
-            n.safety  = clamp01(n.safety  + (hasRoad  ? 0.01  : -0.013))
-            n.culture = clamp01(n.culture + (workplacePos.length>0 ? 0.008 : -0.01))
-            if(isSick){
-              n.food = clamp01(n.food - 0.01)
-              n.safety = clamp01(n.safety - 0.005)
-            }
-            // 安乐加成：饮食多样（多种粮食）提升民心
-            const hc = houseCrops[c.houseId]
-            const dietCount = hc ? CROP_KEYS.filter(k => hc[k] > 0.1).length : 0
-            const anleBonus = dietCount <= 1 ? 0 : dietCount === 2 ? 5 : dietCount === 3 ? 10 : 15
-            const score=(n.food*0.45+n.safety*0.35+n.culture*0.2)*100-(isSick?8:0)+anleBonus
-            return{...c,needs:n,isSick,sickTicks,satisfaction:Math.round(Math.max(0,Math.min(100,score)))}
+            n.food    = clamp01(n.food    + (starving ? -0.04 : (nearWork ? 0.015 : -0.01)))
+            n.safety  = clamp01(n.safety  + (hasRoad  ? 0.008 : -0.012))
+            n.culture = clamp01(n.culture + (workplacePos.length>0 ? 0.006 : -0.008))
+            if(isIdle)  n.culture = clamp01(n.culture - 0.005)
+            if(isSick){ n.food = clamp01(n.food - 0.01); n.safety = clamp01(n.safety - 0.004) }
+            // satisfaction 保持不变，由傍晚日结算统一更新
+            return{...c,needs:n,isSick,sickTicks}
           })
 
           // ── 疫病：久病不愈则死亡 ──────────────────────────────────────────
@@ -1862,10 +1870,7 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
                   }
                 }
               }
-              // 在集市付钱（houseSavings 扣款）
               houseSavings[houseId] = Math.max(0, (houseSavings[houseId] ?? 0) - totalCost)
-              // ── 农夫顺便在集市购置铁制农具（曲辕犁/锄头/镰刀等）──────────
-              // 铁匠铺打制的农具由集市代售；农夫若无铁器且积蓄充足，当场购入一套
               if (citizens[idx].farmZoneId && smithInventory > 0 && (houseTools[houseId] ?? 0) === 0) {
                 const savingsNow = houseSavings[houseId] ?? 0
                 if (savingsNow >= FARM_TOOL_PRICE) {
@@ -1874,7 +1879,6 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
                   houseTools[houseId] = (houseTools[houseId] ?? 0) + 1
                 }
               }
-              // 生成「带货回家」walker；houseCrops 此时不动，货物随人走
               const house  = houseMap.get(houseId)
               const market = w.targetId ? s.buildings.find(b => b.id === w.targetId) : null
               if(house && market){
@@ -1884,11 +1888,12 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
                   route: [{ x: market.x, y: market.y }, { x: house.x, y: house.y }],
                   routeIndex: 0, routeT: 0, speed: WALKER_SPEED,
                   purpose: 'fromShop',
-                  cargo: basket,   // 货物随人携带
+                  cargo: basket,
                 }]
               }
+              // 记录今日采购成功
+              citizens[idx] = { ...citizens[idx], shoppedToday: true }
             } else if(w.purpose==='fromShop'){
-              // 市民到家：将购物篮里的货物入库，才算真正到手
               const houseId = citizens[idx].houseId
               if(w.cargo){
                 const hc = { ...(houseCrops[houseId] ?? createEmptyInventory()) }
@@ -1898,7 +1903,9 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
               }
               citizens[idx] = { ...citizens[idx], isAtHome: true }
             } else {
-              citizens[idx]={...citizens[idx],isAtHome:w.purpose==='toHome'}
+              // toWork 到达工作地 → 记录今日上工；toHome 回家
+              const workedToday = w.purpose === 'toWork' ? true : citizens[idx].workedToday
+              citizens[idx]={...citizens[idx], isAtHome: w.purpose==='toHome', workedToday}
             }
           }
 
@@ -2233,14 +2240,15 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
             avgSatisfaction,needPressure,
           }
         })
-      }, SIM_TICK_MS)
+      }, Math.round(SIM_TICK_MS / state.simSpeed))
     }
     if(!state.running && interval.current!=null){window.clearInterval(interval.current);interval.current=null}
     return()=>{if(interval.current!=null)window.clearInterval(interval.current)}
-  },[state.running])
+  },[state.running, state.simSpeed])
 
   function start()  {setState(s=>({...s,running:true}))}
   function stop()   {setState(s=>({...s,running:false}))}
+  function setSimSpeed(v:number){setState(s=>({...s,simSpeed:v}))}
   function setMoney(v:number){setState(s=>({...s,money:v}))}
   function setPopulation(v:number){setState(s=>({...s,population:v}))}
 
@@ -2576,7 +2584,7 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
   },[state])
 
   return(
-    <SimulationContext.Provider value={{state,start,stop,setMoney,setPopulation,placeBuilding,removeBuilding,selectBuildingType,placeRoad,removeRoad,placeFarmZone,removeFarmZone,selectFarmZone,setFarmCrop,setTaxRates,setMarketConfig,selectTool,selectBuilding,selectCitizen}}>
+    <SimulationContext.Provider value={{state,start,stop,setSimSpeed,setMoney,setPopulation,placeBuilding,removeBuilding,selectBuildingType,placeRoad,removeRoad,placeFarmZone,removeFarmZone,selectFarmZone,setFarmCrop,setTaxRates,setMarketConfig,selectTool,selectBuilding,selectCitizen}}>
       {children}
     </SimulationContext.Provider>
   )

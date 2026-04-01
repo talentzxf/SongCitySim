@@ -54,7 +54,7 @@ const BUILDING_BUTTONS: Array<{ key: BuildingType; label: string; icon: React.Re
 // ─── Left HUD (controls) ─────────────────────────────────────────────────────
 
 export default function HUD() {
-  const { state, start, stop, selectTool, setTaxRates } = useSimulation()
+  const { state, start, stop, selectTool, setTaxRates, setSimSpeed } = useSimulation()
   const [taxModalOpen, setTaxModalOpen] = React.useState(false)
   const attempt = state.lastBuildAttempt
 
@@ -164,10 +164,21 @@ export default function HUD() {
               {state.migrants.length > 0 && <Tag color="processing">🐴 入城 {state.migrants.length}</Tag>}
             </Space>
 
-            {/* Start / Stop */}
-            {state.running
-              ? <Button block icon={<PauseCircleOutlined />} onClick={stop}>停止</Button>
-              : <Button block type="primary" icon={<PlayCircleOutlined />} onClick={start}>开始</Button>}
+            {/* Start / Stop + speed control */}
+            <Space.Compact block>
+              {state.running
+                ? <Button icon={<PauseCircleOutlined />} onClick={stop} style={{ flex: 2 }}>停止</Button>
+                : <Button type="primary" icon={<PlayCircleOutlined />} onClick={start} style={{ flex: 2 }}>开始</Button>}
+              {([0.25, 1, 2] as const).map(s => (
+                <Button key={s} size="middle"
+                  type={state.simSpeed === s ? 'primary' : 'default'}
+                  onClick={() => setSimSpeed(s)}
+                  title={s === 0.25 ? '慢放（¼速）' : s === 1 ? '正常速度' : '快进（2倍）'}
+                  style={{ flex: 1, fontSize: 12 }}>
+                  {s === 0.25 ? '慢' : s === 1 ? '×1' : '×2'}
+                </Button>
+              ))}
+            </Space.Compact>
 
             <Divider style={{ margin: '4px 0' }}>工具</Divider>
 
@@ -211,6 +222,9 @@ export default function HUD() {
             </Typography.Text>
 
             {feedback && <Alert showIcon type={feedback.type} message={feedback.message} style={{ padding: '4px 8px' }} />}
+
+            {/* 上奏 */}
+            <AdvicePanel />
           </Space>
         </Card>
       </div>
@@ -227,12 +241,198 @@ export default function HUD() {
   )
 }
 
+// ─── 上奏（城市建议面板）─────────────────────────────────────────────────────
+
+type AdviceItem = { severity: 'error' | 'warning' | 'info'; icon: string; title: string; body: string }
+
+function computeAdvice(state: ReturnType<typeof useSimulation>['state']): AdviceItem[] {
+  const items: AdviceItem[] = []
+  const pop = state.citizens.length
+
+  // 1. 饥荒 ──────────────────────────────────────────────────────────────────
+  const starvingCount = state.citizens.filter(c => (state.houseFood[c.houseId] ?? 0) < 2).length
+  if (starvingCount > 0) {
+    items.push({
+      severity: starvingCount > pop * 0.3 ? 'error' : 'warning',
+      icon: '🍚',
+      title: `饥寒交迫（${starvingCount}户）`,
+      body: starvingCount > pop * 0.3
+        ? '城内饿殍遍野，亟需广开仓廪，遣行商至坊间散粮赈济，速建粮仓与集市。'
+        : '部分小民存粮告急，宜令行商加紧出行，或降田赋以宽民力。',
+    })
+  }
+
+  // 2. 无业游民 ──────────────────────────────────────────────────────────────
+  const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId).length
+  if (idleCount > 0) {
+    items.push({
+      severity: idleCount > pop * 0.4 ? 'error' : 'warning',
+      icon: '⛏',
+      title: `游手好闲（${idleCount}人待业）`,
+      body: idleCount > pop * 0.4
+        ? '城中大半居民无所事事，怨声载道，民心不稳。速建集市、粮仓、冶铁厂以安置流民。'
+        : '闲散人口渐增，久居无业则民心衰颓。可修筑农地或再开工坊以纳闲丁。',
+    })
+  }
+
+  // 3. 无路可达 ──────────────────────────────────────────────────────────────
+  const noRoadHouses = state.buildings.filter(b =>
+    b.type === 'house' &&
+    ![[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) => state.roads.some(r => r.x === b.x+dx && r.y === b.y+dy))
+  )
+  if (noRoadHouses.length > 0) {
+    items.push({
+      severity: 'warning',
+      icon: '🛤',
+      title: `坊巷不通（${noRoadHouses.length}处）`,
+      body: '有民居尚无路可达，行商无法上门，居民出行困难。请铺设道路延伸至各坊区。',
+    })
+  }
+
+  // 4. 疫病 ──────────────────────────────────────────────────────────────────
+  const sickCount = state.citizens.filter(c => c.isSick).length
+  if (sickCount > 0) {
+    const deadHouses = Object.values(state.houseDead ?? {}).filter(v => v > 0).length
+    items.push({
+      severity: sickCount > pop * 0.2 ? 'error' : 'warning',
+      icon: '🏥',
+      title: `疫疠横行（${sickCount}人染病${deadHouses > 0 ? `，${deadHouses}户有亡者` : ''}）`,
+      body: deadHouses > 2
+        ? '坊间亡者成堆，疫情扩散迅猛，危及全城。亟需修建药铺，并清除亡者，切断传播。'
+        : '城内已有染病之民，宜尽早建药铺、保障口粮，以防病情蔓延。',
+    })
+  }
+
+  // 5. 民心低落 ──────────────────────────────────────────────────────────────
+  const lowSatCount = state.citizens.filter(c => c.satisfaction < 40).length
+  if (lowSatCount > pop * 0.25) {
+    items.push({
+      severity: 'warning',
+      icon: '😔',
+      title: `民心低落（${lowSatCount}人不满）`,
+      body: '大批居民怨声载道，安乐度持续走低。可降低苛捐杂税、丰富粮食种类或修建文化场所。',
+    })
+  }
+
+  // 6. 粮仓空虚 ──────────────────────────────────────────────────────────────
+  const mktTotal = Object.values(state.marketInventory).reduce((a, v) => a + v, 0)
+  const granaryTotal = Object.values(state.granaryInventory).reduce((a, v) => a + v, 0)
+  if (mktTotal < 2 && granaryTotal < 2 && pop > 0) {
+    items.push({
+      severity: 'error',
+      icon: '🏚',
+      title: '仓廪虚空',
+      body: '集市与粮仓皆已断粮，城内将陷入大饥。速令农夫增垦良田，并安排行商赶赴收购。',
+    })
+  }
+
+  // 7. 赋税过重 ──────────────────────────────────────────────────────────────
+  if (state.taxRates.ding > 12 || state.taxRates.tian > 0.25 || state.taxRates.shang > 0.15) {
+    items.push({
+      severity: 'warning',
+      icon: '📜',
+      title: '苛政猛于虎',
+      body: '丁税、田赋或市税课率偏重，百姓积蓄日蹙，采购力不足。建议适度减税，以养民力。',
+    })
+  }
+
+  // 8. 一切尚好 ──────────────────────────────────────────────────────────────
+  if (items.length === 0 && pop > 0) {
+    items.push({
+      severity: 'info',
+      icon: '🌸',
+      title: '四境安宁',
+      body: '臣等奏曰：城内粮丰民足，百业兴旺，居民安居乐业，请官家宽心。',
+    })
+  }
+
+  return items.sort((a, b) => {
+    const rank = { error: 0, warning: 1, info: 2 }
+    return rank[a.severity] - rank[b.severity]
+  })
+}
+
+function AdvicePanel() {
+  const { state } = useSimulation()
+  const advice = React.useMemo(() => computeAdvice(state), [
+    state.citizens, state.houseFood, state.buildings, state.roads,
+    state.marketInventory, state.granaryInventory, state.taxRates, state.houseDead,
+  ])
+
+  if (advice.length === 0) return null
+  const top = advice[0]
+
+  return (
+    <Collapse size="small" items={[{
+      key: 'advice',
+      label: (
+        <Space size={4}>
+          <span style={{ fontSize: 12 }}>📋 上奏</span>
+          <Tag color={top.severity === 'error' ? 'error' : top.severity === 'warning' ? 'warning' : 'success'}
+            style={{ fontSize: 10, padding: '0 4px' }}>
+            {advice.filter(a => a.severity === 'error').length > 0
+              ? `${advice.filter(a => a.severity === 'error').length} 急务`
+              : advice.filter(a => a.severity === 'warning').length > 0
+                ? `${advice.filter(a => a.severity === 'warning').length} 注意`
+                : '无虞'}
+          </Tag>
+        </Space>
+      ),
+      children: (
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          {advice.map((item, i) => (
+            <Alert key={i} showIcon type={item.severity}
+              message={<span style={{ fontSize: 12, fontWeight: 600 }}>{item.icon} {item.title}</span>}
+              description={<span style={{ fontSize: 11, lineHeight: 1.5 }}>{item.body}</span>}
+              style={{ padding: '4px 8px' }} />
+          ))}
+        </Space>
+      ),
+    }]} />
+  )
+}
+
 // ─── Debug overlay (floating, top-right) ────────────────────────────────────
+
+const FPS_HISTORY_LEN = 60   // keep last 60 samples (~30 s at 500 ms interval)
+
+/** SVG sparkline for FPS history */
+function FpsSparkline({ history, width = 180, height = 36 }: { history: number[]; width?: number; height?: number }) {
+  if (history.length < 2) return null
+  const cap = 80  // y-axis top (fps)
+  // colour each segment by its fps value
+  const segments: React.ReactNode[] = []
+  for (let i = 1; i < history.length; i++) {
+    const v = history[i]
+    const color = v >= 50 ? '#52c41a' : v >= 30 ? '#faad14' : '#ff4d4f'
+    const x0 = ((i - 1) / (history.length - 1)) * width
+    const y0 = height - (Math.min(history[i - 1], cap) / cap) * height
+    const x1 = (i / (history.length - 1)) * width
+    const y1 = height - (Math.min(v, cap) / cap) * height
+    segments.push(<line key={i} x1={x0.toFixed(1)} y1={y0.toFixed(1)} x2={x1.toFixed(1)} y2={y1.toFixed(1)} stroke={color} strokeWidth="1.5" />)
+  }
+  // reference lines at 30 and 60 fps
+  const y30 = height - (30 / cap) * height
+  const y60 = height - (60 / cap) * height
+  return (
+    <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
+      {/* ref lines */}
+      <line x1={0} y1={y60.toFixed(1)} x2={width} y2={y60.toFixed(1)} stroke="#52c41a22" strokeWidth="1" strokeDasharray="3,3" />
+      <line x1={0} y1={y30.toFixed(1)} x2={width} y2={y30.toFixed(1)} stroke="#faad1422" strokeWidth="1" strokeDasharray="3,3" />
+      {/* labels */}
+      <text x={2} y={(y60 - 2).toFixed(1)} fill="#52c41a55" fontSize="8">60</text>
+      <text x={2} y={(y30 - 2).toFixed(1)} fill="#faad1455" fontSize="8">30</text>
+      {segments}
+    </svg>
+  )
+}
 
 function DebugOverlay() {
   const [visible, setVisible] = React.useState(false)
   const [seed, setSeed] = React.useState('')
   const [fps, setFps] = React.useState<number | null>(null)
+  const [frameMs, setFrameMs] = React.useState<number | null>(null)
+  const [fpsHistory, setFpsHistory] = React.useState<number[]>([])
 
   // ── FPS counter via requestAnimationFrame ──────────────────────────────
   React.useEffect(() => {
@@ -240,11 +440,18 @@ function DebugOverlay() {
     let frameCount = 0
     let lastUpdate = performance.now()
 
-    function tick() {
+    function tick(now: number) {
       frameCount++
-      const now = performance.now()
       if (now - lastUpdate >= 500) {
-        setFps(Math.round((frameCount / (now - lastUpdate)) * 1000))
+        const elapsed = now - lastUpdate
+        const measured = Math.round((frameCount / elapsed) * 1000)
+        const ms = Math.round(elapsed / frameCount)
+        setFps(measured)
+        setFrameMs(ms)
+        setFpsHistory(prev => {
+          const next = [...prev, measured]
+          return next.length > FPS_HISTORY_LEN ? next.slice(next.length - FPS_HISTORY_LEN) : next
+        })
         frameCount = 0
         lastUpdate = now
       }
@@ -256,6 +463,9 @@ function DebugOverlay() {
 
   const fpsColor = fps === null ? '#888' : fps >= 50 ? '#52c41a' : fps >= 30 ? '#faad14' : '#ff4d4f'
   const fpsLabel = fps === null ? '…' : `${fps}`
+
+  const fpsMin  = fpsHistory.length ? Math.min(...fpsHistory) : null
+  const fpsAvg  = fpsHistory.length ? Math.round(fpsHistory.reduce((s, v) => s + v, 0) / fpsHistory.length) : null
 
   // ── Seed ───────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -299,13 +509,37 @@ function DebugOverlay() {
 
       {/* Expanded debug panel */}
       {visible && (
-        <div style={{ background: 'rgba(30,30,40,0.92)', border: '1px solid #333', borderRadius: 8, padding: '10px 12px', minWidth: 230, backdropFilter: 'blur(4px)' }}>
+        <div style={{ background: 'rgba(30,30,40,0.92)', border: '1px solid #333', borderRadius: 8, padding: '10px 12px', minWidth: 220, backdropFilter: 'blur(4px)' }}>
 
-          {/* FPS detail row */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <Typography.Text style={{ color: '#aaa', fontSize: 11 }}>🎞 帧率</Typography.Text>
-            <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: fpsColor }}>
-              {fpsLabel} fps
+          {/* ── FPS section ─────────────────────────────────────────── */}
+          <Typography.Text style={{ color: '#aaa', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' }}>🎞 帧率</Typography.Text>
+
+          {/* Main FPS + frame-time row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '4px 0 6px' }}>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 22, color: fpsColor, lineHeight: 1 }}>
+              {fpsLabel}
+              <span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 3 }}>fps</span>
+            </span>
+            <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#aaa' }}>
+              {frameMs !== null ? `${frameMs} ms/帧` : '…'}
+            </span>
+          </div>
+
+          {/* Sparkline */}
+          <div style={{ background: 'rgba(0,0,0,0.35)', borderRadius: 4, padding: '4px 4px 2px', marginBottom: 5 }}>
+            <FpsSparkline history={fpsHistory} width={196} height={38} />
+          </div>
+
+          {/* Min / Avg stats */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+            <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#888' }}>
+              最低 <b style={{ color: fpsMin !== null && fpsMin < 30 ? '#ff4d4f' : '#bbb' }}>{fpsMin ?? '…'}</b>
+            </span>
+            <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#888' }}>
+              均值 <b style={{ color: fpsAvg !== null ? (fpsAvg >= 50 ? '#52c41a' : fpsAvg >= 30 ? '#faad14' : '#ff4d4f') : '#bbb' }}>{fpsAvg ?? '…'}</b>
+            </span>
+            <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#555', marginLeft: 'auto' }}>
+              {fpsHistory.length} 样本
             </span>
           </div>
 
