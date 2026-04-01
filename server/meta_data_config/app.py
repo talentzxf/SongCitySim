@@ -240,5 +240,5 @@ def save_profession(pid):
 
 
 if __name__ == '__main__':
-    print('Starting Flask meta_data_config on http://127.0.0.1:5000')
-    app.run(port=5000)
+    print('Starting Flask meta_data_config on http://0.0.0.0:5000 (bound to all interfaces)')
+    app.run(host='0.0.0.0', port=5000)
