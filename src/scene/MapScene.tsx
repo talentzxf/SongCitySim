@@ -239,7 +239,8 @@ function MigrantHorse({ x, y }: { x: number; y: number }) {
     const moving = Math.abs(dx) + Math.abs(dz) > 0.001
     if (moving) { a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10)); ref.current.rotation.y = a.facing }
     const stride = moving ? Math.sin(a.time * 14) : 0
-    ref.current.position.y = moving ? 0.015 + Math.abs(stride) * 0.025 : 0
+    const baseY = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
+    ref.current.position.y = baseY + (moving ? 0.015 + Math.abs(stride) * 0.025 : 0)
     if (horseRef.current) horseRef.current.rotation.z = moving ? Math.sin(a.time * 14) * 0.05 : 0
     if (riderRef.current) { riderRef.current.position.y = 0.36 + (moving ? Math.cos(a.time * 14) * 0.018 : 0); riderRef.current.rotation.z = moving ? Math.sin(a.time * 7) * 0.04 : 0 }
   })
@@ -297,7 +298,8 @@ function CommutingWalker({ x, y, purpose, selected, onClick }: {
     const moving = Math.abs(dx) + Math.abs(dz) > 0.001
     if (moving) { a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10)); ref.current.rotation.y = a.facing }
     const stride = moving ? Math.sin(a.time * 10) : 0
-    ref.current.position.y = moving ? Math.abs(stride) * 0.012 : 0
+    const baseY = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
+    ref.current.position.y = baseY + (moving ? Math.abs(stride) * 0.012 : 0)
     if (bodyRef.current) bodyRef.current.rotation.z = moving ? Math.sin(a.time * 10) * 0.06 : 0
   })
 
@@ -602,10 +604,22 @@ function BridgeInstances({ bridges }: { bridges: Array<{ x: number; y: number }>
 
 function RoadInstances({ roads }: { roads: Array<{ x: number; y: number }> }) {
   const normalRoads = React.useMemo(() => roads.filter(r => !(r.y === 0 && r.x <= -6)), [roads])
+  const mountainRoads = React.useMemo(() => normalRoads.filter(r => isMountainAt(r.x, r.y)), [normalRoads])
+  const flatRoads = React.useMemo(() => normalRoads.filter(r => !isMountainAt(r.x, r.y)), [normalRoads])
   const highwayRoads = React.useMemo(() => roads.filter(r => r.y === 0 && r.x <= -6), [roads])
+  // Mountain road items at their actual terrain height (not fixed y)
+  const mtnRoadItems   = React.useMemo(() => mountainRoads.map(r => ({ x: r.x, y: r.y, h: tileH(r.x, r.y) + 0.010 })), [mountainRoads])
+  const mtnStripeItems = React.useMemo(() => mountainRoads.map(r => ({ x: r.x, y: r.y, h: tileH(r.x, r.y) + 0.014 })), [mountainRoads])
   return (
     <>
-      {normalRoads.length > 0 && <FlatInstances items={normalRoads} y={0.05} size={[0.98, 0.98]} color={palette.map.road} />}
+      {flatRoads.length > 0 && <FlatInstances items={flatRoads} y={0.05} size={[0.98, 0.98]} color={palette.map.road} />}
+      {mtnRoadItems.length > 0 && (
+        <>
+          {/* mountain roads sit on the terrain surface, not at a fixed y */}
+          <VariableHeightFlatInstances items={mtnRoadItems}   size={[0.98, 0.98]} color={palette.map.mountainRoad} />
+          <VariableHeightFlatInstances items={mtnStripeItems} size={[0.32, 0.32]} color={palette.map.roadDust} opacity={0.9} />
+        </>
+      )}
       {highwayRoads.length > 0 && (
         <>
           <FlatInstances items={highwayRoads} y={0.042} size={[1.22, 1.22]} color={palette.map.highwayEdge} />
@@ -643,6 +657,16 @@ function tileH(x: number, y: number): number {
   return BASE + getMountainHeight(x, y) * SCALE
 }
 const _MAX_MOUNTAIN_H = 0.04 + worldGenConfig.mountain.tileScale
+
+/**
+ * Returns the lerped terrain Y for a character moving from (sx,sz) to (tx,tz) at param t.
+ * Interpolates between the two tile heights so characters glide smoothly up/down mountains.
+ */
+function lerpTerrainY(sx: number, sz: number, tx: number, tz: number, t: number): number {
+  const sh = isMountainAt(Math.round(sx), Math.round(sz)) ? tileH(Math.round(sx), Math.round(sz)) : 0
+  const eh = isMountainAt(Math.round(tx), Math.round(tz)) ? tileH(Math.round(tx), Math.round(tz)) : 0
+  return sh + (eh - sh) * t
+}
 
 // ─── 3-D Mountain terrain (instanced rock boxes + optional snow caps) ──────
 
@@ -928,6 +952,7 @@ function OxCartMesh({ x, y, loaded }: { x: number; y: number; loaded: boolean })
     const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
     ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
     ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
+    ref.current.position.y = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
     const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
     if (Math.abs(dx) + Math.abs(dz) > 0.001) {
       a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 8))
@@ -998,7 +1023,8 @@ function MarketBuyerMesh({ x, y, loaded }: { x: number; y: number; loaded: boole
     const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
     const moving = Math.abs(dx) + Math.abs(dz) > 0.001
     if (moving) { a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10)); ref.current.rotation.y = a.facing }
-    ref.current.position.y = moving ? Math.abs(Math.sin(a.time * 9)) * 0.01 : 0
+    const baseY = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
+    ref.current.position.y = baseY + (moving ? Math.abs(Math.sin(a.time * 9)) * 0.01 : 0)
     if (bodyRef.current) bodyRef.current.rotation.z = moving ? Math.sin(a.time * 9) * 0.05 : 0
   })
 
@@ -1332,6 +1358,199 @@ function SickHouseMarker({ x, y, deadCount }: { x: number; y: number; deadCount:
   )
 }
 
+
+// ─── Road pathfinding utilities (module-level) ────────────────────────────
+
+function rasterLine(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const pts: { x: number; y: number }[] = []
+  let dx = Math.abs(b.x - a.x); let dy = Math.abs(b.y - a.y)
+  const sx = a.x < b.x ? 1 : -1; const sy = a.y < b.y ? 1 : -1
+  let err = dx - dy; let x = a.x; let y = a.y
+  while (true) {
+    pts.push({ x, y }); if (x === b.x && y === b.y) break
+    const e2 = err * 2
+    if (e2 > -dy) { err -= dy; x += sx }
+    if (e2 < dx) { err += dx; y += sy }
+  }
+  return pts
+}
+
+function expandToFourNeighborPath(pts: { x: number; y: number }[]) {
+  if (pts.length < 2) return pts
+  const out: { x: number; y: number }[] = [pts[0]]
+  for (let i = 1; i < pts.length; i++) {
+    const prev = out[out.length - 1]
+    const cur = pts[i]
+    const dx = cur.x - prev.x
+    const dy = cur.y - prev.y
+    if (Math.abs(dx) === 1 && Math.abs(dy) === 1) {
+      out.push({ x: cur.x, y: prev.y })
+    }
+    out.push(cur)
+  }
+  return out
+}
+
+class MinHeap<T> {
+  private data: { f: number; item: T }[] = []
+  push(f: number, item: T) {
+    this.data.push({ f, item }); this._siftUp(this.data.length - 1)
+  }
+  pop(): T | undefined {
+    if (this.data.length === 0) return undefined
+    const top = this.data[0].item
+    const last = this.data.pop()!
+    if (this.data.length > 0) { this.data[0] = last; this._siftDown(0) }
+    return top
+  }
+  get size() { return this.data.length }
+  private _siftUp(i: number) {
+    while (i > 0) {
+      const p = (i - 1) >> 1
+      if (this.data[p].f <= this.data[i].f) break
+      ;[this.data[p], this.data[i]] = [this.data[i], this.data[p]]; i = p
+    }
+  }
+  private _siftDown(i: number) {
+    while (true) {
+      let m = i; const l = 2 * i + 1, r = 2 * i + 2
+      if (l < this.data.length && this.data[l].f < this.data[m].f) m = l
+      if (r < this.data.length && this.data[r].f < this.data[m].f) m = r
+      if (m === i) break
+      ;[this.data[m], this.data[i]] = [this.data[i], this.data[m]]; i = m
+    }
+  }
+}
+
+/**
+ * A* road pathfinding on the tile grid.
+ * avoidMountains=true → mountain tiles cost 100 (go around if flat route exists).
+ * avoidMountains=false → mountain tiles cost 2 (allow climbing when dest is on mountain).
+ * River tiles are impassable.
+ */
+function astarRoad(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  avoidMountains: boolean,
+): { x: number; y: number }[] {
+  const halfX = Math.floor(MAP_SIZE_X / 2)
+  const halfY = Math.floor(MAP_SIZE_Y / 2)
+  function inBounds(x: number, y: number) {
+    return x >= -halfX && x < halfX && y >= -halfY && y < halfY
+  }
+  function tileCost(x: number, y: number): number {
+    if (isRiverAt(x, y)) return Infinity
+    if (isMountainAt(x, y)) return avoidMountains ? 100 : 2
+    return 1
+  }
+  function h(x: number, y: number) { return Math.abs(x - end.x) + Math.abs(y - end.y) }
+
+  const key = (x: number, y: number) => `${x},${y}`
+  const startKey = key(start.x, start.y)
+  const endKey = key(end.x, end.y)
+  const gScore = new Map<string, number>([[startKey, 0]])
+  const parent = new Map<string, string | null>([[startKey, null]])
+  const closed = new Set<string>()
+  const heap = new MinHeap<{ x: number; y: number; k: string }>()
+  heap.push(h(start.x, start.y), { x: start.x, y: start.y, k: startKey })
+
+  const DIRS = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+  let found = false
+  for (let iter = 0; iter < 5000 && heap.size > 0; iter++) {
+    const cur = heap.pop()!
+    if (closed.has(cur.k)) continue
+    if (cur.k === endKey) { found = true; break }
+    closed.add(cur.k)
+    const curG = gScore.get(cur.k) ?? Infinity
+    for (const d of DIRS) {
+      const nx = cur.x + d.x, ny = cur.y + d.y
+      if (!inBounds(nx, ny)) continue
+      const nk = key(nx, ny)
+      if (closed.has(nk)) continue
+      const cost = tileCost(nx, ny)
+      if (!isFinite(cost)) continue
+      const newG = curG + cost
+      if (newG < (gScore.get(nk) ?? Infinity)) {
+        gScore.set(nk, newG); parent.set(nk, cur.k)
+        heap.push(newG + h(nx, ny), { x: nx, y: ny, k: nk })
+      }
+    }
+  }
+
+  if (!found) return rasterLine(start, end)   // fallback: straight Bresenham line
+
+  const path: { x: number; y: number }[] = []
+  let k: string | null = endKey
+  while (k !== null) {
+    const [xi, yi] = k.split(',').map(Number)
+    path.push({ x: xi, y: yi })
+    k = parent.get(k) ?? null
+  }
+  path.reverse()
+  return path
+}
+
+// ─── Variable-height instanced flat mesh ──────────────────────────────────
+// Like FlatInstances but each item carries its own y coordinate.
+// Used for road preview tiles on mountain terrain.
+
+function VariableHeightFlatInstances({
+  items, size, color, opacity = 1,
+}: {
+  items: Array<{ x: number; y: number; h: number }>
+  size: [number, number]
+  color: string
+  opacity?: number
+}) {
+  const ref = React.useRef<THREE.InstancedMesh>(null)
+  React.useLayoutEffect(() => {
+    if (!ref.current || items.length === 0) return
+    const mesh = ref.current
+    const temp = new THREE.Object3D()
+    mesh.count = items.length
+    for (let i = 0; i < items.length; i++) {
+      const { x, y, h } = items[i]
+      temp.position.set(x, h, y)
+      temp.rotation.set(-Math.PI / 2, 0, 0)
+      temp.scale.set(1, 1, 1)
+      temp.updateMatrix()
+      mesh.setMatrixAt(i, temp.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  }, [items])
+  if (items.length === 0) return null
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
+      <planeGeometry args={size} />
+      <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
+    </instancedMesh>
+  )
+}
+
+// ─── Road ghost preview ────────────────────────────────────────────────────
+
+function RoadPreviewInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }) {
+  const flatTiles = React.useMemo(() => tiles.filter(t => !isMountainAt(t.x, t.y)), [tiles])
+  // Mountain preview tiles each sit 0.05 units above their own terrain surface
+  const mtnItems  = React.useMemo(() =>
+    tiles
+      .filter(t => isMountainAt(t.x, t.y))
+      .map(t => ({ x: t.x, y: t.y, h: tileH(t.x, t.y) + 0.05 })),
+    [tiles],
+  )
+  if (tiles.length === 0) return null
+  return (
+    <>
+      {flatTiles.length > 0 && (
+        <FlatInstances items={flatTiles} y={0.09} size={[0.88, 0.88]} color="#1890ff" opacity={0.60} />
+      )}
+      {mtnItems.length > 0 && (
+        <VariableHeightFlatInstances items={mtnItems} size={[0.88, 0.88]} color="#fa8c16" opacity={0.65} />
+      )}
+    </>
+  )
+}
+
 // ─── Map scene ────────────────────────────────────────────────────────────
 
 export default function MapScene() {
@@ -1350,6 +1569,10 @@ export default function MapScene() {
   const actionsRef = React.useRef({ placeBuilding, placeRoad, removeBuilding, removeRoad, placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone })
   const dragRef = React.useRef({ active: false, didDrag: false, lastTileKey: '', lastTile: null as null | { x: number; y: number } })
   const objectClickedRef = React.useRef(false)
+  // Road preview state (A* ghost path shown while dragging in road mode)
+  const [roadPreview, setRoadPreview] = React.useState<{ x: number; y: number }[]>([])
+  const roadPreviewRef = React.useRef<{ x: number; y: number }[]>([])
+  const roadDragStartRef = React.useRef<{ x: number; y: number } | null>(null)
   // Ghost preview mouse tracking
   const mouseNDCRef = React.useRef({ x: 0, y: 0 })
   const mouseOnCanvasRef = React.useRef(false)
@@ -1446,6 +1669,14 @@ export default function MapScene() {
   React.useEffect(() => {
     actionsRef.current = { placeBuilding, placeRoad, removeBuilding, removeRoad, placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone }
   }, [placeBuilding, placeRoad, removeBuilding, removeRoad, placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone])
+
+  // Expose pathfinding helpers for e2e tests
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      ;(window as any).__ASTAR_ROAD__    = astarRoad
+      ;(window as any).__IS_MOUNTAIN_AT__ = isMountainAt
+    }
+  }, [])
 
   React.useEffect(() => {
     try {
@@ -1554,8 +1785,8 @@ export default function MapScene() {
 
   // Interaction effect (stable, uses refs)
   React.useEffect(() => {
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
-    const raycaster = new THREE.Raycaster()
+    const plane      = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)  // Y=0 fallback only
+    const raycaster  = new THREE.Raycaster()
     const intersectPt = new THREE.Vector3()
 
     function stopDrag() { dragRef.current.active = false; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null }
@@ -1565,6 +1796,32 @@ export default function MapScene() {
       const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1
       const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera({ x: ndcX, y: ndcY } as any, camera as THREE.Camera)
+
+      const { origin: ro, direction: rd } = raycaster.ray
+      if (rd.y >= 0) return null  // ray points upward — no ground intersection
+
+      // ── Terrain ray-march ────────────────────────────────────────────────
+      // Advance along the ray 0.35 world-units at a time.
+      // • py ≤ tileH(cx,cz) → entered mountain geometry  → return that tile
+      // • py ≤ 0            → hit flat ground (Y=0)       → return that tile
+      // No base-projection bias; works at any camera tilt including near-horizontal.
+      const STEP = 0.35
+      for (let i = 1; i <= 700; i++) {
+        const t  = i * STEP
+        const px = ro.x + rd.x * t
+        const py = ro.y + rd.y * t
+        const pz = ro.z + rd.z * t
+        const cx = Math.round(px), cz = Math.round(pz)
+
+        if (py <= 0) {
+          // Precise Y=0 crossing
+          const t0 = -ro.y / rd.y
+          return { x: Math.round(ro.x + rd.x * t0), y: Math.round(ro.z + rd.z * t0) }
+        }
+        const terrainH = isMountainAt(cx, cz) ? tileH(cx, cz) : 0
+        if (py <= terrainH) return { x: cx, y: cz }
+      }
+      // Fallback (shouldn't normally be reached)
       if (!raycaster.ray.intersectPlane(plane, intersectPt)) return null
       return { x: Math.round(intersectPt.x), y: Math.round(intersectPt.z) }
     }
@@ -1610,37 +1867,6 @@ export default function MapScene() {
       }
     }
 
-    function rasterLine(a: { x: number; y: number }, b: { x: number; y: number }) {
-      const pts: { x: number; y: number }[] = []
-      let dx = Math.abs(b.x - a.x); let dy = Math.abs(b.y - a.y)
-      const sx = a.x < b.x ? 1 : -1; const sy = a.y < b.y ? 1 : -1
-      let err = dx - dy; let x = a.x; let y = a.y
-      while (true) {
-        pts.push({ x, y }); if (x === b.x && y === b.y) break
-        const e2 = err * 2
-        if (e2 > -dy) { err -= dy; x += sx }
-        if (e2 < dx) { err += dx; y += sy }
-      }
-      return pts
-    }
-
-    function expandToFourNeighborPath(pts: { x: number; y: number }[]) {
-      if (pts.length < 2) return pts
-      const out: { x: number; y: number }[] = [pts[0]]
-      for (let i = 1; i < pts.length; i++) {
-        const prev = out[out.length - 1]
-        const cur = pts[i]
-        const dx = cur.x - prev.x
-        const dy = cur.y - prev.y
-        if (Math.abs(dx) === 1 && Math.abs(dy) === 1) {
-          // Add a corner tile so diagonal cursor movement still paints 4-neighbor-continuous roads.
-          out.push({ x: cur.x, y: prev.y })
-        }
-        out.push(cur)
-      }
-      return out
-    }
-
     function paintRoad(tile: { x: number; y: number }) {
       const s = stateRef.current
       if (s.buildings.some(b => b.x === tile.x && b.y === tile.y)) return
@@ -1656,30 +1882,71 @@ export default function MapScene() {
     }
 
     function onClick(e: MouseEvent) {
-      // 若 R3F 对象（建筑/小人）已处理此次点击，则跳过地块逻辑
       if (objectClickedRef.current) { objectClickedRef.current = false; return }
       if ((stateRef.current.selectedTool === 'road' || stateRef.current.selectedTool === 'farmZone') && dragRef.current.didDrag) { dragRef.current.didDrag = false; return }
       const t = getTile(e); if (t) applyTool(t.x, t.y)
     }
 
     function onMouseDown(e: MouseEvent) {
-      if (stateRef.current.selectedTool !== 'road' && stateRef.current.selectedTool !== 'farmZone') return
-      dragRef.current.active = true; dragRef.current.didDrag = true; dragRef.current.lastTileKey = ''
+      const tool = stateRef.current.selectedTool
+      if (tool !== 'road' && tool !== 'farmZone') return
+      dragRef.current.active = true
+      dragRef.current.lastTileKey = ''
+      dragRef.current.lastTile = null
       const t = getTile(e); if (!t) return
-      dragRef.current.lastTileKey = `${t.x},${t.y}`; dragRef.current.lastTile = t
-      if (stateRef.current.selectedTool === 'road') paintRoad(t)
-      if (stateRef.current.selectedTool === 'farmZone') paintFarmZone(t)
+      dragRef.current.lastTileKey = `${t.x},${t.y}`
+
+      if (tool === 'road') {
+        // Road: don't build immediately — show preview, commit on mouseup
+        dragRef.current.didDrag = false
+        roadDragStartRef.current = t
+        const preview = [t]
+        setRoadPreview(preview)
+        roadPreviewRef.current = preview
+      } else {
+        // FarmZone: keep original paint-on-drag behaviour
+        dragRef.current.didDrag = true
+        dragRef.current.lastTile = t
+        paintFarmZone(t)
+      }
     }
 
     function onMouseMove(e: MouseEvent) {
       const tool = stateRef.current.selectedTool
-      if ((tool !== 'road' && tool !== 'farmZone') || !dragRef.current.active) return
+      if (!dragRef.current.active) return
       const t = getTile(e); if (!t) return
       const key = `${t.x},${t.y}`; if (key === dragRef.current.lastTileKey) return
-      const from = dragRef.current.lastTile ?? t
-      const path = expandToFourNeighborPath(rasterLine(from, t))
-      path.forEach(tool === 'road' ? paintRoad : paintFarmZone)
-      dragRef.current.lastTileKey = key; dragRef.current.lastTile = t; dragRef.current.didDrag = true
+      dragRef.current.lastTileKey = key
+
+      if (tool === 'road' && roadDragStartRef.current) {
+        dragRef.current.didDrag = true
+        const start = roadDragStartRef.current
+        const endOnMtn   = isMountainAt(t.x, t.y)
+        const startOnMtn = isMountainAt(start.x, start.y)
+        // Avoid mountains unless the destination tile is itself on a mountain
+        const avoidMountains = !endOnMtn && !startOnMtn
+        const path = astarRoad(start, t, avoidMountains)
+        setRoadPreview(path)
+        roadPreviewRef.current = path
+      } else if (tool === 'farmZone') {
+        const from = dragRef.current.lastTile ?? t
+        const path = expandToFourNeighborPath(rasterLine(from, t))
+        path.forEach(paintFarmZone)
+        dragRef.current.lastTile = t
+        dragRef.current.didDrag = true
+      }
+    }
+
+    function onMouseUpHandler() {
+      if (dragRef.current.active && stateRef.current.selectedTool === 'road') {
+        if (dragRef.current.didDrag && roadPreviewRef.current.length > 0) {
+          for (const tile of roadPreviewRef.current) paintRoad(tile)
+        }
+        setRoadPreview([])
+        roadPreviewRef.current = []
+        roadDragStartRef.current = null
+      }
+      stopDrag()
     }
 
     const c = gl.domElement
@@ -1699,7 +1966,7 @@ export default function MapScene() {
     c.addEventListener('mousemove', onMouseMoveGhost)
     c.addEventListener('mouseleave', onMouseLeaveGhost)
     window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', () => stopDrag())
+    window.addEventListener('mouseup', onMouseUpHandler)
     window.addEventListener('blur', () => stopDrag())
     return () => {
       c.removeEventListener('click', onClick)
@@ -1707,6 +1974,8 @@ export default function MapScene() {
       c.removeEventListener('mousemove', onMouseMoveGhost)
       c.removeEventListener('mouseleave', onMouseLeaveGhost)
       window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUpHandler)
+      setRoadPreview([]); roadPreviewRef.current = []; roadDragStartRef.current = null
       stopDrag()
     }
   }, [gl, camera])
@@ -1902,6 +2171,9 @@ export default function MapScene() {
           />
         )
       })}
+
+      {/* Road path ghost preview (A* result while dragging in road mode) */}
+      <RoadPreviewInstances tiles={roadPreview} />
 
       {/* Placement ghost preview */}
       <PlacementGhost

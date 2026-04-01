@@ -819,7 +819,11 @@ export function getMountainHeight(x: number, y: number): number { return MOUNTAI
 if (typeof window !== 'undefined') {
   ;(window as any).__RIVER_TILES__ = _RIVER_TILES
   ;(window as any).__RIVER_CENTER_LINE__ = _RIVER_CENTER_LINE
+  ;(window as any).__MOUNTAIN_TILES__ = _MOUNTAIN_TILES
+  ;(window as any).__IS_MOUNTAIN_AT__ = (x: number, y: number) => isMountainAt(x, y)
   ;(window as any).getMountainHeight = (x: number, y: number) => MOUNTAIN_HEIGHT_MAP.get(`${x},${y}`) ?? 0
+  // Note: window.ENTRY_TILE and window.__ENTRY_TILE__ are set later inside
+  // createHighwayRoads() once the true highway start tile is known.
   ;(window as any).MAP_SIZE_X = MAP_SIZE_X
   ;(window as any).MAP_SIZE_Y = MAP_SIZE_Y
   ;(window as any).__TEST_API__ = {
@@ -1184,7 +1188,8 @@ function createHighwayRoads() {
       const path = bfsPathAvoiding(s, { x: 0, y: 0 })
       if (path && path.length > 0) {
         HIGHWAY_MAIN_PATH = path.slice()
-        try { if (typeof window !== 'undefined') { (window as any).HIGHWAY_MAIN_PATH = HIGHWAY_MAIN_PATH; (window as any).ENTRY_TILE = HIGHWAY_MAIN_PATH[0] } } catch(e){}
+        ENTRY_TILE = HIGHWAY_MAIN_PATH[0]   // ← keep module export in sync with actual highway start
+        try { if (typeof window !== 'undefined') { (window as any).HIGHWAY_MAIN_PATH = HIGHWAY_MAIN_PATH; (window as any).ENTRY_TILE = HIGHWAY_MAIN_PATH[0]; (window as any).__ENTRY_TILE__ = HIGHWAY_MAIN_PATH[0] } } catch(e){}
         for (const pt of path) add(pt.x, pt.y)
         // keep small fixed center segments
         for (let cx = 0; cx <= 5; cx++) add(cx, 0)
@@ -1215,10 +1220,12 @@ function createHighwayRoads() {
         q.push({x:nx,y:ny})
       }
     }
-    if (foundStart) {
+      if (foundStart) {
       const path = bfsPathAvoiding(foundStart, { x:0,y:0 })
       if (path && path.length>0) {
         HIGHWAY_MAIN_PATH = path.slice()
+        ENTRY_TILE = HIGHWAY_MAIN_PATH[0]   // ← keep module export in sync
+        try { if (typeof window !== 'undefined') { (window as any).HIGHWAY_MAIN_PATH = HIGHWAY_MAIN_PATH; (window as any).ENTRY_TILE = HIGHWAY_MAIN_PATH[0]; (window as any).__ENTRY_TILE__ = HIGHWAY_MAIN_PATH[0] } } catch(e){}
         for (const pt of path) add(pt.x, pt.y)
         for (let cx = 0; cx <= 5; cx++) add(cx, 0)
         add(1,1); add(3,1)
@@ -1232,7 +1239,13 @@ function createHighwayRoads() {
   for (let dx = 0; dx < 6; dx++) {
     const x = minX + dx
     for (let y = minY; y <= maxY; y++) {
-      if (!isMountainAt(x,y) && !isRiverAt(x,y)) { add(x,y); HIGHWAY_MAIN_PATH = [{x,y}]; return r }
+      if (!isMountainAt(x,y) && !isRiverAt(x,y)) {
+        add(x,y)
+        HIGHWAY_MAIN_PATH = [{x,y}]
+        ENTRY_TILE = HIGHWAY_MAIN_PATH[0]   // ← keep module export in sync
+        try { if (typeof window !== 'undefined') { (window as any).ENTRY_TILE = HIGHWAY_MAIN_PATH[0]; (window as any).__ENTRY_TILE__ = HIGHWAY_MAIN_PATH[0] } } catch(e){}
+        return r
+      }
     }
   }
 
@@ -1289,6 +1302,8 @@ const initial:CityState = {
   roads: createHighwayRoads(),
   farmZones: [],
   selectedBuildingType:null, selectedTool:'pan', selectedBuildingId:null, selectedCitizenId:null, selectedFarmZoneId:null,
+  // Road placement mode: 'around' = avoid building on mountains; 'over' = allow mountain roads (costlier)
+  selectedRoadMode: 'around' as 'around' | 'over',
   lastAction:null, lastBuildAttempt:null,
   citizens:[],
   houseFood:{},
@@ -1381,20 +1396,21 @@ const SimulationContext = createContext<{
   setMoney:(v:number)=>void; setPopulation:(v:number)=>void
   placeBuilding:(x:number,y:number,type?:BuildingType)=>void
   removeBuilding:(id:string)=>void; selectBuildingType:(t:BuildingType|null)=>void
-  placeRoad:(x:number,y:number)=>void; removeRoad:(x:number,y:number)=>void
+  placeRoad:(x:number,y:number)=>any; removeRoad:(x:number,y:number)=>void
   placeFarmZone:(x:number,y:number)=>void; removeFarmZone:(x:number,y:number)=>void
   selectFarmZone:(id:string|null)=>void; setFarmCrop:(id:string,crop:CropType)=>void
   setTaxRates:(rates:{ding:number;tian:number;shang:number})=>void
   selectTool:(t:Tool)=>void; selectBuilding:(id:string|null)=>void
   selectCitizen:(id:string|null)=>void
   setMarketConfig:(id:string, cfg:MarketConfig)=>void
+  selectRoadMode:(mode:'around'|'over')=>void
 }>({
   state:initial, start:()=>{}, stop:()=>{}, setMoney:()=>{}, setPopulation:()=>{},
   placeBuilding:()=>{}, removeBuilding:()=>{}, selectBuildingType:()=>{},
   placeRoad:()=>{}, removeRoad:()=>{}, placeFarmZone:()=>{}, removeFarmZone:()=>{},
   selectFarmZone:()=>{}, setFarmCrop:()=>{}, setTaxRates:()=>{},
   selectTool:()=>{}, selectBuilding:()=>{}, selectCitizen:()=>{},
-  setMarketConfig:()=>{},
+  setMarketConfig:()=>{}, selectRoadMode:()=>{},
 })
 
 // ─── Provider ─────────────────────────────────────────────────────────────
@@ -2391,22 +2407,50 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
       return {...z,pendingCropType:crop}
     })}))}
   function placeRoad(x:number,y:number){
-    setState(s=>{
-      if(isRoadAt(s.roads,x,y)||isBuildingAt(s.buildings,x,y)) return s
-      if(tileInFarmZone(s.farmZones,x,y)) return s   // 农田不能铺路
-      if(isRiverAt(x,y)){
-        const span=getBridgeSpan(s.roads,x,y)
-        const cost=BRIDGE_BASE_COST*span
-        if(s.money<cost) return s  // 资金不足，无法建桥
-        return{
-          ...s,
-          roads:[...s.roads,{x,y}],
-          money:s.money-cost,
-          monthlyConstructionCost: s.monthlyConstructionCost + cost,
+    const action = { type: 'placeRoad', x, y, success: false, reason: '' }
+    try {
+      setState(s=>{
+        if(isRoadAt(s.roads,x,y)||isBuildingAt(s.buildings,x,y)){ action.reason='tile-occupied'; return s }
+        if(tileInFarmZone(s.farmZones,x,y)){ action.reason='tile-occupied'; return s }  // 农田不能铺路
+
+        // If river -> bridge logic
+        if(isRiverAt(x,y)){
+          const span=getBridgeSpan(s.roads,x,y)
+          const cost=BRIDGE_BASE_COST*span
+          if(s.money<cost){ action.reason='insufficient-funds'; return s } // 资金不足，无法建桥
+          action.success = true
+          return{
+            ...s,
+            roads:[...s.roads,{x,y}],
+            money:s.money-cost,
+            monthlyConstructionCost: s.monthlyConstructionCost + cost,
+          }
         }
-      }
-      return{...s,roads:[...s.roads,{x,y}]}
-    })
+
+        const isMtn = isMountainAt(x,y)
+        // If tile is mountain, allow building (endpoint exception). Cost scales with mountain height.
+        if(isMtn){
+          const per = (worldGenConfig.road && worldGenConfig.road.mountainPerTileCost) || 120
+          const mult = (worldGenConfig.road && worldGenConfig.road.mountainCostMultiplier) || 3
+          const mh = getMountainHeight(x,y) || 0
+          // cost increases with normalized mountain height (more for peaks)
+          const cost = Math.ceil(per + per * mult * mh)
+          if(s.money<cost){ action.reason='insufficient-funds'; return s }
+          action.success = true
+          return{
+            ...s,
+            roads:[...s.roads,{x,y}],
+            money:s.money-cost,
+            monthlyConstructionCost: s.monthlyConstructionCost + cost,
+          }
+        }
+
+        // flat road
+        action.success = true
+        return{...s,roads:[...s.roads,{x,y}]}
+      })
+    }finally{ try{ (window as any).__LAST_ACTION__ = action }catch(e){} }
+    return (window as any).__LAST_ACTION__
   }
   function removeRoad(x:number,y:number){setState(s=>({...s,roads:s.roads.filter(r=>!(r.x===x&&r.y===y))}))}
   function placeFarmZone(x:number,y:number){
@@ -2461,6 +2505,9 @@ export function SimulationProvider({children}:{children:React.ReactNode}) {
       selectedCitizenId: t === 'pan' ? s.selectedCitizenId : null,
       selectedFarmZoneId: t === 'pan' ? s.selectedFarmZoneId : null,
     }))
+  }
+  function selectRoadMode(mode:'around'|'over'){
+    setState(s=>({...s,selectedRoadMode:mode}))
   }
 
   try{if(typeof window!=='undefined')(window as any).__CITY_STATE__=state}catch(e){}

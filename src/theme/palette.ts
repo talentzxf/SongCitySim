@@ -10,6 +10,7 @@ export const palette = {
     tileLight: '#e7cf9d',
     tileDark: '#d7bb82',
     road: '#6f7785',
+    mountainRoad: '#7b5a3d',
     river: '#2472b8',
     riverFoam: '#a8dcf8',
     bridgeDeck: '#c8a060',

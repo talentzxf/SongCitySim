@@ -1,5 +1,5 @@
 import React from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { ConfigProvider } from 'antd'
@@ -9,32 +9,7 @@ import HUD from './ui/HUD'
 import MapScene from './scene/MapScene'
 import { palette } from './theme/palette'
 
-// Debug: marker that visualizes OrbitControls.target
-function TargetMarker({ controlsRef }: { controlsRef: React.MutableRefObject<any> }) {
-  const ref = React.useRef<THREE.Mesh>(null)
-  const plane = React.useRef(new THREE.Plane(new THREE.Vector3(0,1,0), 0))
-  const ray = React.useRef(new THREE.Raycaster())
-  useFrame(() => {
-    const ctrl = controlsRef.current
-    if (!ref.current || !ctrl) return
-    // Raycast from target x,z downward to place marker on terrain surface (y=tileH or 0)
-    const t = (ctrl as any).target as THREE.Vector3
-    // do a simple sample: if mountain height exists, use tileH equivalent
-    let groundY = 0
-    try {
-      const mh = getMountainHeight(Math.round(t.x), Math.round(t.z))
-      const SCALE = worldGenConfig.mountain.tileScale
-      groundY = 0.04 + mh * SCALE
-    } catch (e) { groundY = 0 }
-    ref.current.position.set(t.x, groundY, t.z)
-  })
-  return (
-    <mesh ref={ref} visible={true}>
-      <sphereGeometry args={[0.14, 12, 12]} />
-      <meshStandardMaterial color="#ff66aa" emissive="#ff66aa" emissiveIntensity={0.6} />
-    </mesh>
-  )
-}
+// Debug: marker that visualizes OrbitControls.target - removed
 
 function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<any> }) {
   const { state } = useSimulation()
@@ -80,46 +55,16 @@ function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<a
   React.useEffect(() => { if (controlsEnabled) clampTarget() }, [controlsEnabled, clampTarget])
 
   // When controls change (pan/rotate/zoom), keep controls.target snapped to ground
+  // NOTE: removed — with screenSpacePanning=false the target.y never drifts during pan,
+  // and calling ctrl.update() from inside 'change' was causing the camera to subtly rotate.
+
+  // Disable screen-space panning: pan moves camera in world XZ plane only.
+  // This prevents target.y from changing during left-drag, which was the root cause of
+  // the "camera rotates while panning" symptom.
   React.useEffect(() => {
     const ctrl = controlsRef.current
-    if (!ctrl) return
-    function onChange() {
-      if (!controlsEnabled) return
-      try {
-        const t = (ctrl as any).target as THREE.Vector3
-        // Snap target y to terrain height at rounded tile coord
-        const gx = Math.round(t.x), gz = Math.round(t.z)
-        const mh = getMountainHeight(gx, gz) || 0
-        const groundY = 0.04 + mh * worldGenConfig.mountain.tileScale
-        if (Math.abs(t.y - groundY) > 1e-3) {
-          t.y = groundY
-          if (typeof ctrl.update === 'function') ctrl.update()
-        }
-      } catch (e) {}
-    }
-    ctrl.addEventListener('change', onChange)
-    return () => { try { ctrl.removeEventListener('change', onChange) } catch (e) {} }
-  }, [controlsEnabled])
-
-  // Use OrbitControls' native wheel handling. Remove custom wheel interception to avoid
-  // conflicting updates to controls.target and camera rotation.
-
-  // Visual target marker: render a small sphere at controls.target to help debugging.
-  function TargetMarker({ controlsRef }: { controlsRef: React.MutableRefObject<any> }) {
-    const ref = React.useRef<THREE.Mesh>(null)
-    useFrame(() => {
-      const ctrl = controlsRef.current
-      if (!ref.current || !ctrl) return
-      const t = (ctrl as any).target as THREE.Vector3
-      ref.current.position.set(t.x, t.y, t.z)
-    })
-    return (
-      <mesh ref={ref} visible={true}>
-        <sphereGeometry args={[0.12, 12, 12]} />
-        <meshStandardMaterial color="#ff66aa" emissive="#ff66aa" emissiveIntensity={0.6} />
-      </mesh>
-    )
-  }
+    if (ctrl) (ctrl as any).screenSpacePanning = false
+  }) // no deps — re-apply every render to be safe (controls may remount)
 
   const maxDist = Math.max(MAP_SIZE_X, MAP_SIZE_Y) * 2
   return (
@@ -127,7 +72,7 @@ function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<a
       ref={controlsRef}
       enabled={controlsEnabled}
       enablePan={controlsEnabled}
-      enableRotate={controlsEnabled}
+      enableRotate={true}
       enableZoom={true}
       maxDistance={maxDist}
       mouseButtons={mouseButtons}
@@ -147,8 +92,6 @@ export default function App() {
           <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
             <MapScene />
             <ControlsBridge controlsRef={controlsRef} />
-            {/* Debug: target marker for OrbitControls */}
-            <TargetMarker controlsRef={controlsRef} />
           </Canvas>
         </div>
       </SimulationProvider>

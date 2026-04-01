@@ -6,7 +6,6 @@ import {
   PauseCircleOutlined, PlayCircleOutlined, ShopOutlined, StarOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons'
 import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, logicalPeddlerPos } from '../state/simulation'
-import SeedDebug from './SeedDebug'
 import configData from '../config/buildings-and-citizens.json'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -170,9 +169,6 @@ export default function HUD() {
               ? <Button block icon={<PauseCircleOutlined />} onClick={stop}>停止</Button>
               : <Button block type="primary" icon={<PlayCircleOutlined />} onClick={start}>开始</Button>}
 
-            {/* Debug: seed control (URL param + UI) */}
-            <SeedDebug />
-
             <Divider style={{ margin: '4px 0' }}>工具</Divider>
 
             {/* Core tools */}
@@ -224,7 +220,112 @@ export default function HUD() {
 
       {/* ── Right info panel ──────────────────────── */}
       <InfoPanel />
+
+      {/* ── Debug overlay (top-right) ─────────────── */}
+      <DebugOverlay />
     </>
+  )
+}
+
+// ─── Debug overlay (floating, top-right) ────────────────────────────────────
+
+function DebugOverlay() {
+  const [visible, setVisible] = React.useState(false)
+  const [seed, setSeed] = React.useState('')
+  const [fps, setFps] = React.useState<number | null>(null)
+
+  // ── FPS counter via requestAnimationFrame ──────────────────────────────
+  React.useEffect(() => {
+    let rafId: number
+    let frameCount = 0
+    let lastUpdate = performance.now()
+
+    function tick() {
+      frameCount++
+      const now = performance.now()
+      if (now - lastUpdate >= 500) {
+        setFps(Math.round((frameCount / (now - lastUpdate)) * 1000))
+        frameCount = 0
+        lastUpdate = now
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
+  const fpsColor = fps === null ? '#888' : fps >= 50 ? '#52c41a' : fps >= 30 ? '#faad14' : '#ff4d4f'
+  const fpsLabel = fps === null ? '…' : `${fps}`
+
+  // ── Seed ───────────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    try {
+      const s = (window as any).__WORLD_SEED__
+      if (s) setSeed(String(s))
+    } catch (e) {}
+  }, [])
+
+  function applySeed() {
+    try {
+      const url = new URL(window.location.href)
+      if (seed) url.searchParams.set('seed', seed)
+      else url.searchParams.delete('seed')
+      window.history.replaceState({}, '', url.toString())
+      window.location.reload()
+    } catch (e) { console.error(e) }
+  }
+
+  return (
+    <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+      {/* Toggle row — FPS badge always visible */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{
+          fontFamily: 'monospace', fontSize: 12, fontWeight: 700,
+          color: fpsColor,
+          background: 'rgba(20,20,28,0.82)', borderRadius: 4,
+          padding: '1px 6px', lineHeight: '20px',
+          border: `1px solid ${fpsColor}44`,
+        }}>
+          {fpsLabel} fps
+        </span>
+        <Button
+          size="small"
+          icon={<ExperimentOutlined />}
+          onClick={() => setVisible(v => !v)}
+          type={visible ? 'primary' : 'default'}
+          title="调试信息"
+        />
+      </div>
+
+      {/* Expanded debug panel */}
+      {visible && (
+        <div style={{ background: 'rgba(30,30,40,0.92)', border: '1px solid #333', borderRadius: 8, padding: '10px 12px', minWidth: 230, backdropFilter: 'blur(4px)' }}>
+
+          {/* FPS detail row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Typography.Text style={{ color: '#aaa', fontSize: 11 }}>🎞 帧率</Typography.Text>
+            <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: fpsColor }}>
+              {fpsLabel} fps
+            </span>
+          </div>
+
+          <div style={{ borderTop: '1px solid #333', marginBottom: 8 }} />
+
+          {/* Seed row */}
+          <Typography.Text style={{ color: '#aaa', fontSize: 11, display: 'block', marginBottom: 6 }}>🌍 世界种子</Typography.Text>
+          <Space size={4}>
+            <input
+              style={{ width: 110, background: '#222', border: '1px solid #555', borderRadius: 4, color: '#eee', padding: '2px 6px', fontSize: 12 }}
+              value={seed}
+              onChange={e => setSeed(e.target.value)}
+              placeholder="seed (number)"
+            />
+            <Button size="small" onClick={() => setSeed(String(Math.floor(Math.random() * 1e9)))}>随机</Button>
+            <Button size="small" type="primary" onClick={applySeed}>应用</Button>
+          </Space>
+        </div>
+      )}
+    </div>
   )
 }
 
