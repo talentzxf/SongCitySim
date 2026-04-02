@@ -1,0 +1,35 @@
+{
+  "id": "house",
+  "label": "民居",
+  "labelEn": "House",
+  "category": "residential",
+  "tier": 1,
+  "cost": 100,
+  "maintenanceCostPerMonth": 3,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 6,
+  "workerSlots": 0,
+  "jobs": [],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "住宅，吸引居民入住，是城市人口增长的基础单元",
+  "icon": "🏠",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.houseBody"
+}
+

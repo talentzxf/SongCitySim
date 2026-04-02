@@ -1,0 +1,30 @@
+{
+  "id": "blast_furnace",
+  "parentBuildingId": "mine",
+  "label": "高炉扩建",
+  "labelEn": "Blast Furnace Extension",
+  "cost": 320,
+  "maintenanceCostPerMonth": 12,
+  "footprint": { "w": 1, "h": 1 },
+  "extraWorkerSlots": 2,
+  "extraJobs": [
+    { "jobId": "miner", "slots": 2 }
+  ],
+  "inputs": [],
+  "outputs": [
+    { "goodId": "iron_ore", "amountPerDay": 2.0 }
+  ],
+  "prerequisites": {
+    "techNodes": [],
+    "minCityPopulation": 300,
+    "minCityMoney": 800
+  },
+  "desc": "附属于冶铁厂，独占一个相邻格子。新建高炉可使铁矿石日产量提升约 67%，为城市大规模工业化提供原材料",
+  "icon": "🏭",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

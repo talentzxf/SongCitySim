@@ -1,0 +1,35 @@
+{
+  "id": "rice",
+  "label": "稻米",
+  "labelEn": "Rice",
+  "category": "crop",
+  "subCategory": "grain",
+  "price": 4,
+  "unit": "石",
+  "unitEn": "dan",
+  "storageSlots": 1,
+  "stackSize": 100,
+  "function": "food",
+  "effects": [
+    { "type": "satisfy_need", "needId": "food_basic",    "amount": 1.0 },
+    { "type": "satisfy_need", "needId": "food_adequate", "amount": 0.6 }
+  ],
+  "cropData": {
+    "fertilityWeight": 1.25,
+    "growthSeasons": ["spring", "summer"],
+    "waterRequirement": "high",
+    "terrainPreference": ["wetland", "flat", "river_adjacent"]
+  },
+  "producedBy": ["farmzone"],
+  "storedIn": ["granary", "market", "house"],
+  "consumedBy": ["citizen", "tavern", "teahouse"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "宋朝主要粮食，占城稻引入后可两熟，水田产量丰盛",
+  "icon": "🌾",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

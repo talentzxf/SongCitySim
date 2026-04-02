@@ -1,0 +1,25 @@
+{
+  "id": "herbalist",
+  "label": "郎中",
+  "labelEn": "Herbalist",
+  "buildingIds": ["pharmacy"],
+  "prerequisites": {
+    "minCultureScore": 25,
+    "minAge": 22,
+    "maxAge": 70,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 22,
+    "satisfactionBonus": 7,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.01
+  },
+  "desc": "在药铺坐堂问诊，为周边居民提供医疗服务，显著降低患病率和疾病蔓延风险",
+  "icon": "💊",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

@@ -1,0 +1,37 @@
+{
+  "id": "temple",
+  "label": "寺庙",
+  "labelEn": "Temple",
+  "category": "cultural",
+  "tier": 1,
+  "cost": 500,
+  "maintenanceCostPerMonth": 18,
+  "footprint": { "w": 2, "h": 2 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "monk", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 30,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 10,
+  "needBonus": { "culture": 0.025, "safety": 0.01 },
+  "desc": "佛寺或道观，占地 2×2 格，定期法事提升附近居民的文化与安全感。香客络绎不绝，亦是城市精神中心",
+  "icon": "🏯",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.templeBody"
+}
+

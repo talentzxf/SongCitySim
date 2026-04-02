@@ -17,6 +17,7 @@ import { farmGrowthRoutine }            from './farmGrowth'
 import { oxCartRoutine }                from './oxCart'
 import { marketBuyerRoutine }           from './marketBuyer'
 import { peddlerRoutine }               from './peddler'
+import { buildingBehaviorRoutine }      from './buildingBehavior'
 import { dailyProductionRoutine }       from './dailyProduction'
 import { citizenStatusRoutine }         from './citizenStatus'
 import { diseaseRoutine }               from './disease'
@@ -34,7 +35,8 @@ export const TICK_CHAIN: TickRoutine[] = [
   oxCartRoutine,                //  3. Ox-cart logistics: pile -> granary
   marketBuyerRoutine,           //  4. Wholesale buyer: granary -> market
   peddlerRoutine,               //  5. Peddler walk, sell food & tools
-  dailyProductionRoutine,       //  6. Mine ore, smith tools, consume food, pay wages
+  buildingBehaviorRoutine,      //  6. Per-building lifecycle callbacks (mine ore, smith tools, …)
+  dailyProductionRoutine,       //  7. Household food consumption, wages, tool wear (non-building logic)
   citizenStatusRoutine,         //  7. State machine + needs hierarchy -> satisfaction
   diseaseRoutine,               //  8. Sickness death + neighbourhood spread
   walkerRoutine,                //  9. Advance walkers, handle arrivals

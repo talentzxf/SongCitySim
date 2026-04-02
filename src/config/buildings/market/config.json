@@ -1,0 +1,44 @@
+{
+  "id": "market",
+  "label": "集市",
+  "labelEn": "Market",
+  "category": "commercial",
+  "tier": 1,
+  "cost": 300,
+  "maintenanceCostPerMonth": 10,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 6,
+  "jobs": [
+    { "jobId": "merchant", "slots": 4 },
+    { "jobId": "storekeeper", "slots": 2 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [
+    { "goodId": "rice",      "amountPerDay": 2.0, "optional": true },
+    { "goodId": "millet",    "amountPerDay": 1.0, "optional": true },
+    { "goodId": "wheat",     "amountPerDay": 1.0, "optional": true },
+    { "goodId": "soybean",   "amountPerDay": 0.5, "optional": true },
+    { "goodId": "vegetable", "amountPerDay": 0.5, "optional": true }
+  ],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 8,
+  "needBonus": { "food": 0.02 },
+  "desc": "供居民购买粮食日用的核心商业场所，同时派遣行商挑担上门送货",
+  "icon": "🏪",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.marketBody"
+}
+

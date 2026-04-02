@@ -1,0 +1,38 @@
+{
+  "id": "tool_quyuanli",
+  "label": "曲辕犁",
+  "labelEn": "Curved-Shaft Plow",
+  "category": "iron_tool",
+  "subCategory": "farming_tool",
+  "price": 40,
+  "unit": "件",
+  "unitEn": "piece",
+  "storageSlots": 1,
+  "stackSize": 10,
+  "function": "tool",
+  "effects": [
+    { "type": "production_boost", "targetGoodId": "rice",      "multiplier": 1.5 },
+    { "type": "production_boost", "targetGoodId": "wheat",     "multiplier": 1.5 },
+    { "type": "production_boost", "targetGoodId": "millet",    "multiplier": 1.4 },
+    { "type": "production_boost", "targetGoodId": "soybean",   "multiplier": 1.3 },
+    { "type": "production_boost", "targetGoodId": "vegetable", "multiplier": 1.3 }
+  ],
+  "toolData": {
+    "efficiencyBonus": 1.5,
+    "durabilityMax": 100,
+    "wearPerDay": 4,
+    "durabilityLowThreshold": 20
+  },
+  "producedBy": ["blacksmith"],
+  "storedIn": ["blacksmith", "market", "house"],
+  "consumedBy": ["farmer"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "唐宋发明，转弯灵活，可深翻土地，大幅提升水旱田耕作效率",
+  "icon": "🔧",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

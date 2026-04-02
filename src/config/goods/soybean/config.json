@@ -1,0 +1,35 @@
+{
+  "id": "soybean",
+  "label": "黄豆",
+  "labelEn": "Soybean",
+  "category": "crop",
+  "subCategory": "legume",
+  "price": 3,
+  "unit": "石",
+  "unitEn": "dan",
+  "storageSlots": 1,
+  "stackSize": 100,
+  "function": "food",
+  "effects": [
+    { "type": "satisfy_need", "needId": "food_basic",   "amount": 0.8 },
+    { "type": "satisfy_need", "needId": "food_variety", "amount": 0.5 }
+  ],
+  "cropData": {
+    "fertilityWeight": 0.95,
+    "growthSeasons": ["spring", "summer"],
+    "waterRequirement": "medium",
+    "terrainPreference": ["flat", "hill"]
+  },
+  "producedBy": ["farmzone"],
+  "storedIn": ["granary", "market", "house"],
+  "consumedBy": ["citizen", "tavern", "teahouse"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "制豆腐、酱油、豆浆的重要原料，宋代市井饮食不可或缺，亦可固氮改良土壤",
+  "icon": "🫘",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

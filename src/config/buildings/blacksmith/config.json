@@ -1,0 +1,48 @@
+{
+  "id": "blacksmith",
+  "label": "铁匠铺",
+  "labelEn": "Blacksmith",
+  "category": "industrial",
+  "tier": 1,
+  "cost": 350,
+  "maintenanceCostPerMonth": 15,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "smith", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [
+      { "buildingId": "mine", "radiusTiles": 20, "minCount": 1 }
+    ],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [
+    { "goodId": "iron_ore", "amountPerDay": 2.0, "optional": false,
+      "condition": "mine_nearby — building stops producing if iron_ore inventory empty" }
+  ],
+  "outputs": [
+    { "goodId": "tool_quyuanli", "amountPerDay": 0.5 },
+    { "goodId": "tool_tiechu",   "amountPerDay": 0.5 },
+    { "goodId": "tool_tielian",  "amountPerDay": 0.5 },
+    { "goodId": "tool_tiepa",    "amountPerDay": 0.3 },
+    { "goodId": "tool_tiechan",  "amountPerDay": 0.2 }
+  ],
+  "addons": ["weapon_forge", "horseshoe_workshop"],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "锻造铁制农具（曲辕犁、铁锄、铁镰、铁耙、铁铲），大幅提升农田产出。须附近有冶铁厂提供铁矿石原料",
+  "icon": "🔨",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.blacksmithBody"
+}
+

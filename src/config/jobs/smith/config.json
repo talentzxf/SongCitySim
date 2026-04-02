@@ -1,0 +1,25 @@
+{
+  "id": "smith",
+  "label": "铁匠",
+  "labelEn": "Blacksmith",
+  "buildingIds": ["blacksmith"],
+  "prerequisites": {
+    "minCultureScore": 10,
+    "minAge": 16,
+    "maxAge": 60,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 25,
+    "satisfactionBonus": 5,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.01
+  },
+  "desc": "在铁匠铺锻打铁器，将铁矿石加工成农具乃至兵器。技艺熟练的铁匠产量更高、废料更少",
+  "icon": "🔨",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

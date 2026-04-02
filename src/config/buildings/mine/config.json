@@ -1,0 +1,39 @@
+{
+  "id": "mine",
+  "label": "冶铁厂",
+  "labelEn": "Iron Smelter",
+  "category": "industrial",
+  "tier": 1,
+  "cost": 450,
+  "maintenanceCostPerMonth": 20,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 4,
+  "jobs": [
+    { "jobId": "miner", "slots": 4 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": ["ore_vein"],
+    "notTerrain": []
+  },
+  "inputs": [],
+  "outputs": [
+    { "goodId": "iron_ore", "amountPerDay": 3.0 }
+  ],
+  "addons": ["blast_furnace"],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "须建于铁矿脉（山地矿石标记）之上，开采矿石并冶炼，向铁匠铺输送铁矿石原料",
+  "icon": "⛏️",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.blacksmithChimney"
+}
+

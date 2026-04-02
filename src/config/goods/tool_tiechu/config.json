@@ -1,0 +1,36 @@
+{
+  "id": "tool_tiechu",
+  "label": "铁锄",
+  "labelEn": "Iron Hoe",
+  "category": "iron_tool",
+  "subCategory": "farming_tool",
+  "price": 25,
+  "unit": "件",
+  "unitEn": "piece",
+  "storageSlots": 1,
+  "stackSize": 15,
+  "function": "tool",
+  "effects": [
+    { "type": "production_boost", "targetGoodId": "vegetable", "multiplier": 1.4 },
+    { "type": "production_boost", "targetGoodId": "soybean",   "multiplier": 1.3 },
+    { "type": "production_boost", "targetGoodId": "millet",    "multiplier": 1.3 }
+  ],
+  "toolData": {
+    "efficiencyBonus": 1.3,
+    "durabilityMax": 100,
+    "wearPerDay": 5,
+    "durabilityLowThreshold": 20
+  },
+  "producedBy": ["blacksmith"],
+  "storedIn": ["blacksmith", "market", "house"],
+  "consumedBy": ["farmer"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "锄草松土，水田旱地皆宜，是农民日常劳作的必备工具",
+  "icon": "⛏️",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

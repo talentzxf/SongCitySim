@@ -1,0 +1,32 @@
+{
+  "id": "horseshoe_workshop",
+  "parentBuildingId": "blacksmith",
+  "label": "蹄铁作坊",
+  "labelEn": "Horseshoe Workshop",
+  "cost": 150,
+  "maintenanceCostPerMonth": 6,
+  "footprint": { "w": 1, "h": 1 },
+  "extraWorkerSlots": 1,
+  "extraJobs": [
+    { "jobId": "smith", "slots": 1 }
+  ],
+  "inputs": [
+    { "goodId": "iron_ore", "amountPerDay": 1.0, "optional": false }
+  ],
+  "outputs": [
+    { "goodId": "horseshoe", "amountPerDay": 1.5 }
+  ],
+  "prerequisites": {
+    "techNodes": [],
+    "minCityPopulation": 80,
+    "minCityMoney": 200
+  },
+  "desc": "附属于铁匠铺，独占一个相邻格子，专门打制马蹄铁。装备牛车与马匹后可降低磨损，提升运输效率",
+  "icon": "🐴",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

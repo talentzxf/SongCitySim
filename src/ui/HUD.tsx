@@ -1,19 +1,46 @@
 import React from 'react'
 import { Alert, Badge, Button, Card, Col, Collapse, Divider, Modal, Progress, Row, Slider, Space, Tabs, Tag, Tooltip, Typography } from 'antd'
 import {
-  BankOutlined, BookOutlined, CloseOutlined, DeleteOutlined, ExclamationCircleOutlined,
-  ExperimentOutlined, FireOutlined, HomeOutlined, InboxOutlined, MedicineBoxOutlined,
-  PauseCircleOutlined, PlayCircleOutlined, ShopOutlined, StarOutlined, TeamOutlined, UserOutlined,
+  CloseOutlined, DeleteOutlined, ExclamationCircleOutlined,
+  ExperimentOutlined, HomeOutlined, MedicineBoxOutlined,
+  PauseCircleOutlined, PlayCircleOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons'
-import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, logicalPeddlerPos } from '../state/simulation'
+import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW } from '../state/simulation'
 import configData from '../config/buildings-and-citizens.json'
+import { BUILDING_REGISTRY } from '../config/buildings/_loader'
+import type { BuildingCategory } from '../config/buildings/_schema'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const BUILDING_LABEL: Record<string, string> = Object.entries(configData.buildings).reduce(
-  (acc, [k, v]: [string, any]) => { acc[k] = v.label; return acc },
-  {} as Record<string, string>,
+const BUILDING_LABEL: Record<string, string> = Object.fromEntries(
+  Object.values(BUILDING_REGISTRY).map(b => [b.id, b.label])
 )
+
+// Category display metadata
+const CATEGORY_META: Record<BuildingCategory, { label: string; order: number }> = {
+  residential: { label: '居住', order: 0 },
+  commercial:  { label: '商业', order: 1 },
+  industrial:  { label: '工业', order: 2 },
+  storage:     { label: '仓储', order: 3 },
+  civic:       { label: '公共', order: 4 },
+  cultural:    { label: '文化', order: 5 },
+}
+
+// Buildings grouped by category, sorted by tier — auto-derived from registry
+const ACTIVE_IDS = new Set<string>(ALL_BUILDING_TYPES as string[])
+const PALETTE_GROUPS: Array<{ category: BuildingCategory; label: string; buildings: typeof BUILDING_REGISTRY[string][] }> = (() => {
+  const groups = new Map<BuildingCategory, typeof BUILDING_REGISTRY[string][]>()
+  Object.values(BUILDING_REGISTRY)
+    .sort((a, b) => a.tier - b.tier || a.label.localeCompare(b.label))
+    .forEach(b => {
+      const cat = b.category as BuildingCategory
+      if (!groups.has(cat)) groups.set(cat, [])
+      groups.get(cat)!.push(b)
+    })
+  return [...groups.entries()]
+    .sort(([a], [b]) => (CATEGORY_META[a]?.order ?? 99) - (CATEGORY_META[b]?.order ?? 99))
+    .map(([cat, buildings]) => ({ category: cat, label: CATEGORY_META[cat]?.label ?? cat, buildings }))
+})()
 
 // 与 simulation.tsx 中 DEAD_SPREAD_RADIUS 对应，仅用于 UI 文案
 const DEAD_SPREAD_RADIUS_HUD = 2
@@ -43,13 +70,7 @@ function dayPhaseTag(t: number) {
   return <Tag color="blue">深夜</Tag>
 }
 
-const BUILDING_BUTTONS: Array<{ key: BuildingType; label: string; icon: React.ReactNode; cost: number; desc: string }> = [
-  { key: 'house',      label: configData.buildings.house.label,      icon: <HomeOutlined />,  cost: configData.buildings.house.cost,      desc: configData.buildings.house.desc },
-  { key: 'market',     label: configData.buildings.market.label,     icon: <ShopOutlined />,  cost: configData.buildings.market.cost,     desc: configData.buildings.market.desc },
-  { key: 'granary',    label: configData.buildings.granary.label,    icon: <InboxOutlined />, cost: configData.buildings.granary.cost,    desc: configData.buildings.granary.desc },
-  { key: 'mine',       label: configData.buildings.mine.label,       icon: <BankOutlined />,  cost: configData.buildings.mine.cost,       desc: configData.buildings.mine.desc },
-  { key: 'blacksmith', label: configData.buildings.blacksmith.label, icon: <FireOutlined />,  cost: configData.buildings.blacksmith.cost, desc: configData.buildings.blacksmith.desc },
-]
+
 
 // ─── Left HUD (controls) ─────────────────────────────────────────────────────
 
@@ -198,22 +219,50 @@ export default function HUD() {
               </Typography.Text>
             )}
 
-            {/* Building palette */}
+            {/* Building palette — auto-generated from BUILDING_REGISTRY, grouped by category */}
             <Collapse size="small" defaultActiveKey={['buildings']} items={[{
               key: 'buildings',
               label: '建筑',
               children: (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {BUILDING_BUTTONS.map(b => (
-                    <Button key={b.key} size="small" icon={b.icon}
-                      type={state.selectedTool === b.key ? 'primary' : 'default'}
-                      onClick={() => selectTool(b.key)}
-                      title={`${b.desc}（¥${b.cost}）`}
-                      style={{ textAlign: 'left' }}>
-                      {b.label} <Typography.Text type="secondary" style={{ fontSize: 10 }}>¥{b.cost}</Typography.Text>
-                    </Button>
-                  ))}
-                </div>
+                <Tabs
+                  size="small"
+                  defaultActiveKey={PALETTE_GROUPS[0]?.category}
+                  style={{ marginTop: -4 }}
+                  items={PALETTE_GROUPS.map(group => ({
+                    key: group.category,
+                    label: group.label,
+                    children: (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                        {group.buildings.map(b => {
+                          const active = ACTIVE_IDS.has(b.id)
+                          return (
+                            <Tooltip
+                              key={b.id}
+                              title={active ? b.desc : `${b.label}：尚未开放`}
+                              placement="right"
+                            >
+                              <Button
+                                size="small"
+                                type={state.selectedTool === b.id ? 'primary' : 'default'}
+                                onClick={() => { if (active) selectTool(b.id as BuildingType) }}
+                                style={{
+                                  textAlign: 'left', width: '100%',
+                                  opacity: active ? 1 : 0.4,
+                                  cursor: active ? 'pointer' : 'not-allowed',
+                                }}
+                              >
+                                {b.icon} {b.label}{' '}
+                                <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                                  {active ? `¥${b.cost}` : '待开放'}
+                                </Typography.Text>
+                              </Button>
+                            </Tooltip>
+                          )
+                        })}
+                      </div>
+                    ),
+                  }))}
+                />
               ),
             }]} />
 

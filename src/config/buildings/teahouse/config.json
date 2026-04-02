@@ -1,0 +1,39 @@
+{
+  "id": "teahouse",
+  "label": "茶坊",
+  "labelEn": "Teahouse",
+  "category": "commercial",
+  "tier": 1,
+  "cost": 200,
+  "maintenanceCostPerMonth": 8,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "merchant", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 10,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [
+    { "goodId": "vegetable", "amountPerDay": 0.3, "optional": true }
+  ],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 6,
+  "needBonus": { "culture": 0.015, "food": 0.01 },
+  "desc": "宋代茶文化的重要场所，喝茶、谈天、听曲，提升文化氛围与饮食满意度",
+  "icon": "🍵",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.teahouseBody"
+}
+

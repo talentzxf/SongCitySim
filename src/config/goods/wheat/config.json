@@ -1,0 +1,35 @@
+{
+  "id": "wheat",
+  "label": "麦子",
+  "labelEn": "Wheat",
+  "category": "crop",
+  "subCategory": "grain",
+  "price": 4,
+  "unit": "石",
+  "unitEn": "dan",
+  "storageSlots": 1,
+  "stackSize": 100,
+  "function": "food",
+  "effects": [
+    { "type": "satisfy_need", "needId": "food_basic",    "amount": 1.0 },
+    { "type": "satisfy_need", "needId": "food_adequate", "amount": 0.5 }
+  ],
+  "cropData": {
+    "fertilityWeight": 1.05,
+    "growthSeasons": ["autumn", "winter", "spring"],
+    "waterRequirement": "medium",
+    "terrainPreference": ["flat", "hill"]
+  },
+  "producedBy": ["farmzone"],
+  "storedIn": ["granary", "market", "house"],
+  "consumedBy": ["citizen", "tavern", "teahouse"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "宋朝大力推广麦作，冬小麦可与稻米轮作，缓解青黄不接的粮食缺口",
+  "icon": "🌿",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

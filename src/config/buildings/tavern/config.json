@@ -1,0 +1,40 @@
+{
+  "id": "tavern",
+  "label": "酒肆",
+  "labelEn": "Tavern",
+  "category": "commercial",
+  "tier": 1,
+  "cost": 250,
+  "maintenanceCostPerMonth": 9,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "innkeeper", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 12,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [
+    { "goodId": "rice",      "amountPerDay": 0.4, "optional": true },
+    { "goodId": "soybean",   "amountPerDay": 0.2, "optional": true }
+  ],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 6,
+  "needBonus": { "food": 0.018, "culture": 0.008 },
+  "desc": "宋代城市夜生活中心，提供酒水饮食与娱乐消遣，兼有说书、杂耍表演",
+  "icon": "🍶",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.tavernBody"
+}
+

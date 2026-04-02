@@ -1,0 +1,37 @@
+{
+  "id": "academy",
+  "label": "书院",
+  "labelEn": "Academy",
+  "category": "cultural",
+  "tier": 1,
+  "cost": 400,
+  "maintenanceCostPerMonth": 14,
+  "footprint": { "w": 2, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 4,
+  "jobs": [
+    { "jobId": "scholar", "slots": 4 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 20,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 12,
+  "needBonus": { "culture": 0.03 },
+  "desc": "宋代讲学授业之所，占地 2×1 格，大幅提升城市文化水平，解锁高级职业前置条件",
+  "icon": "📚",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.academyBody"
+}
+

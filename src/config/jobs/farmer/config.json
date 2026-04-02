@@ -1,0 +1,25 @@
+{
+  "id": "farmer",
+  "label": "农夫",
+  "labelEn": "Farmer",
+  "buildingIds": [],
+  "prerequisites": {
+    "minCultureScore": 0,
+    "minAge": 14,
+    "maxAge": 65,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 8,
+    "satisfactionBonus": 2,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.005
+  },
+  "desc": "在农田耕种，生产粮食作物。持有铁制农具时产出大幅提升，是城市食物供应的根基",
+  "icon": "👨‍🌾",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

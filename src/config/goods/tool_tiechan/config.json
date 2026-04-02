@@ -1,0 +1,35 @@
+{
+  "id": "tool_tiechan",
+  "label": "铁铲",
+  "labelEn": "Iron Spade",
+  "category": "iron_tool",
+  "subCategory": "farming_tool",
+  "price": 20,
+  "unit": "件",
+  "unitEn": "piece",
+  "storageSlots": 1,
+  "stackSize": 15,
+  "function": "tool",
+  "effects": [
+    { "type": "production_boost", "targetGoodId": "rice",      "multiplier": 1.2 },
+    { "type": "production_boost", "targetGoodId": "vegetable", "multiplier": 1.25 }
+  ],
+  "toolData": {
+    "efficiencyBonus": 1.2,
+    "durabilityMax": 100,
+    "wearPerDay": 4,
+    "durabilityLowThreshold": 20
+  },
+  "producedBy": ["blacksmith"],
+  "storedIn": ["blacksmith", "market", "house"],
+  "consumedBy": ["farmer"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "开渠引水、起垄整畦的利器，宋代水利工程施工与日常农田管理均离不开铁铲",
+  "icon": "🪛",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

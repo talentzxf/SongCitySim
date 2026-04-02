@@ -1,0 +1,26 @@
+{
+  "id": "iron_ore",
+  "label": "铁矿石",
+  "labelEn": "Iron Ore",
+  "category": "raw_material",
+  "subCategory": "ore",
+  "price": 5,
+  "unit": "担",
+  "unitEn": "load",
+  "storageSlots": 2,
+  "stackSize": 60,
+  "function": "material",
+  "effects": [],
+  "producedBy": ["mine"],
+  "storedIn": ["mine", "blacksmith"],
+  "consumedBy": ["blacksmith"],
+  "tradeable": false,
+  "perishable": false,
+  "desc": "从矿脉中开采并经初步冶炼的铁矿石，是铁匠铺打制所有铁制品的核心原材料",
+  "icon": "🪨",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

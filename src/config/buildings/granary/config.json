@@ -1,0 +1,49 @@
+{
+  "id": "granary",
+  "label": "粮仓",
+  "labelEn": "Granary",
+  "category": "storage",
+  "tier": 1,
+  "cost": 320,
+  "maintenanceCostPerMonth": 10,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "storekeeper", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [
+    { "goodId": "rice",      "amountPerDay": 0, "optional": true, "condition": "accepts from farmzone via ox cart" },
+    { "goodId": "millet",    "amountPerDay": 0, "optional": true },
+    { "goodId": "wheat",     "amountPerDay": 0, "optional": true },
+    { "goodId": "soybean",   "amountPerDay": 0, "optional": true },
+    { "goodId": "vegetable", "amountPerDay": 0, "optional": true }
+  ],
+  "outputs": [
+    { "goodId": "rice",      "amountPerDay": 0, "optional": true, "condition": "dispatches to market via market buyer" },
+    { "goodId": "millet",    "amountPerDay": 0, "optional": true },
+    { "goodId": "wheat",     "amountPerDay": 0, "optional": true },
+    { "goodId": "soybean",   "amountPerDay": 0, "optional": true },
+    { "goodId": "vegetable", "amountPerDay": 0, "optional": true }
+  ],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": { "food": 0.02 },
+  "desc": "储存和转运农产品的枢纽。牛车从农田取货运入，行商再从粮仓批发运往集市",
+  "icon": "🏚️",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.granaryBody"
+}
+

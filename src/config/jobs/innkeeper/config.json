@@ -1,0 +1,25 @@
+{
+  "id": "innkeeper",
+  "label": "掌柜",
+  "labelEn": "Innkeeper",
+  "buildingIds": ["tavern"],
+  "prerequisites": {
+    "minCultureScore": 8,
+    "minAge": 18,
+    "maxAge": 65,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 20,
+    "satisfactionBonus": 5,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.008
+  },
+  "desc": "在酒肆掌管经营，招待食客，安排说书人与杂耍班子。掌柜的待客之道直接影响酒肆的文化与饮食收益",
+  "icon": "🍶",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

@@ -1,0 +1,35 @@
+{
+  "id": "millet",
+  "label": "粟米",
+  "labelEn": "Millet",
+  "category": "crop",
+  "subCategory": "grain",
+  "price": 3,
+  "unit": "石",
+  "unitEn": "dan",
+  "storageSlots": 1,
+  "stackSize": 100,
+  "function": "food",
+  "effects": [
+    { "type": "satisfy_need", "needId": "food_basic",    "amount": 1.0 },
+    { "type": "satisfy_need", "needId": "food_adequate", "amount": 0.4 }
+  ],
+  "cropData": {
+    "fertilityWeight": 1.0,
+    "growthSeasons": ["spring", "summer"],
+    "waterRequirement": "low",
+    "terrainPreference": ["flat", "hill"]
+  },
+  "producedBy": ["farmzone"],
+  "storedIn": ["granary", "market", "house"],
+  "consumedBy": ["citizen", "tavern"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "北方传统主粮，宋代称「粟」，耐旱耐贫瘠，在干旱地带产量稳定",
+  "icon": "🌻",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

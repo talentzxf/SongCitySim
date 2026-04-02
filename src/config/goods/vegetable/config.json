@@ -1,0 +1,36 @@
+{
+  "id": "vegetable",
+  "label": "蔬菜",
+  "labelEn": "Vegetables",
+  "category": "crop",
+  "subCategory": "vegetable",
+  "price": 2,
+  "unit": "担",
+  "unitEn": "basket",
+  "storageSlots": 1,
+  "stackSize": 50,
+  "function": "food",
+  "effects": [
+    { "type": "satisfy_need", "needId": "food_variety", "amount": 0.6 },
+    { "type": "satisfy_need", "needId": "food_rich",    "amount": 0.3 }
+  ],
+  "cropData": {
+    "fertilityWeight": 0.9,
+    "growthSeasons": ["spring", "summer", "autumn"],
+    "waterRequirement": "medium",
+    "terrainPreference": ["flat"]
+  },
+  "producedBy": ["farmzone"],
+  "storedIn": ["granary", "market", "house"],
+  "consumedBy": ["citizen", "teahouse", "tavern"],
+  "tradeable": true,
+  "perishable": true,
+  "perishDays": 5,
+  "desc": "菘菜（白菜）、蔓菁、韭菜等时蔬，丰富居民饮食，不耐储存需快速流通",
+  "icon": "🥬",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

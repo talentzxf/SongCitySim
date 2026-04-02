@@ -1,0 +1,28 @@
+{
+  "id": "weapon_spear",
+  "label": "长矛",
+  "labelEn": "Iron Spear",
+  "category": "weapon",
+  "subCategory": "polearm",
+  "price": 60,
+  "unit": "杆",
+  "unitEn": "piece",
+  "storageSlots": 1,
+  "stackSize": 8,
+  "function": "weapon",
+  "effects": [
+    { "type": "stat_boost", "stat": "safety", "amount": 0.004 }
+  ],
+  "producedBy": ["weapon_forge"],
+  "storedIn": ["blacksmith", "market"],
+  "consumedBy": ["city_guard", "trade_caravan"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "步兵标准武器，造价低于铁剑，是装备守城士卒和护路民兵的高性价比选择",
+  "icon": "🗡️",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

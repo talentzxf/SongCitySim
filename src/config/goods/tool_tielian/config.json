@@ -1,0 +1,35 @@
+{
+  "id": "tool_tielian",
+  "label": "铁镰",
+  "labelEn": "Iron Sickle",
+  "category": "iron_tool",
+  "subCategory": "farming_tool",
+  "price": 20,
+  "unit": "件",
+  "unitEn": "piece",
+  "storageSlots": 1,
+  "stackSize": 20,
+  "function": "tool",
+  "effects": [
+    { "type": "production_boost", "targetGoodId": "rice",  "multiplier": 1.35 },
+    { "type": "production_boost", "targetGoodId": "wheat", "multiplier": 1.35 }
+  ],
+  "toolData": {
+    "efficiencyBonus": 1.35,
+    "durabilityMax": 100,
+    "wearPerDay": 5,
+    "durabilityLowThreshold": 20
+  },
+  "producedBy": ["blacksmith"],
+  "storedIn": ["blacksmith", "market", "house"],
+  "consumedBy": ["farmer"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "收割稻麦的专用工具，弧形刀刃极为锋利，宋代农家必备，大幅加快秋收进度",
+  "icon": "🌾",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

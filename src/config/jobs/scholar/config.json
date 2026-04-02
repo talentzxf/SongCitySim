@@ -1,0 +1,25 @@
+{
+  "id": "scholar",
+  "label": "学子",
+  "labelEn": "Scholar",
+  "buildingIds": ["academy"],
+  "prerequisites": {
+    "minCultureScore": 30,
+    "minAge": 14,
+    "maxAge": 50,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 12,
+    "satisfactionBonus": 10,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.015
+  },
+  "desc": "在书院攻读经史、研习算学。学子越多，城市整体文化水平越高，进而解锁高级建筑和职业的前置条件",
+  "icon": "📖",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

@@ -1,0 +1,28 @@
+{
+  "id": "horseshoe",
+  "label": "马蹄铁",
+  "labelEn": "Horseshoe",
+  "category": "processed",
+  "subCategory": "livestock_equipment",
+  "price": 15,
+  "unit": "副",
+  "unitEn": "set",
+  "storageSlots": 1,
+  "stackSize": 30,
+  "function": "transport",
+  "effects": [
+    { "type": "production_boost", "targetGoodId": "iron_ore", "multiplier": 1.0 }
+  ],
+  "producedBy": ["horseshoe_workshop"],
+  "storedIn": ["blacksmith", "market"],
+  "consumedBy": ["ox_cart", "pack_horse"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "为牛马装配蹄铁，降低蹄部磨损，使牛车和马匹的运输效率提升、维护间隔延长",
+  "icon": "🐴",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

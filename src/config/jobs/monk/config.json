@@ -1,0 +1,25 @@
+{
+  "id": "monk",
+  "label": "僧人",
+  "labelEn": "Monk",
+  "buildingIds": ["temple"],
+  "prerequisites": {
+    "minCultureScore": 20,
+    "minAge": 18,
+    "maxAge": 80,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 10,
+    "satisfactionBonus": 8,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.005
+  },
+  "desc": "在寺庙修行、主持法事。僧众数量越多，附近居民的文化熏陶与精神安慰效果越强",
+  "icon": "🧘",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

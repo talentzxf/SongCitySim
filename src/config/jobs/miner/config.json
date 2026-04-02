@@ -1,0 +1,25 @@
+{
+  "id": "miner",
+  "label": "矿工",
+  "labelEn": "Miner",
+  "buildingIds": ["mine"],
+  "prerequisites": {
+    "minCultureScore": 0,
+    "minAge": 16,
+    "maxAge": 55,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 20,
+    "satisfactionBonus": 2,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.008
+  },
+  "desc": "在冶铁厂开凿矿石并操作冶炼炉，每日产出铁矿石供铁匠铺使用。体力消耗较大，需重视健康保障",
+  "icon": "⛏️",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

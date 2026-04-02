@@ -1,0 +1,37 @@
+{
+  "id": "pharmacy",
+  "label": "药铺",
+  "labelEn": "Pharmacy",
+  "category": "civic",
+  "tier": 1,
+  "cost": 280,
+  "maintenanceCostPerMonth": 10,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 2,
+  "jobs": [
+    { "jobId": "herbalist", "slots": 2 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 15,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 8,
+  "needBonus": { "safety": 0.02 },
+  "desc": "郎中坐堂问诊，提供草药与医疗服务，有效降低居民患病率和死亡率",
+  "icon": "💊",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.pharmacyBody"
+}
+

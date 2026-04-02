@@ -1,0 +1,28 @@
+{
+  "id": "weapon_sword",
+  "label": "铁剑",
+  "labelEn": "Iron Sword",
+  "category": "weapon",
+  "subCategory": "bladed",
+  "price": 80,
+  "unit": "柄",
+  "unitEn": "piece",
+  "storageSlots": 1,
+  "stackSize": 10,
+  "function": "weapon",
+  "effects": [
+    { "type": "stat_boost", "stat": "safety", "amount": 0.005 }
+  ],
+  "producedBy": ["weapon_forge"],
+  "storedIn": ["blacksmith", "market"],
+  "consumedBy": ["city_guard", "trade_caravan"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "铁匠铺武器锻造间出品，可装备城市守卫提升治安，或作为贸易货品输出获利",
+  "icon": "⚔️",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

@@ -1,0 +1,33 @@
+{
+  "id": "weapon_forge",
+  "parentBuildingId": "blacksmith",
+  "label": "武器锻造间",
+  "labelEn": "Weapon Forge",
+  "cost": 280,
+  "maintenanceCostPerMonth": 10,
+  "footprint": { "w": 1, "h": 1 },
+  "extraWorkerSlots": 2,
+  "extraJobs": [
+    { "jobId": "smith", "slots": 2 }
+  ],
+  "inputs": [
+    { "goodId": "iron_ore", "amountPerDay": 3.0, "optional": false }
+  ],
+  "outputs": [
+    { "goodId": "weapon_sword", "amountPerDay": 0.3 },
+    { "goodId": "weapon_spear", "amountPerDay": 0.2 }
+  ],
+  "prerequisites": {
+    "techNodes": [],
+    "minCityPopulation": 200,
+    "minCityMoney": 500
+  },
+  "desc": "附属于铁匠铺，独占一个相邻格子，专门锻造刀剑长矛等兵器。可装备城市守卫或对外出口贸易",
+  "icon": "⚔️",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

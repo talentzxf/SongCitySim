@@ -1,0 +1,25 @@
+{
+  "id": "storekeeper",
+  "label": "仓丁",
+  "labelEn": "Storekeeper",
+  "buildingIds": ["granary"],
+  "prerequisites": {
+    "minCultureScore": 0,
+    "minAge": 16,
+    "maxAge": 65,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 14,
+    "satisfactionBonus": 3,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.006
+  },
+  "desc": "在粮仓负责货品收验、登账与调配，确保粮仓高效运转。仓丁数量决定粮仓的吞吐速度",
+  "icon": "📦",
+  "renderAssets": {
+    "portrait": "./portrait.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

@@ -12,6 +12,7 @@ import {
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { SpatialBST, type RangeRect } from './spatialBst'
+import { BuildingGLBRenderer, hasBuildingGLB } from './BuildingRenderer'
 import { message } from 'antd'
 
 // ─── Smooth river curve (computed once at module load) ─────────────────────
@@ -2111,6 +2112,13 @@ export default function MapScene() {
   }, [gl, camera])
 
   function buildingMesh(b: typeof state.buildings[0]) {
+    // ── GLB model (if the file exists in src/config/buildings/{type}/model.glb) ──
+    if (hasBuildingGLB(b.type)) {
+      const baseY = (b.type === 'blacksmith' || b.type === 'mine') && isMountainAt(b.x, b.y)
+        ? tileH(b.x, b.y) : 0
+      return <BuildingGLBRenderer key={b.id} type={b.type} x={b.x} y={b.y} baseY={baseY} />
+    }
+    // ── Procedural fallback (current rendering path for all buildings) ──────────
     switch (b.type) {
       case 'house':       return <HouseMesh       key={b.id} x={b.x} y={b.y} occupants={b.occupants} />
       case 'market':      return <MarketMesh      key={b.id} x={b.x} y={b.y} />
