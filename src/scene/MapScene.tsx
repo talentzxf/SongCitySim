@@ -13,6 +13,7 @@ import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { SpatialBST, type RangeRect } from './spatialBst'
 import { BuildingGLBRenderer, hasBuildingGLB } from './BuildingRenderer'
+import { BUILDING_MESH_REGISTRY } from '../config/buildings/_mesh_registry'
 import { message } from 'antd'
 
 // ─── Smooth river curve (computed once at module load) ─────────────────────
@@ -115,43 +116,48 @@ function DayNightLighting() {
 
   useFrame(() => {
     const t = dayRef.current
-    const isDay = t >= 0.25 && t <= 0.75
-    const dayFraction = Math.max(0, Math.min(1, (t - 0.25) / 0.5))
-    const sunArc = Math.sin(dayFraction * Math.PI)   // 0 dawn→1 noon→0 dusk
 
+    // ── Continuous sun position in the sky ────────────────────────────────
+    // sunHeight: -1 at midnight, 0 at dawn/dusk, +1 at noon — no hard cutoff
+    const sunHeight   = Math.sin((t * 2 - 0.5) * Math.PI)
+    const sun         = Math.max(0, sunHeight)           // 0 at night & dusk/dawn, 1 at noon
+    const twilight    = 1 - Math.abs(sunHeight)          // 1 at dusk/dawn, 0 at midnight & noon
+    const dayFraction = Math.max(0, Math.min(1, (t - 0.25) / 0.5))  // for sun arc position
+
+    // ── Ambient ───────────────────────────────────────────────────────────
+    // Intensity: 0.15 midnight, 0.27 dusk/dawn, 0.82 noon
     if (ambRef.current) {
-      if (isDay) {
-        ambRef.current.intensity = 0.18 + sunArc * 0.55
-        ambRef.current.color.setHSL(0.1 + sunArc * 0.04, 0.1, 1)
-      } else {
-        ambRef.current.intensity = 0.06
-        ambRef.current.color.setHSL(0.62, 0.35, 0.4)
-      }
+      ambRef.current.intensity = 0.15 + twilight * 0.12 + sun * 0.67
+      // Color: moonlight blue (night) → warm white (day), using twilight as bridge
+      const dc = Math.min(1, twilight + sun)  // 0 at midnight, 1 at dusk/dawn & day
+      ambRef.current.color.setHSL(0.62 - dc * 0.52, 0.35 - dc * 0.25, 0.40 + dc * 0.60)
     }
+
+    // ── Directional ───────────────────────────────────────────────────────
+    // Intensity: 0.18 midnight, 0.35 dusk/dawn, 1.20 noon
     if (dirRef.current) {
-      if (isDay) {
-        dirRef.current.intensity = 0.25 + sunArc * 0.85
+      dirRef.current.intensity = 0.18 + twilight * 0.17 + sun * 1.02
+      if (sun > 0.01) {
+        // Sun arcs across the sky during the day
         const sx = Math.cos(dayFraction * Math.PI - Math.PI / 2) * 50
         const sy = Math.sin(dayFraction * Math.PI) * 60 + 5
         dirRef.current.position.set(sx, sy, 40)
-        dirRef.current.color.setHSL(0.08 + sunArc * 0.04, 0.5, 0.95)
       } else {
-        dirRef.current.intensity = 0.08
-        dirRef.current.position.set(-40, 50, -30)
-        dirRef.current.color.setHSL(0.63, 0.15, 0.9)
+        dirRef.current.position.set(-40, 50, -30)   // moon position at night
       }
+      const dc = Math.min(1, twilight + sun)
+      dirRef.current.color.setHSL(0.63 - dc * 0.55, 0.15 + dc * 0.35, 0.90 + sun * 0.05)
     }
 
-    // Sky color
-    if (isDay) {
-      const h = 0.04 + sunArc * 0.54    // orange dawn → sky blue noon
-      const s = 0.55 + sunArc * 0.35
-      const l = 0.38 + sunArc * 0.32
-      scene.background = new THREE.Color().setHSL(h, s, l)
-    } else {
-      const nearness = t < 0.25 ? (0.25 - t) / 0.25 : (t - 0.75) / 0.25
-      scene.background = new THREE.Color().setHSL(0.63, 0.65, 0.04 + nearness * 0.06)
-    }
+    // ── Sky background ────────────────────────────────────────────────────
+    // Uses twilight+sun so all transitions at dawn/dusk are smooth:
+    //   midnight: navy  (H=0.63, S=0.65, L=0.04)
+    //   dusk/dawn: orange-pink (H=0.04, S=0.55, L=0.38)   ← matches original
+    //   noon: sky blue  (H=0.58, S=0.90, L=0.70)          ← matches original
+    const skyH = 0.63 - twilight * 0.59 - sun * 0.05
+    const skyS = 0.65 - twilight * 0.10 + sun * 0.25
+    const skyL = 0.04 + twilight * 0.34 + sun * 0.66
+    scene.background = new THREE.Color().setHSL(skyH, skyS, skyL)
   })
 
   return (
@@ -177,21 +183,16 @@ function NightOverlay() {
     const mat = ref.current.material as THREE.MeshBasicMaterial
     let opacity = 0
     if (t >= 0.25 && t <= 0.75) {
-      // 白天：正午最亮，黎明/黄昏略暗
       const sun = Math.sin(((t - 0.25) / 0.5) * Math.PI)
-      opacity = (1 - sun) * 0.18
+      opacity = (1 - sun) * 0.14
     } else {
-      // 夜晚：越靠近午夜越暗
       const n = t < 0.25 ? (0.25 - t) / 0.25 : (t - 0.75) / 0.25
-      opacity = 0.18 + n * 0.52   // 黄昏0.18 → 午夜0.70
+      opacity = 0.14 + n * 0.38   // 黄昏0.14 → 午夜0.52
     }
-    mat.opacity = Math.min(0.70, opacity)
+    mat.opacity = Math.min(0.52, opacity)
   })
 
   return (
-    // renderOrder=999：最后渲染，盖在所有物体之上
-    // depthTest=false：不受深度测试影响，均匀覆盖整个画面
-    // raycast=()=>{}：不参与射线检测，点击穿透
     <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} renderOrder={999} raycast={() => {}}>
       <planeGeometry args={[400, 400]} />
       <meshBasicMaterial color="#00061a" transparent opacity={0} depthTest={false} depthWrite={false} />
@@ -1184,227 +1185,11 @@ function MarketBuyerMesh({ x, y, loaded }: { x: number; y: number; loaded: boole
   )
 }
 
-// ─── Building meshes (宋朝低模) ────────────────────────────────────────────
+// ─── Building meshes ───────────────────────────────────────────────────────
+// Each building's mesh now lives in src/config/buildings/{id}/mesh.tsx
+// and is dispatched via BUILDING_MESH_REGISTRY.  See _mesh_registry.tsx.
 
-function HouseMesh({ x, y, occupants }: { x: number; y: number; occupants: number }) {
-  // snap visual to mountain height if present so houses on peaks don't overlap
-  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
-  return (
-    <group position={[x, baseY, y]}>
-      <mesh position={[0, 0.35, 0]} castShadow>
-        <boxGeometry args={[0.8, 0.7, 0.8]} />
-        <meshStandardMaterial color={palette.building.houseBody} />
-      </mesh>
-      <mesh position={[0, 0.85, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <coneGeometry args={[0.7, 0.55, 4]} />
-        <meshStandardMaterial color={palette.building.houseRoof} />
-      </mesh>
-      <mesh position={[0.3, 0.4, 0.3]}>
-        <sphereGeometry args={[0.055, 8, 8]} />
-        <meshStandardMaterial color={occupants > 0 ? '#fff' : '#555'} />
-      </mesh>
-    </group>
-  )
-}
 
-function MarketMesh({ x, y }: { x: number; y: number }) {
-  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
-  return (
-    <group position={[x, baseY, y]}>
-      <mesh position={[0, 0.25, 0]} castShadow>
-        <boxGeometry args={[0.9, 0.5, 0.9]} />
-        <meshStandardMaterial color={palette.building.marketBody} />
-      </mesh>
-      <mesh position={[0, 0.65, 0]}>
-        <boxGeometry args={[0.9, 0.14, 0.1]} />
-        <meshStandardMaterial color={palette.building.marketAccent} />
-      </mesh>
-    </group>
-  )
-}
-
-function TeahouseMesh({ x, y }: { x: number; y: number }) {
-  return (
-    <group position={[x, 0, y]}>
-      <mesh position={[0, 0.3, 0]} castShadow>
-        <boxGeometry args={[0.82, 0.6, 0.82]} />
-        <meshStandardMaterial color={palette.building.teahouseBody} />
-      </mesh>
-      <mesh position={[0, 0.75, 0]} rotation={[0, Math.PI / 8, 0]}>
-        <coneGeometry args={[0.65, 0.5, 8]} />
-        <meshStandardMaterial color={palette.building.teahouseRoof} />
-      </mesh>
-      {/* Lantern */}
-      <mesh position={[0.1, 0.85, 0.1]}>
-        <sphereGeometry args={[0.05, 8, 8]} />
-        <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={0.8} />
-      </mesh>
-    </group>
-  )
-}
-
-function TavernMesh({ x, y }: { x: number; y: number }) {
-  return (
-    <group position={[x, 0, y]}>
-      <mesh position={[0, 0.3, 0]} castShadow>
-        <boxGeometry args={[0.9, 0.6, 0.9]} />
-        <meshStandardMaterial color={palette.building.tavernBody} />
-      </mesh>
-      <mesh position={[0, 0.7, 0]}>
-        <boxGeometry args={[1.0, 0.12, 0.12]} />
-        <meshStandardMaterial color={palette.building.tavernBanner} />
-      </mesh>
-      {/* Sign post */}
-      <mesh position={[0.5, 0.55, 0]}>
-        <boxGeometry args={[0.04, 0.5, 0.04]} />
-        <meshStandardMaterial color="#5a3010" />
-      </mesh>
-    </group>
-  )
-}
-
-function BlacksmithMesh({ x, y }: { x: number; y: number }) {
-  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
-  return (
-    <group position={[x, baseY, y]}>
-      <mesh position={[0, 0.22, 0]} castShadow>
-        <boxGeometry args={[0.85, 0.44, 0.85]} />
-        <meshStandardMaterial color={palette.building.blacksmithBody} />
-      </mesh>
-      {/* chimney */}
-      <mesh position={[0.25, 0.65, 0.25]} castShadow>
-        <boxGeometry args={[0.18, 0.5, 0.18]} />
-        <meshStandardMaterial color={palette.building.blacksmithChimney} />
-      </mesh>
-      {/* forge glow */}
-      <mesh position={[0, 0.18, 0.45]}>
-        <boxGeometry args={[0.3, 0.22, 0.04]} />
-        <meshStandardMaterial color="#ff6600" emissive="#ff4400" emissiveIntensity={0.7} />
-      </mesh>
-    </group>
-  )
-}
-
-function MineMesh({ x, y }: { x: number; y: number }) {
-  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
-  return (
-    <group position={[x, baseY, y]}>
-      {/* 矿洞主体 — 深灰石块 */}
-      <mesh position={[0, 0.18, 0]} castShadow>
-        <boxGeometry args={[0.9, 0.36, 0.9]} />
-        <meshStandardMaterial color="#6b5a4e" roughness={0.95} />
-      </mesh>
-      {/* 矿洞入口 */}
-      <mesh position={[0, 0.18, 0.46]}>
-        <boxGeometry args={[0.38, 0.3, 0.04]} />
-        <meshStandardMaterial color="#1a1008" />
-      </mesh>
-      {/* 矿石堆 — 暗红铁矿色 */}
-      <mesh position={[-0.28, 0.08, -0.28]} castShadow>
-        <boxGeometry args={[0.26, 0.16, 0.26]} />
-        <meshStandardMaterial color="#7a3a2a" roughness={1} />
-      </mesh>
-      {/* 木架支撑 */}
-      <mesh position={[0, 0.42, 0.44]} castShadow>
-        <boxGeometry args={[0.5, 0.06, 0.06]} />
-        <meshStandardMaterial color="#8b6914" />
-      </mesh>
-      <mesh position={[-0.22, 0.3, 0.44]} castShadow>
-        <boxGeometry args={[0.06, 0.3, 0.06]} />
-        <meshStandardMaterial color="#8b6914" />
-      </mesh>
-      <mesh position={[0.22, 0.3, 0.44]} castShadow>
-        <boxGeometry args={[0.06, 0.3, 0.06]} />
-        <meshStandardMaterial color="#8b6914" />
-      </mesh>
-    </group>
-  )
-}
-
-function TempleMesh({ x, y }: { x: number; y: number }) {
-  return (
-    <group position={[x, 0, y]}>
-      <mesh position={[0, 0.08, 0]} castShadow>
-        <boxGeometry args={[1.05, 0.16, 1.05]} />
-        <meshStandardMaterial color="#c8b060" />
-      </mesh>
-      <mesh position={[0, 0.45, 0]} castShadow>
-        <boxGeometry args={[0.88, 0.54, 0.88]} />
-        <meshStandardMaterial color={palette.building.templeBody} />
-      </mesh>
-      <mesh position={[0, 0.9, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <coneGeometry args={[0.78, 0.6, 4]} />
-        <meshStandardMaterial color={palette.building.templeRoof} />
-      </mesh>
-      {/* spire */}
-      <mesh position={[0, 1.3, 0]}>
-        <coneGeometry args={[0.06, 0.32, 6]} />
-        <meshStandardMaterial color="#d4a820" />
-      </mesh>
-    </group>
-  )
-}
-
-function AcademyMesh({ x, y }: { x: number; y: number }) {
-  return (
-    <group position={[x, 0, y]}>
-      {/* main hall */}
-      <mesh position={[0, 0.3, 0]} castShadow>
-        <boxGeometry args={[0.95, 0.6, 0.75]} />
-        <meshStandardMaterial color={palette.building.academyBody} />
-      </mesh>
-      {/* wing left */}
-      <mesh position={[-0.55, 0.22, 0]} castShadow>
-        <boxGeometry args={[0.2, 0.44, 0.5]} />
-        <meshStandardMaterial color={palette.building.academyBody} />
-      </mesh>
-      <mesh position={[0, 0.76, 0]}>
-        <boxGeometry args={[1.1, 0.12, 0.9]} />
-        <meshStandardMaterial color={palette.building.academyRoof} />
-      </mesh>
-    </group>
-  )
-}
-
-function PharmacyMesh({ x, y }: { x: number; y: number }) {
-  return (
-    <group position={[x, 0, y]}>
-      <mesh position={[0, 0.28, 0]} castShadow>
-        <boxGeometry args={[0.75, 0.56, 0.75]} />
-        <meshStandardMaterial color={palette.building.pharmacyBody} />
-      </mesh>
-      <mesh position={[0, 0.72, 0]}>
-        <coneGeometry args={[0.6, 0.45, 4]} />
-        <meshStandardMaterial color={palette.building.pharmacyRoof} />
-      </mesh>
-      {/* herb mortar hint */}
-      <mesh position={[0, 0.12, 0.42]}>
-        <cylinderGeometry args={[0.09, 0.11, 0.1, 8]} />
-        <meshStandardMaterial color="#8b7355" />
-      </mesh>
-    </group>
-  )
-}
-
-function GranaryMesh({ x, y }: { x: number; y: number }) {
-  const baseY = isMountainAt(x, y) ? tileH(x, y) : 0
-  return (
-    <group position={[x, baseY, y]}>
-      <mesh position={[0, 0.3, 0]} castShadow>
-        <boxGeometry args={[0.9, 0.6, 0.9]} />
-        <meshStandardMaterial color={palette.building.granaryBody} />
-      </mesh>
-      <mesh position={[0, 0.75, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <coneGeometry args={[0.74, 0.45, 4]} />
-        <meshStandardMaterial color={palette.building.granaryRoof} />
-      </mesh>
-      <mesh position={[0.32, 0.2, 0.32]}>
-        <cylinderGeometry args={[0.06, 0.06, 0.18, 8]} />
-        <meshStandardMaterial color="#f0d98a" />
-      </mesh>
-    </group>
-  )
-}
 
 // ─── 疫病警示标记（浮动红十字 + 亡者骷髅）────────────────────────────────
 
@@ -2112,20 +1897,25 @@ export default function MapScene() {
   }, [gl, camera])
 
   function buildingMesh(b: typeof state.buildings[0]) {
-    // ── GLB model (if the file exists in src/config/buildings/{type}/model.glb) ──
+    const baseY = isMountainAt(b.x, b.y) ? tileH(b.x, b.y) : 0
+
+    // ── GLB model (if model.glb exists in the building's folder) ─────────────
     if (hasBuildingGLB(b.type)) {
-      const baseY = (b.type === 'blacksmith' || b.type === 'mine') && isMountainAt(b.x, b.y)
-        ? tileH(b.x, b.y) : 0
       return <BuildingGLBRenderer key={b.id} type={b.type} x={b.x} y={b.y} baseY={baseY} />
     }
-    // ── Procedural fallback (current rendering path for all buildings) ──────────
-    switch (b.type) {
-      case 'house':       return <HouseMesh       key={b.id} x={b.x} y={b.y} occupants={b.occupants} />
-      case 'market':      return <MarketMesh      key={b.id} x={b.x} y={b.y} />
-      case 'granary':     return <GranaryMesh     key={b.id} x={b.x} y={b.y} />
-      case 'blacksmith':  return <BlacksmithMesh  key={b.id} x={b.x} y={b.y} />
-      case 'mine':        return <MineMesh        key={b.id} x={b.x} y={b.y} />
-    }
+
+    // ── Procedural mesh via registry ─────────────────────────────────────────
+    const Mesh = BUILDING_MESH_REGISTRY[b.type]
+    if (!Mesh) return null
+    return (
+      <Mesh
+        key={b.id}
+        x={b.x} y={b.y}
+        baseY={baseY}
+        occupants={b.occupants}
+        dayTime={state.dayTime}
+      />
+    )
   }
 
   const showTerrainOverlay = state.selectedTool === 'farmZone'

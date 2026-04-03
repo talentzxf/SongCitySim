@@ -327,6 +327,20 @@ export function createHighwayRoads(): { x: number; y: number }[] {
   const minY = -Math.floor(MAP_SIZE_Y / 2), maxY = Math.floor(MAP_SIZE_Y / 2) - 1
   const DIR4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]
 
+  // Find nearest clear (non-river, non-mountain) tile to city center to use as BFS goal.
+  // Avoids the bug where (0,0) is a river tile and the BFS never reaches it.
+  const clearGoal: { x: number; y: number } = (() => {
+    for (let radius = 0; radius <= 20; radius++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue
+          if (!isMountainAt(dx, dy) && !isRiverAt(dx, dy)) return { x: dx, y: dy }
+        }
+      }
+    }
+    return { x: 0, y: 0 }
+  })()
+
   function inBounds(x: number, y: number) { return x >= minX && x <= maxX && y >= minY && y <= maxY }
   function bfsPath(start: { x: number; y: number }, goal: { x: number; y: number }): { x: number; y: number }[] | null {
     const q = [start], parent = new Map<string, string | null>()
@@ -353,7 +367,7 @@ export function createHighwayRoads(): { x: number; y: number }[] {
       .sort((a, b) => Math.abs(a.y) - Math.abs(b.y))
     if (!candidates.length) continue
     for (const s of candidates) {
-      const path = bfsPath(s, { x: 0, y: 0 })
+      const path = bfsPath(s, clearGoal)
       if (path?.length) {
         HIGHWAY_MAIN_PATH = path.slice()
         ENTRY_TILE = HIGHWAY_MAIN_PATH[0]
@@ -382,7 +396,7 @@ export function createHighwayRoads(): { x: number; y: number }[] {
       }
     }
     if (foundStart) {
-      const path = bfsPath(foundStart, { x: 0, y: 0 })
+      const path = bfsPath(foundStart, clearGoal)
       if (path?.length) {
         HIGHWAY_MAIN_PATH = path.slice(); ENTRY_TILE = HIGHWAY_MAIN_PATH[0]
         try { if (typeof window !== 'undefined') { (window as any).ENTRY_TILE = ENTRY_TILE; (window as any).__ENTRY_TILE__ = ENTRY_TILE } } catch { /* ignore */ }

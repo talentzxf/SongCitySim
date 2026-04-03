@@ -125,7 +125,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       }, Math.round(SIM_TICK_MS / state.simSpeed))
     }
     if (!state.running && interval.current != null) { window.clearInterval(interval.current); interval.current = null }
-    return () => { if (interval.current != null) window.clearInterval(interval.current) }
+    return () => { if (interval.current != null) { window.clearInterval(interval.current); interval.current = null } }
   }, [state.running, state.simSpeed])
 
   function start()  { setState(s => ({ ...s, running: true })) }
