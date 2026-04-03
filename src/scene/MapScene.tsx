@@ -1,20 +1,28 @@
 import React from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { SIM_TICK_MS } from '../config/simulation'
 import {
   useSimulation, logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos,
-  logicalPeddlerPos, type Peddler,
+  logicalPeddlerPos,
   RIVER_TILES, isRiverAt, isNearRiverFive, RIVER_CENTER_LINE,
-  MOUNTAIN_TILES, ORE_VEIN_TILES, isMountainAt, isOreVeinAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y,
+  MOUNTAIN_TILES, ORE_VEIN_TILES, isMountainAt, isOreVeinAt, MAP_SIZE_X, MAP_SIZE_Y,
   BUILDING_COST, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CityState,
 } from '../state/simulation'
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { SpatialBST, type RangeRect } from './spatialBst'
 import { BuildingGLBRenderer, hasBuildingGLB } from './BuildingRenderer'
-import { BUILDING_MESH_REGISTRY } from '../config/buildings/_mesh_registry'
+import { BUILDING_MESH_REGISTRY } from '../config/buildings/_registry'
 import { message } from 'antd'
+// ─── Character / entity mesh components ──────────────────────────────────
+import MigrantHorse    from '../config/characters/migrant'
+import CommutingWalker from '../config/characters/walker'
+import ResidentAvatar  from '../config/characters/resident'
+import PeddlerMesh     from '../config/characters/peddler'
+import OxCartMesh      from '../config/characters/oxcart'
+import MarketBuyerMesh from '../config/characters/marketbuyer'
+import FarmerAtWork    from '../config/jobs/farmer/mesh'
+import { tileH } from '../config/characters/_shared'
 
 // ─── Smooth river curve (computed once at module load) ─────────────────────
 // Build a softened centre-line from the discrete per-column centre points.
@@ -200,179 +208,6 @@ function NightOverlay() {
   )
 }
 
-// ─── Animated character base ───────────────────────────────────────────────
-
-function useCharacterAnim(x: number, y: number) {
-  const ref = React.useRef<THREE.Group>(null)
-  const animRef = React.useRef({
-    startX: x, startY: y, targetX: x, targetY: y,
-    elapsedMs: SIM_TICK_MS, initialized: false,
-    time: 0, facing: 0,
-  })
-  React.useEffect(() => {
-    const a = animRef.current
-    if (!a.initialized) {
-      a.startX = x; a.startY = y; a.targetX = x; a.targetY = y
-      a.elapsedMs = SIM_TICK_MS; a.initialized = true
-      if (ref.current) ref.current.position.set(x, 0, y)
-      return
-    }
-    a.startX = ref.current?.position.x ?? a.targetX
-    a.startY = ref.current?.position.z ?? a.targetY
-    a.targetX = x; a.targetY = y; a.elapsedMs = 0
-  }, [x, y])
-  return { ref, animRef }
-}
-
-// ─── Migrant on horseback ─────────────────────────────────────────────────
-
-function MigrantHorse({ x, y }: { x: number; y: number }) {
-  const { ref, animRef } = useCharacterAnim(x, y)
-  const horseRef = React.useRef<THREE.Mesh>(null)
-  const riderRef = React.useRef<THREE.Mesh>(null)
-
-  useFrame((_, delta) => {
-    if (!ref.current) return
-    const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
-    const moving = Math.abs(dx) + Math.abs(dz) > 0.001
-    if (moving) { a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10)); ref.current.rotation.y = a.facing }
-    const stride = moving ? Math.sin(a.time * 14) : 0
-    const baseY = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    ref.current.position.y = baseY + (moving ? 0.015 + Math.abs(stride) * 0.025 : 0)
-    if (horseRef.current) horseRef.current.rotation.z = moving ? Math.sin(a.time * 14) * 0.05 : 0
-    if (riderRef.current) { riderRef.current.position.y = 0.36 + (moving ? Math.cos(a.time * 14) * 0.018 : 0); riderRef.current.rotation.z = moving ? Math.sin(a.time * 7) * 0.04 : 0 }
-  })
-
-  return (
-    <group ref={ref} position={[x, 0, y]}>
-      <mesh ref={horseRef} position={[0, 0.18, 0]} castShadow>
-        <boxGeometry args={[0.38, 0.22, 0.18]} />
-        <meshStandardMaterial color={palette.character.horseBody} />
-      </mesh>
-      <mesh position={[0.2, 0.26, 0]} castShadow>
-        <boxGeometry args={[0.12, 0.12, 0.12]} />
-        <meshStandardMaterial color={palette.character.horseBody} />
-      </mesh>
-      <mesh position={[-0.06, 0.3, 0]}>
-        <boxGeometry args={[0.16, 0.07, 0.18]} />
-        <meshStandardMaterial color={palette.character.saddle} />
-      </mesh>
-      <mesh position={[0.26, 0.33, 0]} rotation={[0, 0, -0.2]}>
-        <boxGeometry args={[0.08, 0.18, 0.04]} />
-        <meshStandardMaterial color={palette.character.horseMane} />
-      </mesh>
-      <mesh ref={riderRef} position={[0, 0.36, 0]}>
-        <capsuleGeometry args={[0.05, 0.15, 3, 8]} />
-        <meshStandardMaterial color={palette.character.robe} />
-      </mesh>
-      <mesh position={[0, 0.5, 0]}>
-        <sphereGeometry args={[0.045, 10, 10]} />
-        <meshStandardMaterial color={palette.character.skin} />
-      </mesh>
-      <mesh position={[0, 0.57, 0]} rotation={[0, 0, Math.PI]}>
-        <coneGeometry args={[0.09, 0.12, 6]} />
-        <meshStandardMaterial color={palette.character.hat} />
-      </mesh>
-    </group>
-  )
-}
-
-// ─── Commuting walker (on foot) ───────────────────────────────────────────
-
-function CommutingWalker({ x, y, purpose, selected, onClick }: {
-  x: number; y: number; purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop'; selected?: boolean; onClick?: (e: any) => void
-}) {
-  const { ref, animRef } = useCharacterAnim(x, y)
-  const bodyRef = React.useRef<THREE.Mesh>(null)
-
-  useFrame((_, delta) => {
-    if (!ref.current) return
-    const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
-    const moving = Math.abs(dx) + Math.abs(dz) > 0.001
-    if (moving) { a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10)); ref.current.rotation.y = a.facing }
-    const stride = moving ? Math.sin(a.time * 10) : 0
-    const baseY = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    ref.current.position.y = baseY + (moving ? Math.abs(stride) * 0.012 : 0)
-    if (bodyRef.current) bodyRef.current.rotation.z = moving ? Math.sin(a.time * 10) * 0.06 : 0
-  })
-
-  const robeColor = purpose === 'toWork' ? palette.character.robe : palette.character.robeAccent
-
-  return (
-    <group ref={ref} position={[x, 0, y]} onClick={onClick}>
-      {/* 点击靶区：透明圆柱（不用 visible=false，否则 THREE.js 不参与射线检测） */}
-      <mesh position={[0, 0.3, 0]}>
-        <cylinderGeometry args={[0.38, 0.38, 0.62, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-      <mesh ref={bodyRef} position={[0, 0.19, 0]}>
-        <capsuleGeometry args={[0.045, 0.2, 3, 8]} />
-        <meshStandardMaterial color={robeColor} />
-      </mesh>
-      <mesh position={[0, 0.4, 0]}>
-        <sphereGeometry args={[0.05, 10, 10]} />
-        <meshStandardMaterial color={palette.character.skin} />
-      </mesh>
-      <mesh position={[0, 0.48, 0]} rotation={[0, 0, Math.PI]}>
-        <coneGeometry args={[0.075, 0.09, 6]} />
-        <meshStandardMaterial color={palette.character.hat} />
-      </mesh>
-      {selected && (
-        <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.14, 0.18, 20]} />
-          <meshBasicMaterial color="#52c41a" />
-        </mesh>
-      )}
-    </group>
-  )
-}
-
-// ─── Resident avatar (stationary near house) ──────────────────────────────
-
-function ResidentAvatar({ x, y, seed, selected, onClick }: {
-  x: number; y: number; seed: number; selected?: boolean; onClick?: (e: any) => void
-}) {
-  const ox = Math.sin(seed) * 0.22; const oz = Math.cos(seed * 1.7) * 0.22
-  const color = seed % 2 === 0 ? palette.character.robe : palette.character.robeAccent
-  return (
-    <group position={[x + ox, 0, y + oz]} onClick={onClick}>
-      {/* 点击靶区（透明，非 visible=false） */}
-      <mesh position={[0, 0.25, 0]}>
-        <cylinderGeometry args={[0.36, 0.36, 0.52, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-      <mesh position={[0, 0.17, 0]}>
-        <capsuleGeometry args={[0.04, 0.12, 3, 8]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      <mesh position={[0, 0.31, 0]}>
-        <sphereGeometry args={[0.045, 10, 10]} />
-        <meshStandardMaterial color={palette.character.skin} />
-      </mesh>
-      <mesh position={[0, 0.39, 0]} rotation={[0, 0, Math.PI]}>
-        <coneGeometry args={[0.08, 0.08, 6]} />
-        <meshStandardMaterial color={palette.character.hat} />
-      </mesh>
-      {selected && (
-        <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.14, 0.18, 20]} />
-          <meshBasicMaterial color="#52c41a" />
-        </mesh>
-      )}
-    </group>
-  )
-}
-
 // ─── Tile ─────────────────────────────────────────────────────────────────
 
 function Tile({ x, y, color }: { x: number; y: number; color: string }) {
@@ -517,64 +352,6 @@ function SelectionRingMesh({ x, y, color = '#faad14', r = 0.52 }: {
   )
 }
 
-// ─── Peddler mesh (游商：市场行商，肩挑货担沿路叫卖) ─────────────────────
-
-function PeddlerMesh({ x, y }: { x: number; y: number }) {
-  const { ref, animRef } = useCharacterAnim(x, y)
-
-  useFrame((_, delta) => {
-    if (!ref.current) return
-    const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    ref.current.position.y = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    const dx = a.targetX - a.startX, dz = a.targetY - a.startY
-    if (Math.abs(dx) + Math.abs(dz) > 0.001) {
-      a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10))
-      ref.current.rotation.y = a.facing
-    }
-    // carrying-pole bob
-    ref.current.position.y += Math.sin(a.time * 7) * 0.012
-  })
-
-  return (
-    <group ref={ref} position={[x, 0, y]} castShadow>
-      {/* 身体（棕色长袍） */}
-      <mesh position={[0, 0.22, 0]} castShadow>
-        <capsuleGeometry args={[0.054, 0.15, 3, 8]} />
-        <meshStandardMaterial color="#9c5c20" />
-      </mesh>
-      {/* 头 */}
-      <mesh position={[0, 0.37, 0]}>
-        <sphereGeometry args={[0.046, 8, 8]} />
-        <meshStandardMaterial color={palette.character.skin} />
-      </mesh>
-      {/* 斗笠 */}
-      <mesh position={[0, 0.43, 0]} rotation={[0, 0, Math.PI]}>
-        <coneGeometry args={[0.09, 0.08, 8]} />
-        <meshStandardMaterial color="#6b4010" />
-      </mesh>
-      {/* 扁担 */}
-      <mesh position={[0, 0.30, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.011, 0.011, 0.52, 4]} />
-        <meshStandardMaterial color="#8b5e2a" />
-      </mesh>
-      {/* 左篮 */}
-      <mesh position={[-0.26, 0.18, 0]}>
-        <cylinderGeometry args={[0.063, 0.05, 0.1, 8]} />
-        <meshStandardMaterial color="#c8a050" />
-      </mesh>
-      {/* 右篮 */}
-      <mesh position={[0.26, 0.18, 0]}>
-        <cylinderGeometry args={[0.063, 0.05, 0.1, 8]} />
-        <meshStandardMaterial color="#c8a050" />
-      </mesh>
-    </group>
-  )
-}
-
 function getFarmColor(cropType: string, progress: number): THREE.Color {
   // Stage 0: bare soil just sown
   if (progress < 0.08) return new THREE.Color('#9a7850')
@@ -635,73 +412,6 @@ function FarmZoneInstances({ zones }: { zones: Array<{ x: number; y: number; cro
   )
 }
 
-// ─── Farmer at work (in the field) ────────────────────────────────────────
-
-function FarmerAtWork({ x, y, seed, selected, onClick }: {
-  x: number; y: number; seed: number; selected?: boolean; onClick?: (e: any) => void
-}) {
-  const bodyRef = React.useRef<THREE.Group>(null)
-  const timeRef = React.useRef(seed * 0.7)
-
-  useFrame((_, delta) => {
-    timeRef.current += delta
-    if (bodyRef.current) {
-      // Slow bending animation simulating hoeing
-      bodyRef.current.rotation.x = -0.28 + Math.sin(timeRef.current * 1.4) * 0.12
-    }
-  })
-
-  // Spread farmers within the 2×2 zone
-  const ox = Math.sin(seed * 0.73) * 0.55
-  const oz = Math.cos(seed * 1.31) * 0.55
-
-  return (
-    <group position={[x + ox, 0, y + oz]} onClick={onClick}>
-      {/* 点击靶区（透明，非 visible=false） */}
-      <mesh position={[0, 0.22, 0]}>
-        <cylinderGeometry args={[0.36, 0.36, 0.46, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-      {/* Farmer body (bent forward) */}
-      <group ref={bodyRef} rotation={[-0.28, 0, 0]}>
-        <mesh position={[0, 0.15, 0]}>
-          <capsuleGeometry args={[0.042, 0.13, 3, 8]} />
-          <meshStandardMaterial color="#7c9a50" />
-        </mesh>
-        <mesh position={[0, 0.30, 0]}>
-          <sphereGeometry args={[0.043, 10, 10]} />
-          <meshStandardMaterial color={palette.character.skin} />
-        </mesh>
-        {/* Wide straw hat brim */}
-        <mesh position={[0, 0.36, 0]}>
-          <cylinderGeometry args={[0.13, 0.14, 0.035, 10]} />
-          <meshStandardMaterial color="#c8a838" />
-        </mesh>
-        {/* Hat crown */}
-        <mesh position={[0, 0.40, 0]}>
-          <cylinderGeometry args={[0.058, 0.068, 0.09, 8]} />
-          <meshStandardMaterial color="#c8a838" />
-        </mesh>
-        {/* Hoe handle */}
-        <mesh position={[0.09, 0.12, -0.14]} rotation={[0.65, 0.15, 0]}>
-          <boxGeometry args={[0.018, 0.24, 0.018]} />
-          <meshStandardMaterial color="#7a4020" />
-        </mesh>
-        {/* Hoe blade */}
-        <mesh position={[0.09, 0.01, 0.02]} rotation={[0.8, 0, 0]}>
-          <boxGeometry args={[0.12, 0.022, 0.022]} />
-          <meshStandardMaterial color="#909090" />
-        </mesh>
-      </group>
-      {selected && (
-        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.14, 0.18, 20]} />
-          <meshBasicMaterial color="#52c41a" />
-        </mesh>
-      )}
-    </group>
-  )
-}
 
 // ─── Bridge (桥梁) ─────────────────────────────────────────────────────────
 
@@ -771,23 +481,9 @@ function TerrainSuitabilityMark({ x, y, suitable }: { x: number; y: number; suit
 }
 
 // ─── Mountain height helper ────────────────────────────────────────────────
-// tileH maps the Diamond-Square normalised value [0,1] → visual geometry height [0.04, 0.28]
-function tileH(x: number, y: number): number {
-  const BASE = 0.04
-  const SCALE = worldGenConfig.mountain.tileScale
-  return BASE + getMountainHeight(x, y) * SCALE
-}
+// tileH is imported from ../config/characters/_shared
 const _MAX_MOUNTAIN_H = 0.04 + worldGenConfig.mountain.tileScale
 
-/**
- * Returns the lerped terrain Y for a character moving from (sx,sz) to (tx,tz) at param t.
- * Interpolates between the two tile heights so characters glide smoothly up/down mountains.
- */
-function lerpTerrainY(sx: number, sz: number, tx: number, tz: number, t: number): number {
-  const sh = isMountainAt(Math.round(sx), Math.round(sz)) ? tileH(Math.round(sx), Math.round(sz)) : 0
-  const eh = isMountainAt(Math.round(tx), Math.round(tz)) ? tileH(Math.round(tx), Math.round(tz)) : 0
-  return sh + (eh - sh) * t
-}
 
 // ─── 3-D Mountain terrain (instanced rock boxes + optional snow caps) ──────
 
@@ -1061,134 +757,9 @@ function FarmPileInstances({ piles }: { piles: Array<{ x: number; y: number; cro
   )
 }
 
-// ─── Ox cart (粮仓牛车) ─────────────────────────────────────────────────────
-
-function OxCartMesh({ x, y, loaded }: { x: number; y: number; loaded: boolean }) {
-  const { ref, animRef } = useCharacterAnim(x, y)
-
-  useFrame((_, delta) => {
-    if (!ref.current) return
-    const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    ref.current.position.y = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
-    if (Math.abs(dx) + Math.abs(dz) > 0.001) {
-      a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 8))
-      ref.current.rotation.y = a.facing
-    }
-  })
-
-  return (
-    <group ref={ref} position={[x, 0, y]}>
-      {/* 牛身 */}
-      <mesh position={[0, 0.18, 0.1]} castShadow>
-        <boxGeometry args={[0.22, 0.2, 0.42]} />
-        <meshStandardMaterial color="#5a3a20" />
-      </mesh>
-      {/* 牛头 */}
-      <mesh position={[0, 0.22, 0.36]}>
-        <boxGeometry args={[0.16, 0.16, 0.18]} />
-        <meshStandardMaterial color="#5a3a20" />
-      </mesh>
-      {/* 犄角 */}
-      <mesh position={[-0.1, 0.32, 0.36]} rotation={[0, 0, 0.5]}>
-        <cylinderGeometry args={[0.01, 0.015, 0.1, 5]} />
-        <meshStandardMaterial color="#d8c090" />
-      </mesh>
-      <mesh position={[0.1, 0.32, 0.36]} rotation={[0, 0, -0.5]}>
-        <cylinderGeometry args={[0.01, 0.015, 0.1, 5]} />
-        <meshStandardMaterial color="#d8c090" />
-      </mesh>
-      {/* 车架 */}
-      <mesh position={[0, 0.08, -0.15]}>
-        <boxGeometry args={[0.36, 0.05, 0.44]} />
-        <meshStandardMaterial color="#7a4a20" />
-      </mesh>
-      {/* 车轮左 */}
-      <mesh position={[-0.2, 0.09, -0.12]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.1, 0.1, 0.04, 10]} />
-        <meshStandardMaterial color="#4a2a10" />
-      </mesh>
-      {/* 车轮右 */}
-      <mesh position={[0.2, 0.09, -0.12]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.1, 0.1, 0.04, 10]} />
-        <meshStandardMaterial color="#4a2a10" />
-      </mesh>
-      {/* 货物（稻草捆，仅装载时显示） */}
-      {loaded && (
-        <mesh position={[0, 0.2, -0.15]}>
-          <boxGeometry args={[0.3, 0.18, 0.36]} />
-          <meshStandardMaterial color="#d4a820" />
-        </mesh>
-      )}
-    </group>
-  )
-}
-
-// ─── Market buyer / 行商 ────────────────────────────────────────────────────
-
-function MarketBuyerMesh({ x, y, loaded }: { x: number; y: number; loaded: boolean }) {
-  const { ref, animRef } = useCharacterAnim(x, y)
-  const bodyRef = React.useRef<THREE.Mesh>(null)
-
-  useFrame((_, delta) => {
-    if (!ref.current) return
-    const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
-    const moving = Math.abs(dx) + Math.abs(dz) > 0.001
-    if (moving) { a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10)); ref.current.rotation.y = a.facing }
-    const baseY = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    ref.current.position.y = baseY + (moving ? Math.abs(Math.sin(a.time * 9)) * 0.01 : 0)
-    if (bodyRef.current) bodyRef.current.rotation.z = moving ? Math.sin(a.time * 9) * 0.05 : 0
-  })
-
-  return (
-    <group ref={ref} position={[x, 0, y]}>
-      {/* 扁担 */}
-      <mesh position={[0, 0.32, 0]} rotation={[0, 0, 0.1]}>
-        <boxGeometry args={[0.45, 0.018, 0.018]} />
-        <meshStandardMaterial color="#7a4a1a" />
-      </mesh>
-      {/* 左侧货篓 */}
-      <mesh position={[-0.22, 0.22, 0]}>
-        <boxGeometry args={[0.1, 0.12, 0.1]} />
-        <meshStandardMaterial color={loaded ? '#d4a820' : '#8b6020'} />
-      </mesh>
-      {/* 右侧货篓 */}
-      <mesh position={[0.22, 0.22, 0]}>
-        <boxGeometry args={[0.1, 0.12, 0.1]} />
-        <meshStandardMaterial color={loaded ? '#d4a820' : '#8b6020'} />
-      </mesh>
-      {/* 身体 */}
-      <mesh ref={bodyRef} position={[0, 0.18, 0]}>
-        <capsuleGeometry args={[0.042, 0.14, 3, 8]} />
-        <meshStandardMaterial color="#7a5030" />
-      </mesh>
-      {/* 头 */}
-      <mesh position={[0, 0.34, 0]}>
-        <sphereGeometry args={[0.044, 10, 10]} />
-        <meshStandardMaterial color={palette.character.skin} />
-      </mesh>
-      {/* 斗笠 */}
-      <mesh position={[0, 0.40, 0]}>
-        <cylinderGeometry args={[0.11, 0.13, 0.03, 9]} />
-        <meshStandardMaterial color="#b8902a" />
-      </mesh>
-    </group>
-  )
-}
-
 // ─── Building meshes ───────────────────────────────────────────────────────
-// Each building's mesh now lives in src/config/buildings/{id}/mesh.tsx
-// and is dispatched via BUILDING_MESH_REGISTRY.  See _mesh_registry.tsx.
-
+// Each building's mesh lives in src/config/buildings/{id}/mesh.tsx
+// dispatched via BUILDING_DEF_REGISTRY / BUILDING_MESH_REGISTRY.
 
 
 // ─── 疫病警示标记（浮动红十字 + 亡者骷髅）────────────────────────────────
