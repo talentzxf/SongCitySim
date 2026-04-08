@@ -5,7 +5,7 @@ import {
   ExperimentOutlined, HomeOutlined, MedicineBoxOutlined,
   PauseCircleOutlined, PlayCircleOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons'
-import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW } from '../state/simulation'
+import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH } from '../state/simulation'
 import configData from '../config/buildings-and-citizens.json'
 import { BUILDING_REGISTRY } from '../config/buildings/_loader'
 import type { BuildingCategory } from '../config/buildings/_schema'
@@ -46,7 +46,7 @@ const PALETTE_GROUPS: Array<{ category: BuildingCategory; label: string; buildin
 const DEAD_SPREAD_RADIUS_HUD = 2
 
 const CROP_LABEL: Record<CropType, string> = {
-  rice: '🌾 稻米', millet: '🌻 粟米', wheat: '🌿 麦子', soybean: '🫘 黄豆', vegetable: '🥬 蔬菜',
+  rice: '🌾 稻米', millet: '🌻 粟米', wheat: '🌿 麦子', soybean: '🫘 黄豆', vegetable: '🥬 蔬菜', tea: '🍵 茶叶',
 }
 
 const GENDER_LABEL: Record<string, string> = { male: '男', female: '女' }
@@ -88,7 +88,10 @@ export default function HUD() {
       'tile-occupied': '格子已被建筑占用。',
       'road-occupied': '格子已有道路，请先推平。',
       'river-occupied': '该处为河流，无法建造。',
-      'no-ore-vein': '此处无铁矿脉，冶铁厂只能建于铁矿脉（山地红色标记）之上。',
+      'no-ore-vein': '此处无铁矿脉，铁矿坑只能建于铁矿脉（地图上铁矿图标）之上。',
+      'no-forest': '此处无林地，采木场只能建于林地（地图上绿色树林）之上。',
+      'no-papermill': '方圆二十格内无造纸坊，书院须在造纸坊附近方可建造。',
+      'no-river-access': '此处离水太远，造纸坊须建于河流五格之内（需靠水碓）。',
     }
     return { type: 'warning' as const, message: `建造失败: ${reasonMap[attempt.reason] ?? attempt.reason}` }
   }, [attempt])
@@ -110,7 +113,7 @@ export default function HUD() {
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             {/* Title */}
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Typography.Title level={5} style={{ margin: 0 }}>🏯 清明上河图</Typography.Title>
+              <Typography.Title level={5} style={{ margin: 0 }}>🏯 永宋千秋：筑城天下 </Typography.Title>
               <Space size={6}>
                 <Tag color="blue">帧 {state.tick + 1}</Tag>
                 <Tag color={state.running ? 'green' : 'default'}>{state.running ? '运行中' : '已暂停'}</Tag>
@@ -183,6 +186,7 @@ export default function HUD() {
               {state.oxCarts.length > 0 && <Tag color="orange">🐂 牛车 {state.oxCarts.length}</Tag>}
               {state.marketBuyers.length > 0 && <Tag color="purple">🧺 行商 {state.marketBuyers.length}</Tag>}
               {state.migrants.length > 0 && <Tag color="processing">🐴 入城 {state.migrants.length}</Tag>}
+              {state.timberInventory > 0 && <Tag color="green">🪵 木料 {state.timberInventory}</Tag>}
             </Space>
 
             {/* Start / Stop + speed control */}
@@ -205,17 +209,27 @@ export default function HUD() {
 
             {/* Core tools */}
             <Space.Compact block>
-              {(['pan', 'road', 'farmZone', 'bulldoze'] as Tool[]).map(t => (
+              {(['pan', 'road', 'farmZone', 'teaZone', 'bulldoze'] as Tool[]).map(t => (
                 <Button key={t} type={state.selectedTool === t ? 'primary' : 'default'}
                   icon={t === 'bulldoze' ? <DeleteOutlined /> : undefined}
                   onClick={() => selectTool(t)} style={{ flex: 1 }}>
-                  {t === 'pan' ? '浏览' : t === 'road' ? '道路' : t === 'farmZone' ? '农地' : '拆除'}
+                  {t === 'pan' ? '浏览' : t === 'road' ? '道路' : t === 'farmZone' ? '🌾粮田' : t === 'teaZone' ? '🍵茶园' : '拆除'}
                 </Button>
               ))}
             </Space.Compact>
             {state.selectedTool === 'road' && (
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                🌉 跨河建桥：¥80×跨度（第1格¥80，第2格¥160…）
+                🌉 跨河建桥：¥80×跨度　🌲 伐木清路：林地额外 ¥25
+              </Typography.Text>
+            )}
+            {state.selectedTool === 'farmZone' && (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                🌾 <b>粮田</b>：点击河流三格内的平地（绿点范围），近水自动种稻，旱地种粟/麦。需紧邻道路方可耕作。
+              </Typography.Text>
+            )}
+            {state.selectedTool === 'teaZone' && (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                🍵 <b>茶园</b>：点击山坡（琥珀色点），选 2×2 全山地格开梯田种茶。需紧邻山道方可采摘。
               </Typography.Text>
             )}
 
@@ -267,7 +281,7 @@ export default function HUD() {
             }]} />
 
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              Pan: 左键平移 / 右键旋转。农地模式下绿圈标示可垦荒地（河流五步之内，非山地）。冶铁厂须建于山地铁矿脉上。
+              Pan: 左键平移 / 右键旋转。粮田须在河流五步以内。茶园须在山地（2×2全山格）。铁矿坑须建于铁矿脉，采木场须建于林地，书院须先建造纸坊（方圆二十格内）。草市与常平仓占地 2×2。
             </Typography.Text>
 
             {feedback && <Alert showIcon type={feedback.type} message={feedback.message} style={{ padding: '4px 8px' }} />}
@@ -844,11 +858,119 @@ function TaxModal({ open, onClose, setTaxRates }: {
   )
 }
 
+// ─── Terrain tile panel ───────────────────────────────────────────────────────
+
+function TerrainTilePanel() {
+  const { state, selectTerrainTile } = useSimulation()
+  const tt = state.selectedTerrainTile
+  if (!tt) return null
+
+  const { x, y, kind } = tt
+
+  const CONFIGS = {
+    ore: {
+      icon: '🪨', title: '铁矿脉', color: '#8c8c8c',
+      initialHealth: ORE_VEIN_INITIAL_HEALTH,
+      healthKey: `${x},${y}`,
+      healthMap: state.oreVeinHealth,
+      hint: '在矿脉格上建造【矿山】，矿工每日开采铁矿石，供铁匠铺打制农具。',
+      unit: '担',
+    },
+    forest: {
+      icon: '🌲', title: '林地', color: '#52c41a',
+      initialHealth: FOREST_TILE_INITIAL_HEALTH,
+      healthKey: `${x},${y}`,
+      healthMap: state.forestHealth,
+      hint: '在林地格上建造【采木场】，伐木工每日采伐周边林木，产出木料。',
+      unit: '担',
+    },
+    grassland: {
+      icon: '🌿', title: '草地', color: '#73d13d',
+      initialHealth: GRASSLAND_TILE_INITIAL_HEALTH,
+      healthKey: `${x},${y}`,
+      healthMap: state.grasslandHealth,
+      hint: '草地可供将来放牧。牧草储量耗尽后草地将消失，需休养生息方可复原。',
+      unit: '束',
+    },
+  } as const
+
+  const cfg = CONFIGS[kind]
+  const health = cfg.healthMap[cfg.healthKey] ?? cfg.initialHealth
+  const pct    = Math.max(0, Math.round(health / cfg.initialHealth * 100))
+  const barColor = pct > 60 ? '#52c41a' : pct > 20 ? '#faad14' : pct > 0 ? '#ff4d4f' : '#d9d9d9'
+
+  // Count all tiles of this kind with remaining health (for overview)
+  const allHealthMap = cfg.healthMap
+  const totalTiles   = Object.keys(allHealthMap).length
+  const aliveTiles   = Object.values(allHealthMap).filter(v => v > 0).length
+  const totalRemain  = Object.values(allHealthMap).reduce((s, v) => s + v, 0)
+
+  return (
+    <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Space size={6}>
+          <Typography.Text strong style={{ fontSize: 15 }}>{cfg.icon} {cfg.title}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>({x}, {y})</Typography.Text>
+        </Space>
+        <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => selectTerrainTile(null)} />
+      </div>
+
+      {/* This-tile health */}
+      <Card size="small" title={`${cfg.icon} 本格储量`} style={{ borderRadius: 8 }}>
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography.Text style={{ fontSize: 12 }}>
+              剩余：<b>{health.toFixed(0)}</b> / {cfg.initialHealth} {cfg.unit}
+            </Typography.Text>
+            <Tag color={pct > 60 ? 'green' : pct > 20 ? 'orange' : pct > 0 ? 'red' : 'default'}>
+              {pct > 0 ? `${pct}%` : '已耗尽'}
+            </Tag>
+          </div>
+          <Progress
+            percent={pct} size="small" showInfo={false}
+            strokeColor={barColor}
+          />
+          {pct === 0 && (
+            <Alert type="warning" showIcon message="此格资源已耗尽，外观已消失。" style={{ padding: '2px 8px', fontSize: 11 }} />
+          )}
+        </Space>
+      </Card>
+
+      {/* Global overview */}
+      {totalTiles > 0 && (
+        <Card size="small" title="🗺 全图总览" style={{ borderRadius: 8 }}>
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+              <Typography.Text style={{ fontSize: 12 }}>存活格数</Typography.Text>
+              <Typography.Text strong style={{ fontSize: 12 }}>{aliveTiles} / {totalTiles}</Typography.Text>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+              <Typography.Text style={{ fontSize: 12 }}>全图剩余总量</Typography.Text>
+              <Typography.Text strong style={{ fontSize: 12, color: '#52c41a' }}>{totalRemain.toFixed(0)} {cfg.unit}</Typography.Text>
+            </div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              地图上彩色圆圈显示各格储量：绿色充沛，黄色减少，红色告急，灰色耗尽。
+            </Typography.Text>
+          </Space>
+        </Card>
+      )}
+
+      {/* Hint */}
+      <Alert
+        type="info" showIcon
+        message={cfg.hint}
+        style={{ fontSize: 11, borderRadius: 8 }}
+      />
+    </Space>
+  )
+}
+
 // ─── Right info panel ─────────────────────────────────────────────────────────
 
 function InfoPanel() {
   const { state } = useSimulation()
-  const hasSelection = Boolean(state.selectedBuildingId || state.selectedCitizenId || state.selectedFarmZoneId)
+  const hasSelection = Boolean(state.selectedBuildingId || state.selectedCitizenId || state.selectedFarmZoneId || state.selectedTerrainTile)
   if (!hasSelection) return null
 
   return (
@@ -858,7 +980,9 @@ function InfoPanel() {
           ? <CitizenPanel />
           : state.selectedFarmZoneId
             ? <FarmZonePanel />
-            : <BuildingPanel />}
+            : state.selectedTerrainTile
+              ? <TerrainTilePanel />
+              : <BuildingPanel />}
       </div>
     </div>
   )
@@ -871,6 +995,7 @@ function FarmZonePanel() {
   const zone = state.farmZones.find(z => z.id === state.selectedFarmZoneId)
   if (!zone) return null
 
+  const isTeaGarden = (zone as any).zoneType === 'tea'
   const assignedFarmers = state.citizens.filter(c => c.farmZoneId === zone.id)
 
   // 检查农田是否有路可达
@@ -897,17 +1022,20 @@ function FarmZonePanel() {
     return '牛车正在赶来的路上，请稍候…'
   })() : null
 
-  // Crop label without emoji for buttons
-  const CROP_BTN: Record<CropType, string> = {
+  // Crop label without emoji for buttons (only grain fields)
+  const CROP_BTN: Record<string, string> = {
     rice: '🌾 稻米', millet: '🌻 粟米', wheat: '🌿 麦子', soybean: '🫘 黄豆', vegetable: '🥬 蔬菜',
   }
+
+  const zoneIcon  = isTeaGarden ? '🍵' : '🌾'
+  const zoneTitle = isTeaGarden ? '茶园（山地梯田）' : '粮田'
 
   return (
     <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Space size={6}>
-          <Typography.Text strong style={{ fontSize: 15 }}>🌾 农田</Typography.Text>
+          <Typography.Text strong style={{ fontSize: 15 }}>{zoneIcon} {zoneTitle}</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>({zone.x}~{zone.x+1}, {zone.y}~{zone.y+1})</Typography.Text>
         </Space>
         <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => selectFarmZone(null)} />
@@ -917,8 +1045,10 @@ function FarmZonePanel() {
       {!hasRoadAccess && (
         <Alert
           type="warning" showIcon
-          message="未与道路相连"
-          description="农田需要紧邻道路，农夫才能前来耕作，牛车才能运走粮食。"
+          message={isTeaGarden ? '茶园未与道路相连' : '粮田未与道路相连'}
+          description={isTeaGarden
+            ? '山间茶园需紧邻山道（修山路代价较高），茶农才能前来采茶。'
+            : '农田需要紧邻道路，农夫才能前来耕作，牛车才能运走粮食。'}
           style={{ fontSize: 12, borderRadius: 8 }}
         />
       )}
@@ -927,56 +1057,72 @@ function FarmZonePanel() {
       {isBlocked && (
         <Alert
           type="error" showIcon
-          message={`🚫 粮食堆积，生产已停滞（${pendingPile!.amount.toFixed(1)} 担）`}
+          message={`🚫 产出堆积，生产已停滞（${pendingPile!.amount.toFixed(1)} 担）`}
           description={blockReason ?? ''}
           style={{ fontSize: 12, borderRadius: 8 }}
         />
       )}
 
-      {/* Crop selector */}
-      <Card size="small" title="🌱 种植作物" style={{ borderRadius: 8 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-          {(Object.keys(CROP_BTN) as CropType[]).map(crop => {
-            const isCurrent = zone.cropType === crop
-            const isPending = zone.pendingCropType === crop
-            return (
-              <Button
-                key={crop}
-                size="small"
-                type={isCurrent ? 'primary' : isPending ? 'dashed' : 'default'}
-                onClick={() => setFarmCrop(zone.id, crop)}
-                style={{ textAlign: 'left', fontSize: 12, position: 'relative' }}
-              >
-                {CROP_BTN[crop]}
-                {isPending && (
-                  <Tag color="orange" style={{ fontSize: 9, padding: '0 3px', marginLeft: 4, verticalAlign: 'middle' }}>次周期</Tag>
-                )}
-              </Button>
-            )
-          })}
-        </div>
-        {zone.pendingCropType && zone.pendingCropType !== zone.cropType && (
-          <div style={{ marginTop: 6, fontSize: 11, color: '#fa8c16' }}>
-            ⏳ 本周期结束后切换为 {CROP_BTN[zone.pendingCropType]}
+      {/* Tea garden info */}
+      {isTeaGarden && (
+        <Card size="small" title="🍵 茶园信息" style={{ borderRadius: 8 }}>
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Typography.Text style={{ fontSize: 12 }}>
+              茶叶出产自山地梯田，价值高于普通粮食（每担 ¥8），可售于集市或由行商贩卖。
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              茶园固定种植茶叶，无法更换作物。
+            </Typography.Text>
+          </Space>
+        </Card>
+      )}
+
+      {/* Crop selector — only for grain fields */}
+      {!isTeaGarden && (
+        <Card size="small" title="🌱 种植作物" style={{ borderRadius: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+            {(Object.keys(CROP_BTN) as CropType[]).map(crop => {
+              const isCurrent = zone.cropType === crop
+              const isPending = zone.pendingCropType === crop
+              return (
+                <Button
+                  key={crop}
+                  size="small"
+                  type={isCurrent ? 'primary' : isPending ? 'dashed' : 'default'}
+                  onClick={() => setFarmCrop(zone.id, crop)}
+                  style={{ textAlign: 'left', fontSize: 12, position: 'relative' }}
+                >
+                  {CROP_BTN[crop]}
+                  {isPending && (
+                    <Tag color="orange" style={{ fontSize: 9, padding: '0 3px', marginLeft: 4, verticalAlign: 'middle' }}>次周期</Tag>
+                  )}
+                </Button>
+              )
+            })}
           </div>
-        )}
-      </Card>
+          {zone.pendingCropType && zone.pendingCropType !== zone.cropType && (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#fa8c16' }}>
+              ⏳ 本周期结束后切换为 {CROP_BTN[zone.pendingCropType]}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Crop growth progress */}
       <Card size="small" title="📈 作物生长" style={{ borderRadius: 8 }}>
         <Space direction="vertical" size={6} style={{ width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography.Text style={{ fontSize: 12 }}>{CROP_BTN[zone.cropType]}</Typography.Text>
+            <Typography.Text style={{ fontSize: 12 }}>{CROP_LABEL[zone.cropType] ?? zone.cropType}</Typography.Text>
             <Space size={4}>
               {zone.growthProgress >= 0.95
-                ? <Tag color="gold" style={{ fontSize: 11 }}>可收获！</Tag>
+                ? <Tag color="gold" style={{ fontSize: 11 }}>{isTeaGarden ? '可采摘！' : '可收获！'}</Tag>
                 : zone.growthProgress >= 0.70
                   ? <Tag color="processing" style={{ fontSize: 11 }}>即将成熟</Tag>
                   : zone.growthProgress >= 0.35
                     ? <Tag color="green" style={{ fontSize: 11 }}>生长中</Tag>
                     : zone.growthProgress >= 0.08
-                      ? <Tag color="lime" style={{ fontSize: 11 }}>幼苗期</Tag>
-                      : <Tag style={{ fontSize: 11 }}>播种中</Tag>}
+                      ? <Tag color="lime" style={{ fontSize: 11 }}>{isTeaGarden ? '茶芽萌发' : '幼苗期'}</Tag>
+                      : <Tag style={{ fontSize: 11 }}>{isTeaGarden ? '开垦中' : '播种中'}</Tag>}
               <Typography.Text strong style={{ fontSize: 12 }}>
                 {Math.round(zone.growthProgress * 100)}%
               </Typography.Text>
@@ -989,16 +1135,18 @@ function FarmZonePanel() {
             strokeColor={
               zone.growthProgress >= 0.95 ? '#fadb14'
               : zone.growthProgress >= 0.70 ? '#faad14'
-              : '#52c41a'
+              : isTeaGarden ? '#2a7530' : '#52c41a'
             }
           />
           {zone.pendingCropType && zone.pendingCropType !== zone.cropType ? (
             <Typography.Text style={{ fontSize: 11, color: '#fa8c16' }}>
-              ⏳ 收获后自动切换 → {CROP_BTN[zone.pendingCropType]}
+              ⏳ 收获后自动切换 → {CROP_LABEL[zone.pendingCropType] ?? zone.pendingCropType}
             </Typography.Text>
           ) : (
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              每5游戏日收获约 {(15 * 0.7).toFixed(0)}~15 担·自动转入粮仓
+              {isTeaGarden
+                ? '每5游戏日采摘约 9~11 担茶叶·自动转入粮仓'
+                : '每5游戏日收获约 8~15 担·自动转入粮仓'}
             </Typography.Text>
           )}
         </Space>
@@ -1212,15 +1360,53 @@ function MineNoWorkerHint() {
 // ─── Building panel ───────────────────────────────────────────────────────────
 
 function BuildingPanel() {
-  const { state, selectBuilding, selectCitizen, setMarketConfig } = useSimulation()
+  const { state, selectBuilding, selectCitizen, setMarketConfig, upgradeBuilding } = useSimulation()
   const b = state.buildings.find(x => x.id === state.selectedBuildingId)
   if (!b) return null
 
   const isHouse    = b.type === 'house'
   const isMarket   = b.type === 'market'
   const isGranary  = b.type === 'granary'
+
+  // 升级信息（含前置条件）
+  const UPGRADE_INFO: Partial<Record<string, {
+    maxLevel: number
+    levelNames: string[]
+    costs: number[]
+    /** prereqs[i] = 升到 i+2 级所需的前置建筑类型列表（含显示标签） */
+    prereqs?: { buildingType: string; label: string; hint: string }[][]
+  }>> = {
+    market:  { maxLevel: 2, levelNames: ['草市', '牙市'],   costs: [800] },
+    granary: {
+      maxLevel: 2,
+      levelNames: ['常平仓', '太仓'],
+      costs: [600],
+      prereqs: [[
+        {
+          buildingType: 'academy',
+          label: '书院',
+          hint: '太仓须有书院中会算账的文吏协助管理，方可建立完备的粮册账目。',
+        },
+      ]],
+    },
+  }
+  const upgradeInfo  = UPGRADE_INFO[b.type]
+  const curLevel     = b.level ?? 1
+  const buildingName = upgradeInfo ? (upgradeInfo.levelNames[curLevel - 1] ?? BUILDING_LABEL[b.type]) : (BUILDING_LABEL[b.type] ?? b.type)
+  const canUpgrade   = upgradeInfo && curLevel < upgradeInfo.maxLevel
+  const upgradeCost  = canUpgrade ? upgradeInfo!.costs[curLevel - 1] : 0
+  const nextName     = canUpgrade ? upgradeInfo!.levelNames[curLevel] : ''
+  // 检查前置条件（每项：是否在城中已建）
+  const upgradePrereqChecks = canUpgrade
+    ? (upgradeInfo!.prereqs?.[curLevel - 1] ?? []).map(p => ({
+        ...p,
+        met: state.buildings.some(bd => (bd.type as string) === p.buildingType),
+      }))
+    : []
+  const upgradePrereqsMet = upgradePrereqChecks.every(p => p.met)
   const isBlacksmith = b.type === 'blacksmith'
-  const isMine     = b.type === 'mine'
+  const isMine       = b.type === 'mine'
+  const isLumbercamp = (b.type as string) === 'lumbercamp'
   const residents  = isHouse ? state.citizens.filter(c => c.houseId === b.id) : []
   const workers    = !isHouse ? state.citizens.filter(c => c.workplaceId === b.id) : []
   const houseFood  = state.houseFood[b.id] ?? 0
@@ -1235,7 +1421,7 @@ function BuildingPanel() {
   const mineOreFillPct   = mineCapacity   > 0 ? Math.min(100, (state.mineInventory  / mineCapacity)  * 100) : 0
   const smithToolFillPct = smithCapacity  > 0 ? Math.min(100, (state.smithInventory / smithCapacity) * 100) : 0
   const granaries       = state.buildings.filter(b2 => b2.type === 'granary')
-  const granaryCapacity = granaries.length * GRANARY_CAPACITY_PER
+  const granaryCapacity = granaries.reduce((sum, g) => sum + GRANARY_CAPACITY_PER * (g.level ?? 1), 0)
   const granaryTotal    = Object.values(state.granaryInventory).reduce((s, v) => s + v, 0)
   const granaryFillPct  = granaryCapacity > 0 ? Math.min(100, (granaryTotal / granaryCapacity) * 100) : 0
   const myOxCarts       = state.oxCarts.filter(c => c.granaryId === b.id)
@@ -1260,11 +1446,23 @@ function BuildingPanel() {
     : new Set<string>()
 
 
-  const hasRoadAccess = state.roads.some(r =>
-    Math.abs(r.x - b.x) + Math.abs(r.y - b.y) === 1
-  )
+  const hasRoadAccess = (() => {
+    const bw = b.w ?? 1, bh = b.h ?? 1
+    for (let dx = 0; dx < bw; dx++) {
+      for (let dy = 0; dy < bh; dy++) {
+        const tx = b.x + dx, ty = b.y + dy
+        for (const [ddx, ddy] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+          const nx = tx + ddx, ny = ty + ddy
+          // skip tiles that are inside the building's own footprint
+          if (nx >= b.x && nx < b.x + bw && ny >= b.y && ny < b.y + bh) continue
+          if (state.roads.some(r => r.x === nx && r.y === ny)) return true
+        }
+      }
+    }
+    return false
+  })()
 
-  const CROP_NAME: Record<CropType, string> = { rice: '稻米', millet: '粟米', wheat: '麦子', soybean: '黄豆', vegetable: '蔬菜' }
+  const CROP_NAME: Record<CropType, string> = { rice: '稻米', millet: '粟米', wheat: '麦子', soybean: '黄豆', vegetable: '蔬菜', tea: '茶叶' }
 
   return (
     <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
@@ -1272,12 +1470,49 @@ function BuildingPanel() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Space size={6}>
           <Typography.Text strong style={{ fontSize: 15 }}>
-            {BUILDING_LABEL[b.type] ?? b.type}
+            {buildingName}
           </Typography.Text>
+          {curLevel >= 2 && <Tag color="gold">已升级</Tag>}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>({b.x}, {b.y})</Typography.Text>
         </Space>
         <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => selectBuilding(null)} />
       </div>
+
+      {/* 升级按钮 */}
+      {upgradeInfo && (
+        canUpgrade
+          ? (
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              {/* 前置条件尚未满足 → 锁定提示 */}
+              {upgradePrereqChecks.length > 0 && upgradePrereqChecks.map(p => (
+                !p.met && (
+                  <Alert
+                    key={p.buildingType}
+                    type="warning"
+                    showIcon
+                    icon={<span>🎓</span>}
+                    message={<span style={{ fontWeight: 600 }}>升级受阻：缺少【{p.label}】</span>}
+                    description={<span style={{ fontSize: 11 }}>{p.hint}</span>}
+                    style={{ borderRadius: 8, fontSize: 12 }}
+                  />
+                )
+              ))}
+              <Tooltip title={upgradePrereqsMet ? `升级为【${nextName}】，容纳更多人员与货物` : `需先建造前置建筑方可升级`}>
+                <Button
+                  size="small" type="primary" block
+                  disabled={state.money < upgradeCost || !upgradePrereqsMet}
+                  onClick={() => upgradeBuilding(b.id)}
+                  style={upgradePrereqsMet ? { background: '#d4b106', borderColor: '#a88a04' } : {}}
+                >
+                  {upgradePrereqsMet
+                    ? `升级为【${nextName}】 · ¥${upgradeCost}`
+                    : `🔒 升级为【${nextName}】 · ¥${upgradeCost}`}
+                </Button>
+              </Tooltip>
+            </Space>
+          )
+          : <Tag color="gold" style={{ textAlign: 'center', width: '100%' }}>已达最高等级（{buildingName}）</Tag>
+      )}
 
       {/* Tags */}
       <Space size={6} wrap>
@@ -1424,30 +1659,86 @@ function BuildingPanel() {
         </Card>
       )}
 
-      {/* ── 矿山：铁矿石库存 ── */}
-      {isMine && (
-        <Card size="small" title="⛏ 铁矿石存量" style={{ borderRadius: 8 }}>
-          <Space direction="vertical" size={6} style={{ width: '100%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography.Text style={{ fontSize: 12 }}>
-                全城存矿：<b>{state.mineInventory.toFixed(1)}</b> / {mineCapacity} 担
+      {/* ── 矿山：铁矿石库存 + 矿脉储量 ── */}
+      {isMine && (() => {
+        const tileKey = `${b.x},${b.y}`
+        const oreHealth = state.oreVeinHealth?.[tileKey] ?? 600
+        const oreHealthPct = Math.round(oreHealth / 600 * 100)
+        return (
+          <Card size="small" title="⛏ 铁矿石存量" style={{ borderRadius: 8 }}>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  全城存矿：<b>{state.mineInventory.toFixed(1)}</b> / {mineCapacity} 担
+                </Typography.Text>
+                <Tag color={mineOreFillPct >= 90 ? 'error' : mineOreFillPct >= 60 ? 'warning' : 'success'}>
+                  {mineOreFillPct.toFixed(0)}% 满
+                </Tag>
+              </div>
+              <Progress percent={mineOreFillPct} size="small" showInfo={false}
+                strokeColor={mineOreFillPct >= 90 ? '#ff4d4f' : '#52c41a'} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#888' }}>
+                <span>每矿工每日产出 3 担</span>
+                <span>在岗 {workers.length} 人</span>
+              </div>
+              {/* 矿脉储量 */}
+              <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Typography.Text style={{ fontSize: 12 }}>🪨 本格矿脉剩余储量</Typography.Text>
+                  <Tag color={oreHealthPct > 60 ? 'green' : oreHealthPct > 20 ? 'orange' : oreHealthPct > 0 ? 'red' : 'default'}>
+                    {oreHealthPct > 0 ? `${oreHealthPct}%` : '已枯竭'}
+                  </Tag>
+                </div>
+                <Progress percent={oreHealthPct} size="small" showInfo={false}
+                  strokeColor={oreHealthPct > 60 ? '#52c41a' : oreHealthPct > 20 ? '#fa8c16' : '#ff4d4f'} />
+                <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                  {oreHealth.toFixed(0)} / 600 担 · 选中矿坑时地图显示各矿脉颜色
+                </Typography.Text>
+              </div>
+              {workers.length === 0 && <MineNoWorkerHint />}
+            </Space>
+          </Card>
+        )
+      })()}
+
+      {/* ── 采木场：周边林木储量 ── */}
+      {isLumbercamp && (() => {
+        const FOREST_MAX = 400
+        const HARVEST_R  = 6
+        // 导入 FOREST_TILES 需通过 state，此处直接从 state.forestHealth 统计在岗半径内的格子
+        const nearbyKeys = Object.entries(state.forestHealth ?? {}).filter(([key]) => {
+          const [fx, fy] = key.split(',').map(Number)
+          return Math.max(Math.abs(fx - b.x), Math.abs(fy - b.y)) <= HARVEST_R
+        })
+        const totalRemain = nearbyKeys.reduce((s, [, v]) => s + v, 0)
+        const totalMax    = nearbyKeys.length * FOREST_MAX
+        const forestPct   = totalMax > 0 ? Math.round(totalRemain / totalMax * 100) : 0
+        return (
+          <Card size="small" title="🌲 周边林木储量" style={{ borderRadius: 8 }}>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  全城木料库存：<b>{state.timberInventory?.toFixed(0) ?? 0}</b> 担
+                </Typography.Text>
+                <Tag color={forestPct > 60 ? 'green' : forestPct > 20 ? 'orange' : forestPct > 0 ? 'red' : 'default'}>
+                  {forestPct > 0 ? `${forestPct}% 剩余` : '周边已伐尽'}
+                </Tag>
+              </div>
+              <Progress percent={forestPct} size="small" showInfo={false}
+                strokeColor={forestPct > 60 ? '#52c41a' : forestPct > 20 ? '#fa8c16' : '#ff4d4f'} />
+              <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                周边 {HARVEST_R} 格内：{nearbyKeys.length} 块林地 · 总储量 {totalRemain.toFixed(0)}/{totalMax} 担
               </Typography.Text>
-              <Tag color={mineOreFillPct >= 90 ? 'error' : mineOreFillPct >= 60 ? 'warning' : 'success'}>
-                {mineOreFillPct.toFixed(0)}% 满
-              </Tag>
-            </div>
-            <Progress percent={mineOreFillPct} size="small" showInfo={false}
-              strokeColor={mineOreFillPct >= 90 ? '#ff4d4f' : '#52c41a'} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#888' }}>
-              <span>每矿工每日产出 3 担</span>
-              <span>在岗 {workers.length} 人</span>
-            </div>
-            {workers.length === 0 && (
-              <MineNoWorkerHint />
-            )}
-          </Space>
-        </Card>
-      )}
+              <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                选中采木场时，地图上各林地格以绿/黄/红标示剩余储量
+              </Typography.Text>
+              {workers.length === 0 && (
+                <Alert type="warning" showIcon message="无在岗伐木工，请安排居民前来务工" style={{ padding: '2px 8px', fontSize: 11 }} />
+              )}
+            </Space>
+          </Card>
+        )
+      })()}
 
       {/* ── 铁匠铺：农具库存 ── */}
       {isBlacksmith && (

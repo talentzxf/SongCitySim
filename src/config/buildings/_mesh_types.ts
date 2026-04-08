@@ -15,6 +15,8 @@ export interface BuildingMeshProps {
   baseY: number
   /** Current occupant / worker count – used for window-light effects. */
   occupants: number
+  /** Building upgrade level (1 = base, 2 = upgraded). */
+  level: number
   /** 0–1 day-time fraction. Night = dayTime < 0.25 || dayTime > 0.75 */
   dayTime: number
 }

@@ -31,9 +31,9 @@ export const citizenStatusRoutine: TickRoutine = (ctx) => {
     const hasJob      = Boolean(c.workplaceId || c.farmZoneId)
     const savings     = houseSavings[c.houseId] ?? 0
     const cheb        = (bx: number, by: number) => Math.max(Math.abs(bx - house.x), Math.abs(by - house.y))
-    const nearMarket        = s.buildings.some(b => b.type === 'market'                                    && cheb(b.x, b.y) <= 10)
-    const nearAcademy       = s.buildings.some(b => (b.type as string) === 'academy'                      && cheb(b.x, b.y) <=  8)
-    const nearEntertainment = s.buildings.some(b => ((b.type as string) === 'tavern' || (b.type as string) === 'teahouse') && cheb(b.x, b.y) <= 8)
+    const nearMarket        = s.buildings.some(b => b.type === 'market'                                                       && cheb(b.x, b.y) <= 10)
+    const nearAcademy       = dietVariety >= 2 && s.buildings.some(b => (b.type as string) === 'academy'                      && cheb(b.x, b.y) <= 15)
+    const nearEntertainment = s.buildings.some(b => ((b.type as string) === 'tavern' || (b.type as string) === 'teahouse')    && cheb(b.x, b.y) <= 8)
     const needCtx: NeedContext = { food: prevFood, hasRoad, dietVariety, hasJob, savings, nearMarket, nearAcademy, nearEntertainment }
     // satisfaction delta: status machine + boredom penalty + needs hierarchy
     const idleMult = (status === 'idle' && hasJob) ? 1.6 : 1

@@ -1,23 +1,30 @@
 // ─── Building types (宋朝) ─────────────────────────────────────────────────
 export type BuildingType =
-  | 'house'        // 民居
-  | 'market'       // 集市
-  | 'granary'      // 粮仓
-  | 'blacksmith'   // 铁匠铺
-  | 'mine'         // 矿山
+  | 'house'        // 院落（民居）
+  | 'market'       // 草市
+  | 'granary'      // 常平仓
+  | 'blacksmith'   // 铁作坊
+  | 'mine'         // 铁矿坑
+  | 'academy'      // 书院
+  | 'papermill'    // 造纸坊
+  | 'lumbercamp'   // 采木场
 
 export const ALL_BUILDING_TYPES: BuildingType[] = [
-  'house', 'market', 'granary', 'blacksmith', 'mine',
+  'house', 'market', 'granary', 'blacksmith', 'mine', 'academy', 'papermill', 'lumbercamp',
 ]
 
 export type Profession =
   | 'merchant' | 'smith' | 'miner' | 'storekeeper' | 'farmer'
 
-export type CropType = 'rice' | 'millet' | 'wheat' | 'soybean' | 'vegetable'
+export type CropType = 'rice' | 'millet' | 'wheat' | 'soybean' | 'vegetable' | 'tea'
 export type CropInventory = Record<CropType, number>
+
+/** 农地种类（宋制）：粮田（近水旱地）| 茶园（山地梯田）*/
+export type FarmZoneType = 'grain' | 'tea'
 
 export type FarmZone = {
   id: string; x: number; y: number
+  zoneType: FarmZoneType   // 粮田 | 茶园
   cropType: CropType
   pendingCropType?: CropType
   growthProgress: number
@@ -58,6 +65,8 @@ export type Building = {
   id: string
   type: BuildingType
   x: number; y: number
+  w: number; h: number    // footprint
+  level: number           // 1 = 基础, 2 = 升级后
   capacity: number
   occupants: number
   workerSlots: number
@@ -182,7 +191,7 @@ export type Peddler = {
   statsDayCount:     number
 }
 
-export type Tool = 'pan' | 'road' | 'bulldoze' | 'farmZone' | BuildingType
+export type Tool = 'pan' | 'road' | 'bulldoze' | 'farmZone' | 'teaZone' | BuildingType
 
 export type LastAction =
   | { kind: 'placeBuilding'; id: string; cost: number }
@@ -206,6 +215,7 @@ export type CityState = {
   selectedBuildingId: string | null
   selectedCitizenId: string | null
   selectedFarmZoneId: string | null
+  selectedTerrainTile: { x: number; y: number; kind: 'forest' | 'grassland' | 'ore' } | null
   lastAction: LastAction | null
   lastBuildAttempt: BuildAttempt | null
   citizens: Citizen[]
@@ -223,6 +233,11 @@ export type CityState = {
   monthlyConstructionCost: number
   mineInventory: number
   smithInventory: number
+  timberInventory: number
+  /** 各资源格的剩余储量；key = "x,y"；未出现则视为初始满值 */
+  oreVeinHealth:    Record<string, number>
+  forestHealth:     Record<string, number>
+  grasslandHealth:  Record<string, number>
   houseTools: Record<string, number>
   farmInventory: CropInventory
   granaryInventory: CropInventory

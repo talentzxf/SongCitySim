@@ -5,7 +5,7 @@ import configData from '../config/buildings-and-citizens.json'
 import worldGenConfig from '../config/world-gen'
 import { MONTH_TICKS } from '../config/simulation'
 import {
-  isRiverAt, isMountainAt, isOreVeinAt, getMountainHeight,
+  isRiverAt, isMountainAt, isOreVeinAt, isForestAt, getMountainHeight,
   MAP_SIZE_X, MAP_SIZE_Y,
 } from './worldgen'
 import type {
@@ -15,7 +15,7 @@ import type {
 } from './types'
 
 // ─── Re-exported terrain helpers ─────────────────────────────────────────
-export { isRiverAt, isMountainAt, isOreVeinAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y }
+export { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y } from './worldgen'
 
 // ─── Clamp / round helpers ────────────────────────────────────────────────
 export function clamp01(v: number) { return Math.max(0, Math.min(1, v)) }
@@ -26,12 +26,29 @@ export function tileKey(x: number, y: number) { return `${x},${y}` }
 // ─── Building definitions ─────────────────────────────────────────────────
 export type BuildingDef = { cost: number; capacity: number; workerSlots: number; needBonus: Partial<CitizenNeeds> }
 
-export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = Object.entries(configData.buildings).reduce(
+const _defsFromJson: Record<string, BuildingDef> = Object.entries(configData.buildings).reduce(
   (acc, [key, cfg]: [string, any]) => {
-    acc[key as BuildingType] = { cost: cfg.cost, capacity: cfg.capacity, workerSlots: cfg.workerSlots, needBonus: cfg.needBonus }
+    acc[key] = { cost: cfg.cost, capacity: cfg.capacity, workerSlots: cfg.workerSlots, needBonus: cfg.needBonus }
     return acc
-  }, {} as Record<BuildingType, BuildingDef>
+  }, {} as Record<string, BuildingDef>
 )
+
+// Extra buildings not yet in buildings-and-citizens.json
+export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
+  ..._defsFromJson,
+  lumbercamp: { cost: 280, capacity: 0, workerSlots: 3, needBonus: {} },
+  papermill:  { cost: 380, capacity: 0, workerSlots: 3, needBonus: { culture: 0.01 } },
+  academy:    _defsFromJson['academy'] ?? { cost: 400, capacity: 0, workerSlots: 4, needBonus: { culture: 0.03 } },
+} as unknown as Record<BuildingType, BuildingDef>
+
+/** Grid footprint in tiles for each building type (defaults to 1×1). */
+const BUILDING_SIZE: Partial<Record<BuildingType, { w: number; h: number }>> = {
+  market:  { w: 2, h: 2 },
+  granary: { w: 2, h: 2 },
+}
+export function getBuildingSize(bt: BuildingType): { w: number; h: number } {
+  return BUILDING_SIZE[bt] ?? { w: 1, h: 1 }
+}
 
 export const BUILDING_COST: Record<BuildingType, number> = Object.entries(BUILDING_DEFS).reduce(
   (acc, [k, v]) => { acc[k as BuildingType] = v.cost; return acc },
@@ -59,6 +76,11 @@ export const ECONOMY = {
 }
 
 export const BRIDGE_BASE_COST       = 80
+export const FOREST_CLEAR_COST         = 25   // 伐木清路每格额外费用
+// ─── Resource tile initial health ─────────────────────────────────────────
+export const ORE_VEIN_INITIAL_HEALTH   = 600  // 铁矿脉初始储量（单位：矿石）
+export const FOREST_TILE_INITIAL_HEALTH = 400 // 林地初始储量（单位：木材）
+export const GRASSLAND_TILE_INITIAL_HEALTH = 300 // 草地初始储量（单位：牧草）
 export const GRANARY_CAPACITY_PER   = 200
 export const MARKET_TOTAL_SLOTS     = 6
 export const MARKET_CAP_PER_SHOP    = 25
@@ -69,15 +91,19 @@ export const ORE_PER_MINER_DAY      = 3
 export const ORE_PER_TOOL           = 2
 export const FARM_TOOL_PRICE        = 40
 export const TOOL_EFFICIENCY_BONUS  = 1.5
-export const TOOL_DURABILITY_MAX    = 100   // 新农具满耐久
-export const TOOL_WEAR_PER_DAY      = 4     // 每工作日磨损值（约 25 天用完）
-export const TOOL_DURABILITY_LOW    = 20    // 低于此值触发补购
+export const TOOL_DURABILITY_MAX    = 100
+export const TOOL_WEAR_PER_DAY      = 4
+export const TOOL_DURABILITY_LOW    = 20
 export const PEDDLER_MAX_STEPS      = 30
 export const PEDDLER_SPEED          = 3.5
 export const PEDDLER_CARRY_FOOD     = 10
 export const PEDDLER_CARRY_TOOLS    = 2
 export const PEDDLER_SELL_FOOD      = 5
 export const PEDDLER_FOOD_THRESH    = 10
+// 采木场 / 造纸坊
+export const LUMBER_CAPACITY_PER    = 80   // 每座采木场的木材上限
+export const TIMBER_PER_LOGGER_DAY  = 2    // 每名伐木工人每日产出木材
+export const PAPERMILL_CONSUME_PER_DAY = 1 // 造纸坊每日消耗木材
 
 // ─── Disease constants ────────────────────────────────────────────────────
 export const SICK_DEATH_TICKS      = MONTH_TICKS * 3   // 连续患病超过 3 个月 → 死亡
@@ -87,7 +113,7 @@ export const DEAD_SPREAD_CHANCE    = 0.0006
 
 // ─── Inventory helpers ─────────────────────────────────────────────────────
 export function createEmptyInventory(): CropInventory {
-  return { rice: 0, millet: 0, wheat: 0, soybean: 0, vegetable: 0 }
+  return { rice: 0, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 }
 }
 export function inventoryTotal(inv: CropInventory) {
   return CROP_KEYS.reduce((s, k) => s + inv[k], 0)
@@ -129,8 +155,10 @@ export function isNearRiver(x: number, y: number) {
 export function terrainSuitabilityAt(x: number, y: number) { return isNearRiver(x, y) }
 export function cropForTile(x: number, y: number): CropType {
   if (isNearRiver(x, y)) return 'rice'
-  const idx = Math.abs(Math.floor((x * 31 + y * 17 + Math.sin(x * 0.3 + y * 0.2) * 1000))) % CROP_KEYS.length
-  return CROP_KEYS[idx]
+  // 茶叶只产自茶园（山地），不随机分配给平地粮田
+  const grainKeys = CROP_KEYS.filter(k => k !== 'tea')
+  const idx = Math.abs(Math.floor((x * 31 + y * 17 + Math.sin(x * 0.3 + y * 0.2) * 1000))) % grainKeys.length
+  return grainKeys[idx]
 }
 
 // ─── Spatial helpers ──────────────────────────────────────────────────────
@@ -159,7 +187,12 @@ export function getBridgeSpan(roads: { x: number; y: number }[], x: number, y: n
   }
   return count + 1
 }
-export function isBuildingAt(bs: Building[], x: number, y: number) { return bs.find(b => b.x === x && b.y === y) }
+export function isBuildingAt(bs: Building[], x: number, y: number) {
+  return bs.find(b => {
+    const bw = b.w ?? 1, bh = b.h ?? 1
+    return x >= b.x && x < b.x + bw && y >= b.y && y < b.y + bh
+  })
+}
 export function farmZoneAt(zones: FarmZone[], x: number, y: number) {
   return zones.find(z => x >= z.x && x <= z.x + 1 && y >= z.y && y <= z.y + 1)
 }

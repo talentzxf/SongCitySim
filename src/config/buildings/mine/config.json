@@ -1,7 +1,7 @@
-{
+﻿{
   "id": "mine",
-  "label": "冶铁厂",
-  "labelEn": "Iron Smelter",
+  "label": "铁矿坑",
+  "labelEn": "Iron Mine",
   "category": "industrial",
   "tier": 1,
   "cost": 450,
@@ -36,4 +36,5 @@
   },
   "paletteRef": "building.blacksmithChimney"
 }
+
 

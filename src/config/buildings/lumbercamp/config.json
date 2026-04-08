@@ -1,0 +1,39 @@
+{
+  "id": "lumbercamp",
+  "label": "采木场",
+  "labelEn": "Lumber Camp",
+  "category": "industrial",
+  "tier": 1,
+  "cost": 280,
+  "maintenanceCostPerMonth": 8,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "miner", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": ["forest"],
+    "notTerrain": []
+  },
+  "inputs": [],
+  "outputs": [
+    { "goodId": "timber", "amountPerDay": 2.0 }
+  ],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "建于林地之上，伐木工每日砍伐木料，供造纸坊取用。林木有限，需善加经营。",
+  "icon": "🪵",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.granaryBody"
+}
+

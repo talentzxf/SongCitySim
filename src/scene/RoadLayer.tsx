@@ -5,11 +5,11 @@
 import React from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { isRiverAt, isMountainAt, isOreVeinAt, isNearRiverFive } from '../state/worldgen'
+import { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, isNearRiverFive } from '../state/worldgen'
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { tileH } from '../config/characters/_shared'
-import { BUILDING_COST, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CityState } from '../state/simulation'
+import { BUILDING_COST, ALL_BUILDING_TYPES, getBuildingSize, type BuildingType, type Tool, type CityState } from '../state/simulation'
 import { FlatInstances, VariableHeightFlatInstances } from './MapPrimitives'
 
 // ─── Bridge ────────────────────────────────────────────────────────────────
@@ -61,15 +61,17 @@ function RoadInstances({ roads }: { roads: Array<{ x: number; y: number }> }) {
 // ─── Road ghost preview ────────────────────────────────────────────────────
 
 function RoadPreviewInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }) {
-  const flatTiles = React.useMemo(() => tiles.filter(t => !isMountainAt(t.x, t.y)), [tiles])
-  const mtnItems  = React.useMemo(() =>
+  const flatFree   = React.useMemo(() => tiles.filter(t => !isMountainAt(t.x, t.y) && !isForestAt(t.x, t.y)), [tiles])
+  const flatForest = React.useMemo(() => tiles.filter(t => !isMountainAt(t.x, t.y) &&  isForestAt(t.x, t.y)), [tiles])
+  const mtnItems   = React.useMemo(() =>
     tiles.filter(t => isMountainAt(t.x, t.y)).map(t => ({ x: t.x, y: t.y, h: tileH(t.x, t.y) + 0.05 })),
     [tiles])
   if (!tiles.length) return null
   return (
     <>
-      {flatTiles.length > 0 && <FlatInstances items={flatTiles} y={0.09} size={[0.88, 0.88]} color="#1890ff" opacity={0.60} />}
-      {mtnItems.length  > 0 && <VariableHeightFlatInstances items={mtnItems} size={[0.88, 0.88]} color="#fa8c16" opacity={0.65} />}
+      {flatFree.length   > 0 && <FlatInstances items={flatFree}   y={0.09} size={[0.88, 0.88]} color="#1890ff" opacity={0.60} />}
+      {flatForest.length > 0 && <FlatInstances items={flatForest} y={0.09} size={[0.88, 0.88]} color="#fa8c16" opacity={0.75} />}
+      {mtnItems.length   > 0 && <VariableHeightFlatInstances items={mtnItems} size={[0.88, 0.88]} color="#fa8c16" opacity={0.65} />}
     </>
   )
 }
@@ -104,15 +106,31 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
     if (isBuildingTool) {
       const mesh = buildingRef.current; if (!mesh) return
       const bt = tool as BuildingType
+      const { w: bw, h: bh } = getBuildingSize(bt)
       const isMtn = isMountainAt(tx, ty)
       const mountainMultiplier = worldGenConfig.building?.mountainMultiplier || 1
       const effectiveCost = Math.ceil(BUILDING_COST[bt] * (isMtn ? mountainMultiplier : 1))
-      const valid = s.money >= effectiveCost && !isRiverAt(tx, ty) &&
-        !s.buildings.some(b => b.x === tx && b.y === ty) &&
-        !s.roads.some(r => r.x === tx && r.y === ty) &&
-        !s.farmZones.some(z => z.x === tx && z.y === ty) &&
-        (bt !== 'mine' || isOreVeinAt(tx, ty))
-      mesh.position.set(tx, (isMtn ? tileH(tx, ty) : 0) + 0.32, ty)
+      // check all footprint tiles
+      let valid = s.money >= effectiveCost && !isRiverAt(tx, ty)
+      for (let dx = 0; dx < bw && valid; dx++) {
+        for (let dy = 0; dy < bh && valid; dy++) {
+          const tx2 = tx + dx, ty2 = ty + dy
+          if (isRiverAt(tx2, ty2)) valid = false
+          if (s.buildings.some(b => { const bw2 = b.w??1, bh2 = b.h??1; return tx2>=b.x&&tx2<b.x+bw2&&ty2>=b.y&&ty2<b.y+bh2 })) valid = false
+          if (s.roads.some(r => r.x === tx2 && r.y === ty2)) valid = false
+          if (s.farmZones.some(z => z.x === tx2 && z.y === ty2)) valid = false
+        }
+      }
+      if (bt === 'mine'       && !isOreVeinAt(tx, ty)) valid = false
+      if (bt === 'lumbercamp' && !isForestAt(tx, ty))  valid = false
+      if ((bt as string) === 'papermill' && !isNearRiverFive(tx, ty)) valid = false
+      if (bt === 'academy') {
+        const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - tx), Math.abs(by - ty))
+        if (!s.buildings.some(b => b.type === 'papermill' && cheb(b.x, b.y) <= 20)) valid = false
+      }
+      // position ghost at footprint center
+      mesh.position.set(tx + (bw - 1) * 0.5, (isMtn ? tileH(tx, ty) : 0) + 0.32, ty + (bh - 1) * 0.5)
+      mesh.scale.set(bw, 1, bh)
       mesh.visible = true
       ;(mesh.material as THREE.MeshBasicMaterial).color.set(valid ? '#52c41a' : '#ff4d4f')
     }

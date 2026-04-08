@@ -81,6 +81,9 @@ const {
   mountainTiles:     _MOUNTAIN_TILES,
   mountainHeightMap: MOUNTAIN_HEIGHT_MAP,
   oreVeinTiles:      _ORE_VEIN_TILES,
+  forestTiles:       _FOREST_TILES,
+  grasslandTiles:    _GRASSLAND_TILES,
+  mountainForestTiles: _MOUNTAIN_FOREST_TILES,
 } = (() => {
   const perm    = buildPermTable(WORLD_SEED)
   const oreRand = createRng(WORLD_SEED ^ 0xdeadbeef)
@@ -408,55 +411,153 @@ const {
   }
 
   // ── 6. Ore veins ─────────────────────────────────────────────────────────
-  const mKeys  = new Set(mountainTiles.map(t => `${t.x},${t.y}`))
-  const oreSet = new Set<string>()
-  const VEIN_R = 3
-  const numVeins = Math.max(3, Math.floor(mountainTiles.length * 0.004))
+  const mKeys   = new Set(mountainTiles.map(t => `${t.x},${t.y}`))
+  const oreSet  = new Set<string>()
+  const oreCfg  = worldGenConfig.ore
+  const VEIN_R  = oreCfg.veinRadius
+  const FILL_P  = oreCfg.veinFill
+
+  // Mountain-core veins (fixed count, deep in the mountains)
+  const numVeins = oreCfg.mountainVeins
   for (let v = 0; v < numVeins && mountainTiles.length > 0; v++) {
     const c = mountainTiles[Math.floor(oreRand() * mountainTiles.length)]
-    for (let dx=-VEIN_R;dx<=VEIN_R;dx++) for (let dy=-VEIN_R;dy<=VEIN_R;dy++) {
-      if (dx*dx+dy*dy>VEIN_R*VEIN_R*1.1||oreRand()>0.60) continue
-      const k=`${c.x+dx},${c.y+dy}`; if (mKeys.has(k)) oreSet.add(k)
+    for (let dx = -VEIN_R; dx <= VEIN_R; dx++) for (let dy = -VEIN_R; dy <= VEIN_R; dy++) {
+      if (dx*dx + dy*dy > VEIN_R*VEIN_R*1.1 || oreRand() > FILL_P) continue
+      const k = `${c.x+dx},${c.y+dy}`; if (mKeys.has(k)) oreSet.add(k)
     }
   }
-  const foothillTiles = mountainTiles.filter(t => (mountainHeightMap.get(`${t.x},${t.y}`)??0) <= 0.6)
-  const numVeinsF = Math.max(3, Math.floor(foothillTiles.length * 0.02))
+
+  // Foothill fringe veins (smaller, fewer)
+  const foothillTiles = mountainTiles.filter(t => (mountainHeightMap.get(`${t.x},${t.y}`) ?? 0) <= 0.6)
+  const numVeinsF = oreCfg.foothillVeins
   for (let v = 0; v < numVeinsF && foothillTiles.length > 0; v++) {
     const c = foothillTiles[Math.floor(oreRand() * foothillTiles.length)]
-    for (let dx=-VEIN_R;dx<=VEIN_R;dx++) for (let dy=-VEIN_R;dy<=VEIN_R;dy++) {
-      const k=`${c.x+dx},${c.y+dy}`
-      if (!mKeys.has(k)||(mountainHeightMap.get(k)??0)>0.85||oreRand()>0.85) continue
+    for (let dx = -VEIN_R; dx <= VEIN_R; dx++) for (let dy = -VEIN_R; dy <= VEIN_R; dy++) {
+      const k = `${c.x+dx},${c.y+dy}`
+      if (!mKeys.has(k) || (mountainHeightMap.get(k) ?? 0) > 0.85 || oreRand() > FILL_P) continue
       oreSet.add(k)
     }
   }
   const oreVeinTiles = Array.from(oreSet).map(k => { const [x,y]=k.split(',').map(Number); return{x,y} })
 
-  return { riverTiles, riverCenterLine, mountainTiles, mountainHeightMap, oreVeinTiles }
+  // ── River buffer: 1格缓冲区，防止树木/草地渗入河道视觉范围 ─────────────────
+  const riverBufferKeys = new Set<string>()
+  for (const rt of riverTiles)
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        riverBufferKeys.add(`${rt.x+dx},${rt.y+dy}`)
+
+  // ── 7. Forest clusters (flat, non-mountain, non-river, outside city) ──────
+  const forestSet  = new Set<string>()
+  const forestRand = createRng(WORLD_SEED ^ 0xf01e57)
+  const fcfg       = worldGenConfig.forest
+  const FOREST_R   = fcfg.radius
+  const forestCandidates: { x: number; y: number }[] = []
+  for (let ix = minX; ix <= maxX; ix++) {
+    for (let iy = minY; iy <= maxY; iy++) {
+      const key = `${ix},${iy}`
+      // 使用缓冲区而非 riverSet，让树木至少离河道 1 格
+      if (riverBufferKeys.has(key) || mKeys.has(key)) continue
+      if (Math.hypot(ix, iy) < fcfg.minDistCity) continue
+      forestCandidates.push({ x: ix, y: iy })
+    }
+  }
+  for (let v = 0; v < fcfg.clusters && forestCandidates.length > 0; v++) {
+    const c = forestCandidates[Math.floor(forestRand() * forestCandidates.length)]
+    for (let dx = -FOREST_R; dx <= FOREST_R; dx++) {
+      for (let dy = -FOREST_R; dy <= FOREST_R; dy++) {
+        if (dx*dx + dy*dy > FOREST_R*FOREST_R*1.1 || forestRand() > fcfg.fill) continue
+        const nx = c.x+dx, ny = c.y+dy
+        if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
+        const key = `${nx},${ny}`
+        if (!riverBufferKeys.has(key) && !mKeys.has(key)) forestSet.add(key)
+      }
+    }
+  }
+  const forestTiles = Array.from(forestSet).map(k => { const [x,y]=k.split(',').map(Number); return{x,y} })
+
+  // ── 8. Grassland clusters (flat, not forest/river/mountain, outside city) ─
+  const grassSet  = new Set<string>()
+  const grassRand = createRng(WORLD_SEED ^ 0xc0a51a0d)
+  const gcfg      = worldGenConfig.grassland
+  const GRASS_R   = gcfg.radius
+  // candidates = flat tiles not already forest
+  const grassCandidates = forestCandidates.filter(t => !forestSet.has(`${t.x},${t.y}`))
+  for (let v = 0; v < gcfg.clusters && grassCandidates.length > 0; v++) {
+    const c = grassCandidates[Math.floor(grassRand() * grassCandidates.length)]
+    for (let dx = -GRASS_R; dx <= GRASS_R; dx++) {
+      for (let dy = -GRASS_R; dy <= GRASS_R; dy++) {
+        if (dx*dx + dy*dy > GRASS_R*GRASS_R*1.1 || grassRand() > gcfg.fill) continue
+        const nx = c.x+dx, ny = c.y+dy
+        if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
+        const key = `${nx},${ny}`
+        if (!riverBufferKeys.has(key) && !mKeys.has(key) && !forestSet.has(key)) grassSet.add(key)
+      }
+    }
+  }
+  const grasslandTiles = Array.from(grassSet).map(k => { const [x,y]=k.split(',').map(Number); return{x,y} })
+
+  // ── 9. Mountain forest tiles (松柏 — pine/fir on mid-elevation slopes) ────
+  // Trees grow on mountain tiles with height in [0.15, 0.62]; ore veins excluded.
+  const mountainForestSet = new Set<string>()
+  const mfRand = createRng(WORLD_SEED ^ 0xa1b2c3d4)
+  for (const mt of mountainTiles) {
+    const h = mountainHeightMap.get(`${mt.x},${mt.y}`) ?? 0
+    if (h >= 0.15 && h <= 0.62 && !oreSet.has(`${mt.x},${mt.y}`)) {
+      if (mfRand() < 0.52) mountainForestSet.add(`${mt.x},${mt.y}`)
+    }
+  }
+  const mountainForestTiles = Array.from(mountainForestSet).map(k => { const [x,y]=k.split(',').map(Number); return{x,y} })
+
+  return { riverTiles, riverCenterLine, mountainTiles, mountainHeightMap, oreVeinTiles, forestTiles, grasslandTiles, mountainForestTiles }
 })()
 
 // ─── Exports ──────────────────────────────────────────────────────────────
-export const RIVER_TILES:       RiverTile[]              = _RIVER_TILES
-export const RIVER_CENTER_LINE: { x: number; y: number }[] = _RIVER_CENTER_LINE
-export const MOUNTAIN_TILES:    { x: number; y: number }[] = _MOUNTAIN_TILES
-export const ORE_VEIN_TILES:    { x: number; y: number }[] = _ORE_VEIN_TILES
+export const RIVER_TILES:            RiverTile[]              = _RIVER_TILES
+export const RIVER_CENTER_LINE:      { x: number; y: number }[] = _RIVER_CENTER_LINE
+export const MOUNTAIN_TILES:         { x: number; y: number }[] = _MOUNTAIN_TILES
+export const ORE_VEIN_TILES:         { x: number; y: number }[] = _ORE_VEIN_TILES
+export const FOREST_TILES:           { x: number; y: number }[] = _FOREST_TILES
+export const GRASSLAND_TILES:        { x: number; y: number }[] = _GRASSLAND_TILES
+export const MOUNTAIN_FOREST_TILES:  { x: number; y: number }[] = _MOUNTAIN_FOREST_TILES
 export { MOUNTAIN_HEIGHT_MAP }
 
-const RIVER_TILE_KEYS    = new Set(RIVER_TILES.map(t => `${t.x},${t.y}`))
-const MOUNTAIN_TILE_KEYS = new Set(MOUNTAIN_TILES.map(t => `${t.x},${t.y}`))
-const ORE_VEIN_TILE_KEYS = new Set(ORE_VEIN_TILES.map(t => `${t.x},${t.y}`))
+// ─── River tile keys: built from CENTER-LINE ±1 buffer, NOT from all RIVER_TILES ──
+// RIVER_TILES includes tributary tiles and widened tiles that are NOT covered by the
+// visual SmoothRiverMesh ribbon (width 2.15 ≈ ±1.075 tiles from centre-line).
+// Using all RIVER_TILES caused "river-occupied" errors on visually-dry land where
+// invisible tributary tiles existed.  The ±1 Chebyshev buffer around RIVER_CENTER_LINE
+// exactly matches what the ribbon mesh actually covers (|Δy| ≤ 1 < 1.075 is inside
+// ribbon; |Δy| = 2 is outside).
+const RIVER_TILE_KEYS = (() => {
+  const set = new Set<string>()
+  for (const { x, y } of RIVER_CENTER_LINE)
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        set.add(`${x + dx},${y + dy}`)
+  return set
+})()
+const MOUNTAIN_TILE_KEYS  = new Set(MOUNTAIN_TILES.map(t => `${t.x},${t.y}`))
+const ORE_VEIN_TILE_KEYS  = new Set(ORE_VEIN_TILES.map(t => `${t.x},${t.y}`))
+const FOREST_TILE_KEYS    = new Set(FOREST_TILES.map(t => `${t.x},${t.y}`))
+const GRASSLAND_TILE_KEYS = new Set(GRASSLAND_TILES.map(t => `${t.x},${t.y}`))
+const MOUNTAIN_FOREST_TILE_KEYS = new Set(MOUNTAIN_FOREST_TILES.map(t => `${t.x},${t.y}`))
 
-export function isRiverAt(x: number, y: number): boolean    { return RIVER_TILE_KEYS.has(`${x},${y}`) }
-export function isMountainAt(x: number, y: number): boolean { return MOUNTAIN_TILE_KEYS.has(`${x},${y}`) }
-export function isOreVeinAt(x: number, y: number): boolean  { return ORE_VEIN_TILE_KEYS.has(`${x},${y}`) }
+export function isRiverAt(x: number, y: number): boolean          { return RIVER_TILE_KEYS.has(`${x},${y}`) }
+export function isMountainAt(x: number, y: number): boolean       { return MOUNTAIN_TILE_KEYS.has(`${x},${y}`) }
+export function isOreVeinAt(x: number, y: number): boolean        { return ORE_VEIN_TILE_KEYS.has(`${x},${y}`) }
+export function isForestAt(x: number, y: number): boolean         { return FOREST_TILE_KEYS.has(`${x},${y}`) }
+export function isGrasslandAt(x: number, y: number): boolean      { return GRASSLAND_TILE_KEYS.has(`${x},${y}`) }
+export function isMountainForestAt(x: number, y: number): boolean { return MOUNTAIN_FOREST_TILE_KEYS.has(`${x},${y}`) }
 /** Normalised [0,1] height for mountain tiles (0 = just above threshold, 1 = peak). */
 export function getMountainHeight(x: number, y: number): number { return MOUNTAIN_HEIGHT_MAP.get(`${x},${y}`) ?? 0 }
 
-// ─── Within-5-tiles-of-river (Chebyshev ≤ 5) ─────────────────────────────
+// ─── Within-3-tiles-of-river（农田开垦范围，Chebyshev ≤ 3）─────────────────
 const NEAR_RIVER_FIVE_KEYS = (() => {
   const set = new Set<string>()
   for (const rt of RIVER_TILES)
-    for (let dx = -5; dx <= 5; dx++)
-      for (let dy = -5; dy <= 5; dy++)
+    for (let dx = -3; dx <= 3; dx++)
+      for (let dy = -3; dy <= 3; dy++)
         set.add(`${rt.x+dx},${rt.y+dy}`)
   return set
 })()

@@ -1,12 +1,12 @@
-{
+﻿{
   "id": "market",
-  "label": "集市",
-  "labelEn": "Market",
+  "label": "草市",
+  "labelEn": "Grass Market",
   "category": "commercial",
   "tier": 1,
   "cost": 300,
   "maintenanceCostPerMonth": 10,
-  "footprint": { "w": 1, "h": 1 },
+  "footprint": { "w": 2, "h": 2 },
   "capacity": 0,
   "workerSlots": 6,
   "jobs": [
@@ -41,4 +41,5 @@
   },
   "paletteRef": "building.marketBody"
 }
+
 

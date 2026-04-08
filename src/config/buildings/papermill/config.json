@@ -1,0 +1,41 @@
+{
+  "id": "papermill",
+  "label": "造纸坊",
+  "labelEn": "Paper Mill",
+  "category": "industrial",
+  "tier": 2,
+  "cost": 380,
+  "maintenanceCostPerMonth": 12,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 3,
+  "jobs": [
+    { "jobId": "smith", "slots": 3 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [{ "buildingId": "lumbercamp", "radiusTiles": 20 }],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [
+    { "goodId": "timber", "amountPerDay": 1.0 }
+  ],
+  "outputs": [
+    { "goodId": "paper", "amountPerDay": 1.0 }
+  ],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": { "culture": 0.01 },
+  "desc": "以水力碓臼捣竹为浆，抄纸晒干，供书院文墨所需。日耗木料，需附近有采木场持续供给。",
+  "icon": "📜",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.academyBody"
+}
+

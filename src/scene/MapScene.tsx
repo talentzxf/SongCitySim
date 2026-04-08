@@ -17,11 +17,13 @@ import {
   useSimulation,
   logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos, logicalPeddlerPos,
   RIVER_TILES, RIVER_CENTER_LINE,
-  MOUNTAIN_TILES, ORE_VEIN_TILES,
-  isRiverAt, isNearRiverFive, isMountainAt,
+  MOUNTAIN_TILES, ORE_VEIN_TILES, FOREST_TILES, GRASSLAND_TILES, MOUNTAIN_FOREST_TILES,
+  isRiverAt, isNearRiverFive, isMountainAt, isForestAt, isGrasslandAt, isOreVeinAt,
   MAP_SIZE_X, MAP_SIZE_Y,
   ALL_BUILDING_TYPES, type BuildingType, type CityState,
+  FOREST_CLEAR_COST, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH,
 } from '../state/simulation'
+import type { ResourceOverlayTile } from './TerrainLayer'
 import { tileH } from '../config/characters/_shared'
 import { SpatialBST, type RangeRect } from './spatialBst'
 import { BuildingGLBRenderer, hasBuildingGLB } from './BuildingRenderer'
@@ -64,6 +66,7 @@ export default function MapScene() {
     state,
     placeBuilding, placeRoad, removeBuilding, removeRoad,
     placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectTool, selectFarmZone,
+    selectTerrainTile,
   } = useSimulation()
   const { gl, camera, scene } = useThree()
 
@@ -72,6 +75,7 @@ export default function MapScene() {
   const actionsRef = React.useRef({
     placeBuilding, placeRoad, removeBuilding, removeRoad,
     placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone,
+    selectTerrainTile,
   })
   const dragRef          = React.useRef({ active: false, didDrag: false, lastTileKey: '',
                                           lastTile: null as null | { x: number; y: number } })
@@ -94,8 +98,11 @@ export default function MapScene() {
   const tileTree     = React.useMemo(() => SpatialBST.fromItems(tiles.map(t => ({ x: t[0], y: t[1], value: t }))), [tiles])
   const roadTree     = React.useMemo(() => SpatialBST.fromItems(state.roads.map(r => ({ x: r.x, y: r.y, value: r }))), [state.roads])
   const buildingTree = React.useMemo(() => SpatialBST.fromItems(state.buildings.map(b => ({ x: b.x, y: b.y, value: b }))), [state.buildings])
-  const mountainTree = React.useMemo(() => SpatialBST.fromItems(MOUNTAIN_TILES.map(t => ({ x: t.x, y: t.y, value: [t.x, t.y] as [number, number] }))), [])
-  const oreVeinTree  = React.useMemo(() => SpatialBST.fromItems(ORE_VEIN_TILES.map(t => ({ x: t.x, y: t.y, value: t }))), [])
+  const mountainTree   = React.useMemo(() => SpatialBST.fromItems(MOUNTAIN_TILES.map(t => ({ x: t.x, y: t.y, value: [t.x, t.y] as [number, number] }))), [])
+  const oreVeinTree    = React.useMemo(() => SpatialBST.fromItems(ORE_VEIN_TILES.map(t => ({ x: t.x, y: t.y, value: t }))), [])
+  const forestTree     = React.useMemo(() => SpatialBST.fromItems(FOREST_TILES.map(t => ({ x: t.x, y: t.y, value: t }))), [])
+  const grassTree      = React.useMemo(() => SpatialBST.fromItems(GRASSLAND_TILES.map(t => ({ x: t.x, y: t.y, value: t }))), [])
+  const mtnForestTree  = React.useMemo(() => SpatialBST.fromItems(MOUNTAIN_FOREST_TILES.map(t => ({ x: t.x, y: t.y, value: t }))), [])
 
   // Resident render list (citizens currently at home)
   const houseMap = React.useMemo(
@@ -135,14 +142,98 @@ export default function MapScene() {
   const visibleResidents      = React.useMemo(() => residentTree.rangeQuery(cullRect), [residentTree, cullRect])
   const visibleMountainTiles  = React.useMemo(() => mountainTree.rangeQuery(cullRect), [mountainTree, cullRect])
   const visibleOreVeinTiles   = React.useMemo(() =>
-    oreVeinTree.rangeQuery(cullRect).filter(t => !state.buildings.some(b => b.x === t.x && b.y === t.y)),
-    [oreVeinTree, cullRect, state.buildings],
+    oreVeinTree.rangeQuery(cullRect).filter(t =>
+      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
+      (state.oreVeinHealth[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) > 0),
+    [oreVeinTree, cullRect, state.buildings, state.oreVeinHealth],
   )
-  const visibleArableTiles    = React.useMemo(() =>
-    visibleTiles
-      .filter(t => isNearRiverFive(t[0], t[1]) && !isMountainAt(t[0], t[1]))
-      .map(t => ({ x: t[0], y: t[1] })),
-    [visibleTiles],
+  const visibleForestTiles    = React.useMemo(() =>
+    forestTree.rangeQuery(cullRect).filter(t =>
+      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
+      !state.roads.some(r => r.x === t.x && r.y === t.y) &&
+      (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
+    [forestTree, cullRect, state.buildings, state.roads, state.forestHealth],
+  )
+  const visibleGrasslandTiles = React.useMemo(() =>
+    grassTree.rangeQuery(cullRect).filter(t =>
+      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
+      !state.roads.some(r => r.x === t.x && r.y === t.y) &&
+      (state.grasslandHealth[`${t.x},${t.y}`] ?? GRASSLAND_TILE_INITIAL_HEALTH) > 0),
+    [grassTree, cullRect, state.buildings, state.roads, state.grasslandHealth],
+  )
+
+  const visibleMountainForestTiles = React.useMemo(() =>
+    mtnForestTree.rangeQuery(cullRect).filter(t =>
+      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
+      !state.roads.some(r => r.x === t.x && r.y === t.y)),
+    [mtnForestTree, cullRect, state.buildings, state.roads],
+  )
+
+  // Resource health overlay (shown when mine or lumbercamp is selected)
+  const selectedBuilding = React.useMemo(
+    () => state.buildings.find(b => b.id === state.selectedBuildingId),
+    [state.buildings, state.selectedBuildingId],
+  )
+  const resourceOverlay = React.useMemo<ResourceOverlayTile[] | null>(() => {
+    // ── Building-selected overlay (shows ALL tiles of type) ────────────────
+    if (selectedBuilding) {
+      if (selectedBuilding.type === 'mine') {
+        return oreVeinTree.rangeQuery(cullRect).map(t => ({
+          x: t.x, y: t.y,
+          pct: (state.oreVeinHealth[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) / ORE_VEIN_INITIAL_HEALTH,
+        }))
+      }
+      if ((selectedBuilding.type as string) === 'lumbercamp') {
+        return forestTree.rangeQuery(cullRect).map(t => ({
+          x: t.x, y: t.y,
+          pct: (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) / FOREST_TILE_INITIAL_HEALTH,
+        }))
+      }
+      return null
+    }
+    // ── Terrain-tile-selected overlay — 只高亮选中的那一格 ─────────────────
+    const tt = state.selectedTerrainTile
+    if (tt) {
+      if (tt.kind === 'ore') {
+        return [{ x: tt.x, y: tt.y,
+          pct: (state.oreVeinHealth[`${tt.x},${tt.y}`] ?? ORE_VEIN_INITIAL_HEALTH) / ORE_VEIN_INITIAL_HEALTH,
+        }]
+      }
+      if (tt.kind === 'forest') {
+        return [{ x: tt.x, y: tt.y,
+          pct: (state.forestHealth[`${tt.x},${tt.y}`] ?? FOREST_TILE_INITIAL_HEALTH) / FOREST_TILE_INITIAL_HEALTH,
+        }]
+      }
+      if (tt.kind === 'grassland') {
+        return [{ x: tt.x, y: tt.y,
+          pct: (state.grasslandHealth[`${tt.x},${tt.y}`] ?? GRASSLAND_TILE_INITIAL_HEALTH) / GRASSLAND_TILE_INITIAL_HEALTH,
+        }]
+      }
+    }
+    return null
+  }, [selectedBuilding, state.selectedTerrainTile, oreVeinTree, forestTree, cullRect, state.oreVeinHealth, state.forestHealth, state.grasslandHealth])
+
+  // 粮田可开垦标记（河流三格内平地，去除道路、山地；仅粮田工具时显示）
+  const visibleArableTiles = React.useMemo(() =>
+    state.selectedTool === 'farmZone'
+      ? visibleTiles
+          .filter(t =>
+            isNearRiverFive(t[0], t[1]) && !isMountainAt(t[0], t[1]) &&
+            !state.roads.some(r => r.x === t[0] && r.y === t[1]))
+          .map(t => ({ x: t[0], y: t[1] }))
+      : [],
+    [visibleTiles, state.roads, state.selectedTool],
+  )
+  // 茶园可开垦标记（山地，去除建筑与道路；仅茶园工具时显示）
+  const visibleMountainArableTiles = React.useMemo(() =>
+    state.selectedTool === 'teaZone'
+      ? visibleMountainTiles
+          .filter(([x, y]) =>
+            !state.buildings.some(b => b.x === x && b.y === y) &&
+            !state.roads.some(r => r.x === x && r.y === y))
+          .map(([x, y]) => ({ x, y }))
+      : [],
+    [visibleMountainTiles, state.buildings, state.roads, state.selectedTool],
   )
   const visibleWalkers = React.useMemo(() => state.walkers.filter(w => {
     const p = logicalWalkerPos(w)
@@ -255,8 +346,9 @@ export default function MapScene() {
     actionsRef.current = {
       placeBuilding, placeRoad, removeBuilding, removeRoad,
       placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone,
+      selectTerrainTile,
     }
-  }, [placeBuilding, placeRoad, removeBuilding, removeRoad, placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone])
+  }, [placeBuilding, placeRoad, removeBuilding, removeRoad, placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone, selectTerrainTile])
 
   // --- Effects: e2e test globals ---------------------------------------------
   React.useEffect(() => {
@@ -387,13 +479,18 @@ export default function MapScene() {
       if (tool === 'pan') {
         const fz = s.farmZones.find(z => wx >= z.x && wx <= z.x + 1 && wy >= z.y && wy <= z.y + 1)
         if (fz) { actionsRef.current.selectFarmZone(fz.id); return }
+        // ── Terrain tile selection ─────────────────────────────────────────
+        if (isOreVeinAt(wx, wy)) { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'ore' }); return }
+        if (isForestAt(wx, wy))  { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'forest' }); return }
+        if (isGrasslandAt(wx, wy)) { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'grassland' }); return }
         actionsRef.current.selectBuilding(null)
         actionsRef.current.selectCitizen(null)
         actionsRef.current.selectFarmZone(null)
+        actionsRef.current.selectTerrainTile(null)
         return
       }
       if (ALL_BUILDING_TYPES.includes(tool as BuildingType)) {
-        const action = actionsRef.current.placeBuilding(wx, wy, tool)
+        const action = actionsRef.current.placeBuilding(wx, wy, tool as BuildingType)
         if (action && !action.success) {
           const reasonMap: Record<string, string> = {
             'no-build-type-selected': 'Please select a building type first.',
@@ -401,16 +498,27 @@ export default function MapScene() {
             'tile-occupied':          'This tile is already occupied.',
             'road-occupied':          'A road exists here - bulldoze it first.',
             'river-occupied':         'Cannot build on a river tile.',
-            'no-ore-vein':            'No ore vein here - mines must be placed on ore veins.',
+            'no-ore-vein':            'No ore vein here - iron mines must be on ore tiles.',
+            'no-forest':              'No forest here - lumber camps must be on forest tiles.',
+            'no-papermill':           'No paper mill within range - academy requires a 造纸坊 within 20 tiles.',
           }
           try { message.warning(reasonMap[action.reason] ?? action.reason) } catch {}
         }
       } else if (tool === 'road') {
+        const isForest = isForestAt(wx, wy) && !stateRef.current.roads.some(r => r.x === wx && r.y === wy)
         actionsRef.current.placeRoad(wx, wy)
+        if (isForest) {
+          try { message.warning({ content: `🌲 伐木清路 · 额外耗费 ¥${FOREST_CLEAR_COST} 文`, duration: 2 }) } catch {}
+        }
       } else if (tool === 'farmZone') {
-        actionsRef.current.placeFarmZone(wx, wy)
+        actionsRef.current.placeFarmZone(wx, wy, 'grain')
+      } else if (tool === 'teaZone') {
+        actionsRef.current.placeFarmZone(wx, wy, 'tea')
       } else if (tool === 'bulldoze') {
-        const b = s.buildings.find(b => b.x === wx && b.y === wy)
+        const b = s.buildings.find(b => {
+          const bw = b.w ?? 1, bh = b.h ?? 1
+          return wx >= b.x && wx < b.x + bw && wy >= b.y && wy < b.y + bh
+        })
         if (b) { actionsRef.current.removeBuilding(b.id); return }
         if (s.roads.some(r => r.x === wx && r.y === wy))       actionsRef.current.removeRoad(wx, wy)
         if (s.farmZones.some(z => z.x === wx && z.y === wy))   actionsRef.current.removeFarmZone(wx, wy)
@@ -427,13 +535,14 @@ export default function MapScene() {
       const s = stateRef.current
       if (s.buildings.some(b => b.x === tile.x && b.y === tile.y)) return
       if (s.roads.some(r => r.x === tile.x && r.y === tile.y)) return
-      actionsRef.current.placeFarmZone(tile.x, tile.y)
+      const zt = s.selectedTool === 'teaZone' ? 'tea' : 'grain'
+      actionsRef.current.placeFarmZone(tile.x, tile.y, zt)
     }
 
     function onClick(e: MouseEvent) {
       if (objectClickedRef.current) { objectClickedRef.current = false; return }
       const tool = stateRef.current.selectedTool
-      if ((tool === 'road' || tool === 'farmZone') && dragRef.current.didDrag) {
+      if ((tool === 'road' || tool === 'farmZone' || tool === 'teaZone') && dragRef.current.didDrag) {
         dragRef.current.didDrag = false; return
       }
       const t = getTile(e); if (t) applyTool(t.x, t.y)
@@ -441,7 +550,7 @@ export default function MapScene() {
 
     function onMouseDown(e: MouseEvent) {
       const tool = stateRef.current.selectedTool
-      if (tool !== 'road' && tool !== 'farmZone') return
+      if (tool !== 'road' && tool !== 'farmZone' && tool !== 'teaZone') return
       dragRef.current.active = true; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null
       const t = getTile(e); if (!t) return
       dragRef.current.lastTileKey = `${t.x},${t.y}`
@@ -476,7 +585,7 @@ export default function MapScene() {
         const path = astarRoad(start, t, !endOnMtn && !startOnMtn, blockedTiles)
         setRoadPreview(path); roadPreviewRef.current = path
 
-      } else if (tool === 'farmZone') {
+      } else if (tool === 'farmZone' || tool === 'teaZone') {
         const from = dragRef.current.lastTile ?? t
         expandToFourNeighborPath(rasterLine(from, t)).forEach(paintFarmZone)
         dragRef.current.lastTile = t; dragRef.current.didDrag = true
@@ -531,7 +640,7 @@ export default function MapScene() {
       return <BuildingGLBRenderer key={b.id} type={b.type} x={b.x} y={b.y} baseY={baseY} />
     const Mesh = BUILDING_MESH_REGISTRY[b.type]
     if (!Mesh) return null
-    return <Mesh key={b.id} x={b.x} y={b.y} baseY={baseY} occupants={b.occupants} dayTime={state.dayTime} />
+    return <Mesh key={b.id} x={b.x} y={b.y} baseY={baseY} level={b.level ?? 1} occupants={b.occupants} dayTime={state.dayTime} />
   }
 
   // --- Shared citizen-click handler ------------------------------------------
@@ -555,8 +664,13 @@ export default function MapScene() {
         visibleTiles={visibleTiles}
         visibleMountainTiles={visibleMountainTiles}
         visibleOreVeinTiles={visibleOreVeinTiles}
+        visibleForestTiles={visibleForestTiles}
+        visibleMountainForestTiles={visibleMountainForestTiles}
+        visibleGrasslandTiles={visibleGrasslandTiles}
         visibleArableTiles={visibleArableTiles}
-        showTerrainOverlay={state.selectedTool === 'farmZone'}
+        visibleMountainArableTiles={visibleMountainArableTiles}
+        showTerrainOverlay={state.selectedTool === 'farmZone' || state.selectedTool === 'teaZone'}
+        resourceOverlay={resourceOverlay}
       />
 
       {/* Farm zones, crop piles, farmers at work */}

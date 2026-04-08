@@ -22,8 +22,22 @@ const worldGenConfig = {
     mountainMultiplier: 3
   },
   ore: {
-    foothillChance: 0.02,
-    foothillRadius: 2
+    mountainVeins:  7,      // 山地矿脉簇数量（固定个数，不按面积比例）
+    foothillVeins:  3,      // 丘陵额外矿脉簇数量
+    veinRadius:     2,      // 每簇半径（格）
+    veinFill:       0.50,   // 簇内随机填充概率
+  },
+  forest: {
+    clusters:    22,    // 树林簇数量（更多林地）
+    radius:       5,    // 每簇半径（格）
+    fill:        0.65,
+    minDistCity:  12,
+  },
+  grassland: {
+    clusters:    18,    // 草地簇数量（更多草地，供将来放牧）
+    radius:       6,    // 每簇半径（格）
+    fill:        0.55,
+    minDistCity:  10,
   },
   mountain: {
     tileScale: 1.5,   // visual tile scale for mountains (increase to make mountains taller)

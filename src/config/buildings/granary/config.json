@@ -1,12 +1,12 @@
-{
+﻿{
   "id": "granary",
-  "label": "粮仓",
-  "labelEn": "Granary",
+  "label": "常平仓",
+  "labelEn": "Ever-Normal Granary",
   "category": "storage",
   "tier": 1,
   "cost": 320,
   "maintenanceCostPerMonth": 10,
-  "footprint": { "w": 1, "h": 1 },
+  "footprint": { "w": 2, "h": 2 },
   "capacity": 0,
   "workerSlots": 3,
   "jobs": [
@@ -46,4 +46,5 @@
   },
   "paletteRef": "building.granaryBody"
 }
+
 

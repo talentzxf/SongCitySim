@@ -182,7 +182,8 @@
     "millet":    { "label": "粟米", "price": 3, "fertilityWeight": 1.0,  "desc": "北方传统主粮，宋代称「粟」，耐旱耐贫瘠" },
     "wheat":     { "label": "麦子", "price": 4, "fertilityWeight": 1.05, "desc": "宋朝大力推广麦作，冬小麦可与稻米轮作" },
     "soybean":   { "label": "黄豆", "price": 3, "fertilityWeight": 0.95, "desc": "制豆腐、酱油的原料，宋代市井不可或缺" },
-    "vegetable": { "label": "蔬菜", "price": 2, "fertilityWeight": 0.9,  "desc": "菘菜（白菜）、蔓菁、韭菜等，丰富民食日用" }
+    "vegetable": { "label": "蔬菜", "price": 2, "fertilityWeight": 0.9,  "desc": "菘菜（白菜）、蔓菁、韭菜等，丰富民食日用" },
+    "tea":       { "label": "茶叶", "price": 8, "fertilityWeight": 0.75, "desc": "宋代茶马互市重要商品，山地茶园所产，价值不菲，可售于集市" }
   },
   "ironToolTypes": [
     { "id": "quyuanli",  "label": "曲辕犁",  "desc": "唐宋发明，转弯灵活，深翻土地效率极高" },

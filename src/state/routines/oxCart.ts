@@ -34,7 +34,7 @@ export const oxCartRoutine: TickRoutine = (ctx) => {
   // deposit cargo into granary on arrival
   for (const cart of arrived) {
     if (cart.cargoAmount > 0) {
-      const cap      = granaries.length * GRANARY_CAPACITY_PER
+      const cap      = granaries.reduce((sum, g) => sum + GRANARY_CAPACITY_PER * (g.level ?? 1), 0)
       const canStore = Math.max(0, cap - inventoryTotal(granaryInventory))
       if (canStore > 0) {
         granaryInventory = {

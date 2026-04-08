@@ -9,13 +9,15 @@ export * from './helpers'
 // --- Local imports (to use internally) -----------------------------------
 import type { BuildingType, CropType, CropInventory, MarketConfig, Tool, CityState } from './types'
 import { ALL_BUILDING_TYPES } from './types'
-import { isMountainAt, isRiverAt, isOreVeinAt, isNearRiverFive, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y } from './worldgen'
+import { isMountainAt, isRiverAt, isOreVeinAt, isForestAt, isNearRiverFive, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y, ORE_VEIN_TILES, FOREST_TILES, GRASSLAND_TILES, MOUNTAIN_FOREST_TILES } from './worldgen'
 import {
-  BUILDING_DEFS, DEFAULT_MARKET_CFG, BRIDGE_BASE_COST, CROP_KEYS,
+  BUILDING_DEFS, DEFAULT_MARKET_CFG, BRIDGE_BASE_COST, FOREST_CLEAR_COST, CROP_KEYS,
   clampFood, clampCrop, createEmptyInventory,
   isRoadAt, adjacentHasRoad, farmZoneAt, tileInFarmZone, isBuildingAt, getBridgeSpan,
   isNearRiver, cropForTile,
   ENTRY_TILE, HIGHWAY_MAIN_PATH, createHighwayRoads,
+  getBuildingSize,
+  ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH,
 } from './helpers'
 // --- IoC: Chain of Responsibility tick engine -----------------------------
 import { buildTickContext, runTickChain, applyTickResult } from './routines'
@@ -27,7 +29,7 @@ const initial: CityState = {
   roads: createHighwayRoads(),
   farmZones: [],
   selectedBuildingType: null, selectedTool: 'pan', selectedBuildingId: null,
-  selectedCitizenId: null, selectedFarmZoneId: null,
+  selectedCitizenId: null, selectedFarmZoneId: null, selectedTerrainTile: null,
   selectedRoadMode: 'around',
   lastAction: null, lastBuildAttempt: null,
   citizens: [],
@@ -38,10 +40,13 @@ const initial: CityState = {
   lastTaxBreakdown: { ding: 0, tian: 0, shang: 0 },
   lastMonthlyExpenseBreakdown: { yangmin: 0, jianshe: 0, total: 0 },
   monthlyConstructionCost: 0,
-  mineInventory: 0, smithInventory: 0, houseTools: {},
+  mineInventory: 0, smithInventory: 0, timberInventory: 0, houseTools: {},
+  oreVeinHealth:   Object.fromEntries(ORE_VEIN_TILES.map(t => [`${t.x},${t.y}`, ORE_VEIN_INITIAL_HEALTH])),
+  forestHealth:    Object.fromEntries(FOREST_TILES.map(t => [`${t.x},${t.y}`, FOREST_TILE_INITIAL_HEALTH])),
+  grasslandHealth: Object.fromEntries(GRASSLAND_TILES.map(t => [`${t.x},${t.y}`, GRASSLAND_TILE_INITIAL_HEALTH])),
   farmInventory: createEmptyInventory(),
   granaryInventory: createEmptyInventory(),
-  marketInventory: { rice: 10, millet: 0, wheat: 0, soybean: 0, vegetable: 0 },
+  marketInventory: { rice: 10, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 },
   migrants: [], walkers: [], peddlers: [],
   farmPiles: [], oxCarts: [], marketBuyers: [],
   marketConfig: {},
@@ -82,9 +87,9 @@ try {
     }
     const { x: bx, y: by } = chosen ?? preferred
     const bid = 'b-house-init'
-    initial.buildings = [{ id: bid, type: 'house', x: bx, y: by, capacity: 6, occupants: 0, workerSlots: 0, cost: 100 }]
+    initial.buildings = [{ id: bid, type: 'house', x: bx, y: by, w: 1, h: 1, level: 1, capacity: 6, occupants: 0, workerSlots: 0, cost: 100 }]
     initial.houseFood    = { [bid]: 15 }
-    initial.houseCrops   = { [bid]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0 } }
+    initial.houseCrops   = { [bid]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } }
     initial.houseSavings = { [bid]: 50 }
   }
 } catch { /* ignore � best-effort for tests */ }
@@ -94,23 +99,26 @@ const SimulationContext = createContext<{
   state: CityState; start: () => void; stop: () => void
   setSimSpeed: (v: number) => void
   setMoney: (v: number) => void; setPopulation: (v: number) => void
-  placeBuilding: (x: number, y: number, type?: BuildingType) => void
+  placeBuilding: (x: number, y: number, type?: BuildingType) => any
   removeBuilding: (id: string) => void; selectBuildingType: (t: BuildingType | null) => void
   placeRoad: (x: number, y: number) => any; removeRoad: (x: number, y: number) => void
-  placeFarmZone: (x: number, y: number) => void; removeFarmZone: (x: number, y: number) => void
+  placeFarmZone: (x: number, y: number, zoneType?: 'grain' | 'tea') => void; removeFarmZone: (x: number, y: number) => void
   selectFarmZone: (id: string | null) => void; setFarmCrop: (id: string, crop: CropType) => void
   setTaxRates: (rates: { ding: number; tian: number; shang: number }) => void
   selectTool: (t: Tool) => void; selectBuilding: (id: string | null) => void
   selectCitizen: (id: string | null) => void
   setMarketConfig: (id: string, cfg: MarketConfig) => void
   selectRoadMode: (mode: 'around' | 'over') => void
+  upgradeBuilding: (id: string) => void
+  selectTerrainTile: (t: { x: number; y: number; kind: 'forest' | 'grassland' | 'ore' } | null) => void
 }>({
   state: initial, start: () => {}, stop: () => {}, setSimSpeed: () => {}, setMoney: () => {}, setPopulation: () => {},
   placeBuilding: () => {}, removeBuilding: () => {}, selectBuildingType: () => {},
   placeRoad: () => {}, removeRoad: () => {}, placeFarmZone: () => {}, removeFarmZone: () => {},
   selectFarmZone: () => {}, setFarmCrop: () => {}, setTaxRates: () => {},
   selectTool: () => {}, selectBuilding: () => {}, selectCitizen: () => {},
-  setMarketConfig: () => {}, selectRoadMode: () => {},
+  setMarketConfig: () => {}, selectRoadMode: () => {}, upgradeBuilding: () => {},
+  selectTerrainTile: () => {},
 })
 
 // --- Provider -------------------------------------------------------------
@@ -142,19 +150,35 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         const ba = { success: false, reason: '', buildType: bt, x, y, ts: Date.now() }
         if (!bt) { action.reason = 'no-build-type-selected'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
         const def = BUILDING_DEFS[bt]
+        if (!def) { action.reason = 'no-build-type-selected'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        const { w: bw, h: bh } = getBuildingSize(bt)
         const isMtn = isMountainAt(x, y)
         const mountainMultiplier = (worldGenConfig.building?.mountainMultiplier) || 1
         const effectiveCost = Math.ceil(def.cost * (isMtn ? mountainMultiplier : 1))
-        if (s.money < effectiveCost)              { action.reason = 'insufficient-funds'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
-        if (isBuildingAt(s.buildings, x, y))      { action.reason = 'tile-occupied';      return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
-        if (isRoadAt(s.roads, x, y))              { action.reason = 'road-occupied';      return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
-        if (isRiverAt(x, y))                      { action.reason = 'river-occupied';     return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
-        if (s.farmZones.some(z => z.x === x && z.y === y)) { action.reason = 'tile-occupied'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
-        if (bt === 'mine' && !isOreVeinAt(x, y))  { action.reason = 'no-ore-vein';        return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        if (s.money < effectiveCost) { action.reason = 'insufficient-funds'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        // check every tile of footprint
+        for (let dx = 0; dx < bw; dx++) {
+          for (let dy = 0; dy < bh; dy++) {
+            const tx = x + dx, ty = y + dy
+            if (isBuildingAt(s.buildings, tx, ty))                       { action.reason = 'tile-occupied';  return { ...s, lastBuildAttempt: { ...ba, reason: 'tile-occupied' } } }
+            if (isRoadAt(s.roads, tx, ty))                               { action.reason = 'road-occupied';  return { ...s, lastBuildAttempt: { ...ba, reason: 'road-occupied' } } }
+            if (isRiverAt(tx, ty))                                       { action.reason = 'river-occupied'; return { ...s, lastBuildAttempt: { ...ba, reason: 'river-occupied' } } }
+            if (s.farmZones.some(z => z.x === tx && z.y === ty))         { action.reason = 'tile-occupied';  return { ...s, lastBuildAttempt: { ...ba, reason: 'tile-occupied' } } }
+          }
+        }
+        if (bt === 'mine'                  && !isOreVeinAt(x, y))  { action.reason = 'no-ore-vein';     return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        if ((bt as string) === 'lumbercamp' && !isForestAt(x, y))   { action.reason = 'no-forest';       return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        if ((bt as string) === 'papermill'  && !isNearRiverFive(x, y)) { action.reason = 'no-river-access'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        if ((bt as string) === 'academy') {
+          const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - x), Math.abs(by - y))
+          if (!s.buildings.some(b => (b.type as string) === 'papermill' && cheb(b.x, b.y) <= 20)) {
+            action.reason = 'no-papermill'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } }
+          }
+        }
         const id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`
-        const newB = { id, type: bt, x, y, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: effectiveCost }
+        const newB = { id, type: bt, x, y, w: bw, h: bh, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: effectiveCost }
         const houseFood    = bt === 'house' ? { ...s.houseFood,    [id]: 15 }  : s.houseFood
-        const houseCrops   = bt === 'house' ? { ...s.houseCrops,   [id]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0 } } : s.houseCrops
+        const houseCrops   = bt === 'house' ? { ...s.houseCrops,   [id]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } } : s.houseCrops
         const houseSavings = bt === 'house' ? { ...s.houseSavings, [id]: 50 }  : s.houseSavings
         const houseTools   = bt === 'house' ? { ...s.houseTools,   [id]: 0 }   : s.houseTools
         const houseDead    = bt === 'house' ? { ...s.houseDead,    [id]: 0 }   : s.houseDead
@@ -218,9 +242,12 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   }
 
   function selectBuildingType(t: BuildingType | null) { setState(s => ({ ...s, selectedBuildingType: t })) }
-  function selectBuilding(id: string | null) { setState(s => ({ ...s, selectedBuildingId: id, selectedCitizenId: id ? null : s.selectedCitizenId, selectedFarmZoneId: id ? null : s.selectedFarmZoneId })) }
-  function selectCitizen(id: string | null) { setState(s => ({ ...s, selectedCitizenId: id, selectedBuildingId: id ? null : s.selectedBuildingId, selectedFarmZoneId: id ? null : s.selectedFarmZoneId })) }
-  function selectFarmZone(id: string | null) { setState(s => ({ ...s, selectedFarmZoneId: id, selectedBuildingId: id ? null : s.selectedBuildingId, selectedCitizenId: id ? null : s.selectedCitizenId })) }
+  function selectBuilding(id: string | null) { setState(s => ({ ...s, selectedBuildingId: id, selectedCitizenId: id ? null : s.selectedCitizenId, selectedFarmZoneId: id ? null : s.selectedFarmZoneId, selectedTerrainTile: null })) }
+  function selectCitizen(id: string | null) { setState(s => ({ ...s, selectedCitizenId: id, selectedBuildingId: id ? null : s.selectedBuildingId, selectedFarmZoneId: id ? null : s.selectedFarmZoneId, selectedTerrainTile: null })) }
+  function selectFarmZone(id: string | null) { setState(s => ({ ...s, selectedFarmZoneId: id, selectedBuildingId: id ? null : s.selectedBuildingId, selectedCitizenId: id ? null : s.selectedCitizenId, selectedTerrainTile: null })) }
+  function selectTerrainTile(t: { x: number; y: number; kind: 'forest' | 'grassland' | 'ore' } | null) {
+    setState(s => ({ ...s, selectedTerrainTile: t, selectedBuildingId: null, selectedCitizenId: null, selectedFarmZoneId: null }))
+  }
   function setTaxRates(rates: { ding: number; tian: number; shang: number }) { setState(s => ({ ...s, taxRates: rates })) }
   function setMarketConfig(id: string, cfg: MarketConfig) { setState(s => ({ ...s, marketConfig: { ...s.marketConfig, [id]: cfg } })) }
   function setFarmCrop(id: string, crop: CropType) {
@@ -249,6 +276,12 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
           action.success = true
           return { ...s, roads: [...s.roads, { x, y }], money: s.money - cost, monthlyConstructionCost: s.monthlyConstructionCost + cost }
         }
+        // 平地修路：若为林地则额外收伐木费
+        if (isForestAt(x, y)) {
+          if (s.money < FOREST_CLEAR_COST) { action.reason = 'insufficient-funds'; return s }
+          action.success = true
+          return { ...s, roads: [...s.roads, { x, y }], money: s.money - FOREST_CLEAR_COST, monthlyConstructionCost: s.monthlyConstructionCost + FOREST_CLEAR_COST }
+        }
         action.success = true
         return { ...s, roads: [...s.roads, { x, y }] }
       })
@@ -256,18 +289,27 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
     return (window as any).__LAST_ACTION__
   }
   function removeRoad(x: number, y: number) { setState(s => ({ ...s, roads: s.roads.filter(r => !(r.x === x && r.y === y)) })) }
-  function placeFarmZone(x: number, y: number) {
+  function placeFarmZone(x: number, y: number, zoneType: 'grain' | 'tea' = 'grain') {
     setState(s => {
       const footprint = [{ x, y }, { x: x+1, y }, { x, y: y+1 }, { x: x+1, y: y+1 }]
       for (const t of footprint) {
-        if (isRiverAt(t.x, t.y) || isMountainAt(t.x, t.y)) return s
+        if (isRiverAt(t.x, t.y)) return s
         if (isBuildingAt(s.buildings, t.x, t.y) || isRoadAt(s.roads, t.x, t.y) || tileInFarmZone(s.farmZones, t.x, t.y)) return s
       }
-      if (!footprint.some(t => isNearRiverFive(t.x, t.y))) return s
-      const nearRiverAdj = footprint.some(t => isNearRiver(t.x, t.y))
-      const cropType: CropType = nearRiverAdj ? 'rice' : cropForTile(x, y)
-      const id = `fz-${Date.now()}-${Math.floor(Math.random() * 10000)}`
-      return { ...s, farmZones: [...s.farmZones, { id, x, y, cropType, growthProgress: 0 }] }
+      if (zoneType === 'tea') {
+        // ── 茶园：2×2 必须全为山地 ────────────────────────────────────────
+        if (!footprint.every(t => isMountainAt(t.x, t.y))) return s
+        const id = `fz-${Date.now()}-${Math.floor(Math.random() * 10000)}`
+        return { ...s, farmZones: [...s.farmZones, { id, x, y, zoneType: 'tea' as const, cropType: 'tea' as const, growthProgress: 0 }] }
+      } else {
+        // ── 粮田：不能有山地，必须在河流三格之内 ─────────────────────────
+        if (footprint.some(t => isMountainAt(t.x, t.y))) return s
+        if (!footprint.some(t => isNearRiverFive(t.x, t.y))) return s
+        const nearRiverAdj = footprint.some(t => isNearRiver(t.x, t.y))
+        const cropType: CropType = nearRiverAdj ? 'rice' : cropForTile(x, y)
+        const id = `fz-${Date.now()}-${Math.floor(Math.random() * 10000)}`
+        return { ...s, farmZones: [...s.farmZones, { id, x, y, zoneType: 'grain' as const, cropType, growthProgress: 0 }] }
+      }
     })
   }
   function removeFarmZone(x: number, y: number) {
@@ -285,9 +327,43 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   }
   function selectTool(t: Tool) {
     const isBT = ALL_BUILDING_TYPES.includes(t as BuildingType)
-    setState(s => ({ ...s, selectedTool: t, selectedBuildingType: isBT ? (t as BuildingType) : null, selectedBuildingId: t === 'pan' ? s.selectedBuildingId : null, selectedCitizenId: t === 'pan' ? s.selectedCitizenId : null, selectedFarmZoneId: t === 'pan' ? s.selectedFarmZoneId : null }))
+    const keepSelection = t === 'pan' || t === 'farmZone' || t === 'teaZone'
+    setState(s => ({ ...s, selectedTool: t, selectedBuildingType: isBT ? (t as BuildingType) : null, selectedBuildingId: keepSelection ? s.selectedBuildingId : null, selectedCitizenId: keepSelection ? s.selectedCitizenId : null, selectedFarmZoneId: keepSelection ? s.selectedFarmZoneId : null, selectedTerrainTile: keepSelection ? s.selectedTerrainTile : null }))
   }
   function selectRoadMode(mode: 'around' | 'over') { setState(s => ({ ...s, selectedRoadMode: mode })) }
+
+  // ── 升级建筑 ──────────────────────────────────────────────────────────────
+  const UPGRADE_TABLE: Partial<Record<string, { maxLevel: number; costs: number[]; workerSlots: number[] }>> = {
+    market:  { maxLevel: 2, costs: [800], workerSlots: [12] },
+    granary: { maxLevel: 2, costs: [600], workerSlots: [6]  },
+  }
+  /** 各建筑升到下一等级所需的前置建筑类型（key=当前建筑类型，value=每次升级的前置列表） */
+  const UPGRADE_PREREQS: Partial<Record<string, string[][]>> = {
+    // 常平仓→太仓：须有书院（需要懂算账的人才管理大型储粮）
+    granary: [['academy']],
+  }
+  function upgradeBuilding(id: string) {
+    setState(s => {
+      const b = s.buildings.find(b => b.id === id); if (!b) return s
+      const info = UPGRADE_TABLE[b.type]; if (!info) return s
+      const cur = b.level ?? 1; if (cur >= info.maxLevel) return s
+      // 前置条件检查
+      const prereqList = UPGRADE_PREREQS[b.type]?.[cur - 1] ?? []
+      for (const req of prereqList) {
+        if (!s.buildings.some(bd => (bd.type as string) === req)) return s
+      }
+      const cost = info.costs[cur - 1] ?? 0
+      if (s.money < cost) return s
+      return {
+        ...s,
+        buildings: s.buildings.map(bd => bd.id === id
+          ? { ...bd, level: cur + 1, workerSlots: info.workerSlots[cur - 1] ?? bd.workerSlots }
+          : bd),
+        money: s.money - cost,
+        monthlyConstructionCost: s.monthlyConstructionCost + cost,
+      }
+    })
+  }
 
   try { if (typeof window !== 'undefined') (window as any).__CITY_STATE__ = state } catch { /* */ }
 
@@ -315,9 +391,10 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
               const def = BUILDING_DEFS[bt]
               if (s.money < def.cost || isBuildingAt(s.buildings, x, y) || isRoadAt(s.roads, x, y) || s.farmZones.some(z => z.x === x && z.y === y)) return s
               const id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`
+              const { w: bw2, h: bh2 } = getBuildingSize(bt)
               const houseFood = bt === 'house' ? { ...s.houseFood, [id]: 15 } : s.houseFood
               action.success = true
-              return { ...s, buildings: [...s.buildings, { id, type: bt, x, y, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: def.cost }], houseFood, money: s.money - def.cost, monthlyConstructionCost: s.monthlyConstructionCost + def.cost }
+              return { ...s, buildings: [...s.buildings, { id, type: bt, x, y, w: bw2, h: bh2, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: def.cost }], houseFood, money: s.money - def.cost, monthlyConstructionCost: s.monthlyConstructionCost + def.cost }
             })
             try { (window as any).__LAST_ACTION__ = action } catch { /* */ }
             return action
@@ -340,7 +417,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   }, [state])
 
   return (
-    <SimulationContext.Provider value={{ state, start, stop, setSimSpeed, setMoney, setPopulation, placeBuilding, removeBuilding, selectBuildingType, placeRoad, removeRoad, placeFarmZone, removeFarmZone, selectFarmZone, setFarmCrop, setTaxRates, setMarketConfig, selectTool, selectBuilding, selectCitizen, selectRoadMode }}>
+    <SimulationContext.Provider value={{ state, start, stop, setSimSpeed, setMoney, setPopulation, placeBuilding, removeBuilding, selectBuildingType, placeRoad, removeRoad, placeFarmZone, removeFarmZone, selectFarmZone, setFarmCrop, setTaxRates, setMarketConfig, selectTool, selectBuilding, selectCitizen, selectRoadMode, upgradeBuilding, selectTerrainTile }}>
       {children}
     </SimulationContext.Provider>
   )

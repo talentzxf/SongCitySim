@@ -50,6 +50,10 @@ export interface TickContext {
   marketInventory: CropInventory
   mineInventory: number
   smithInventory: number
+  timberInventory: number
+  oreVeinHealth:   Record<string, number>
+  forestHealth:    Record<string, number>
+  grasslandHealth: Record<string, number>
   // mutable: monthly accumulators
   monthlyFarmOutput: number
   monthlyFarmValue: number

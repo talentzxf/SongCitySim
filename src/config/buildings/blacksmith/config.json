@@ -1,7 +1,7 @@
-{
+﻿{
   "id": "blacksmith",
-  "label": "铁匠铺",
-  "labelEn": "Blacksmith",
+  "label": "铁作坊",
+  "labelEn": "Ironworks",
   "category": "industrial",
   "tier": 1,
   "cost": 350,
@@ -45,4 +45,5 @@
   },
   "paletteRef": "building.blacksmithBody"
 }
+
 

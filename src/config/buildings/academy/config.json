@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "academy",
   "label": "书院",
   "labelEn": "Academy",
@@ -13,7 +13,7 @@
     { "jobId": "scholar", "slots": 4 }
   ],
   "prerequisites": {
-    "nearbyBuildings": [],
+    "nearbyBuildings": [{ "buildingId": "papermill", "radiusTiles": 20, "minCount": 1 }],
     "minCityPopulation": 20,
     "minCityMoney": 0,
     "techNodes": [],
@@ -34,4 +34,5 @@
   },
   "paletteRef": "building.academyBody"
 }
+
 

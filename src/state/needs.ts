@@ -56,7 +56,7 @@ export function checkNeed(need: NeedCheck, ctx: NeedContext): boolean {
     case 'savings':        return ctx.savings >= 20
     case 'food_rich':      return ctx.dietVariety >= 3
     case 'market_access':  return ctx.nearMarket
-    case 'education':      return ctx.nearAcademy
+    case 'education':      return ctx.dietVariety >= 2 ? ctx.nearAcademy : true  // 饮食未多样时不触发文教需求
     case 'entertainment':  return ctx.nearEntertainment
   }
 }
@@ -121,7 +121,7 @@ export function buildNeedContext(
   const savings      = houseSavings[houseId] ?? 0
   const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - house.x), Math.abs(by - house.y))
   const nearMarket        = buildings.some(b => b.type === 'market'   && cheb(b.x, b.y) <= 10)
-  const nearAcademy       = buildings.some(b => (b.type as string) === 'academy'  && cheb(b.x, b.y) <=  8)
+  const nearAcademy       = dietVariety >= 2 && buildings.some(b => (b.type as string) === 'academy'  && cheb(b.x, b.y) <= 15)
   const nearEntertainment = buildings.some(b =>
     ((b.type as string) === 'tavern' || (b.type as string) === 'teahouse') && cheb(b.x, b.y) <= 8)
   return { food, hasRoad, dietVariety, hasJob: false, savings, nearMarket, nearAcademy, nearEntertainment }

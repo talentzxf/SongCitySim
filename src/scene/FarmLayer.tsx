@@ -4,7 +4,9 @@
 import React from 'react'
 import * as THREE from 'three'
 import FarmerAtWork from '../config/jobs/farmer/mesh'
-import { FlatInstances } from './MapPrimitives'
+import { FlatInstances, VariableHeightFlatInstances } from './MapPrimitives'
+import { tileH } from '../config/characters/_shared'
+import { isMountainAt } from '../state/worldgen'
 
 // ─── Crop colour by growth stage ──────────────────────────────────────────
 
@@ -19,9 +21,16 @@ function getFarmColor(cropType: string, progress: number): THREE.Color {
   return new THREE.Color(ripe[cropType] ?? '#e8c040')
 }
 
-// ─── Farm zone coloured ground ────────────────────────────────────────────
+function getTeaColor(progress: number): THREE.Color {
+  if (progress < 0.08) return new THREE.Color('#7a5a30')
+  if (progress < 0.38) return new THREE.Color('#2a7530')
+  if (progress < 0.72) return new THREE.Color('#1a6028')
+  return new THREE.Color('#0e4820')
+}
 
-function FarmZoneInstances({ zones }: { zones: Array<{ x: number; y: number; cropType: string; growthProgress: number }> }) {
+// ─── Grain field coloured ground ──────────────────────────────────────────
+
+function GrainFieldInstances({ zones }: { zones: Array<{ x: number; y: number; cropType: string; growthProgress: number }> }) {
   const ref = React.useRef<THREE.InstancedMesh>(null)
   const items = React.useMemo(() => {
     const out: Array<{ x: number; y: number; color: THREE.Color }> = []
@@ -46,7 +55,41 @@ function FarmZoneInstances({ zones }: { zones: Array<{ x: number; y: number; cro
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
       <planeGeometry args={[0.96, 0.96]} />
-      <meshBasicMaterial />
+      <meshBasicMaterial vertexColors />
+    </instancedMesh>
+  )
+}
+
+// ─── Tea garden coloured ground (rendered at mountain height) ─────────────
+
+function TeaGardenInstances({ zones }: { zones: Array<{ x: number; y: number; growthProgress: number }> }) {
+  const ref = React.useRef<THREE.InstancedMesh>(null)
+  const items = React.useMemo(() => {
+    const out: Array<{ x: number; y: number; h: number; color: THREE.Color }> = []
+    for (const z of zones)
+      for (let dx = 0; dx <= 1; dx++)
+        for (let dy = 0; dy <= 1; dy++) {
+          const tx = z.x + dx, ty = z.y + dy
+          out.push({ x: tx, y: ty, h: tileH(tx, ty) + 0.010, color: getTeaColor(z.growthProgress) })
+        }
+    return out
+  }, [zones])
+  React.useLayoutEffect(() => {
+    if (!ref.current || !items.length) return
+    const mesh = ref.current; const tmp = new THREE.Object3D()
+    mesh.count = items.length
+    for (let i = 0; i < items.length; i++) {
+      tmp.position.set(items[i].x, items[i].h, items[i].y); tmp.rotation.set(-Math.PI / 2, 0, 0)
+      tmp.scale.set(1, 1, 1); tmp.updateMatrix()
+      mesh.setMatrixAt(i, tmp.matrix); mesh.setColorAt(i, items[i].color)
+    }
+    mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  }, [items])
+  if (!items.length) return null
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
+      <planeGeometry args={[0.96, 0.96]} />
+      <meshBasicMaterial vertexColors />
     </instancedMesh>
   )
 }
@@ -55,7 +98,7 @@ function FarmZoneInstances({ zones }: { zones: Array<{ x: number; y: number; cro
 
 function FarmPileInstances({ piles }: { piles: Array<{ x: number; y: number; cropType?: string }> }) {
   if (!piles.length) return null
-  const PILE_COLOR: Record<string, string> = { rice: '#d4a820', millet: '#d89030', wheat: '#c89028', soybean: '#b0b840', vegetable: '#60a040' }
+  const PILE_COLOR: Record<string, string> = { rice: '#d4a820', millet: '#d89030', wheat: '#c89028', soybean: '#b0b840', vegetable: '#60a040', tea: '#4a8040' }
   return (
     <group>
       {piles.map((p, i) => {
@@ -80,7 +123,7 @@ function FarmPileInstances({ piles }: { piles: Array<{ x: number; y: number; cro
 export interface FarmerItem { id: string; x: number; y: number; seed: number }
 
 export interface FarmLayerProps {
-  farmZones: Array<{ x: number; y: number; cropType: string; growthProgress: number }>
+  farmZones: Array<{ x: number; y: number; cropType: string; growthProgress: number; zoneType?: string }>
   selectedFarmZoneTiles: Array<{ x: number; y: number }>
   farmersAtFarm: FarmerItem[]
   farmPiles: Array<{ x: number; y: number; cropType?: string }>
@@ -89,10 +132,26 @@ export interface FarmLayerProps {
 }
 
 export function FarmLayer({ farmZones, selectedFarmZoneTiles, farmersAtFarm, farmPiles, selectedCitizenId, onFarmerClick }: FarmLayerProps) {
+  const grainZones = React.useMemo(() => farmZones.filter(z => (z.zoneType ?? 'grain') !== 'tea'), [farmZones])
+  const teaZones   = React.useMemo(() => farmZones.filter(z => z.zoneType === 'tea'), [farmZones])
+
+  // 选中农田高亮：山地茶园在山顶高度渲染
+  const hasMtnSelection = selectedFarmZoneTiles.some(t => isMountainAt(t.x, t.y))
+  const mtnHighlightItems = React.useMemo(() =>
+    hasMtnSelection
+      ? selectedFarmZoneTiles.map(t => ({ x: t.x, y: t.y, h: tileH(t.x, t.y) + 0.012 }))
+      : [],
+    [selectedFarmZoneTiles, hasMtnSelection],
+  )
+
   return (
     <>
-      {farmZones.length > 0 && <FarmZoneInstances zones={farmZones} />}
-      {selectedFarmZoneTiles.length > 0 && <FlatInstances items={selectedFarmZoneTiles} y={0.068} size={[0.90, 0.90]} color="#52c41a" opacity={0.50} />}
+      {grainZones.length > 0 && <GrainFieldInstances zones={grainZones} />}
+      {teaZones.length  > 0 && <TeaGardenInstances   zones={teaZones}  />}
+      {hasMtnSelection
+        ? <VariableHeightFlatInstances items={mtnHighlightItems} size={[0.90, 0.90]} color="#52c41a" opacity={0.50} />
+        : selectedFarmZoneTiles.length > 0 && <FlatInstances items={selectedFarmZoneTiles} y={0.068} size={[0.90, 0.90]} color="#52c41a" opacity={0.50} />
+      }
       {farmersAtFarm.map(f => (
         <FarmerAtWork key={f.id} x={f.x} y={f.y} seed={f.seed}
           selected={selectedCitizenId === f.id}
