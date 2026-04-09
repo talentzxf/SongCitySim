@@ -14,7 +14,17 @@ export const ALL_BUILDING_TYPES: BuildingType[] = [
 ]
 
 export type Profession =
-  | 'merchant' | 'smith' | 'miner' | 'storekeeper' | 'farmer'
+  | 'merchant'    // 商贩（集市 / 茶坊）
+  | 'smith'       // 铁匠（铁匠铺）
+  | 'miner'       // 矿工（冶铁厂）
+  | 'storekeeper' // 仓丁（粮仓）
+  | 'farmer'      // 农夫（农田）
+  | 'innkeeper'   // 掌柜（酒肆）
+  | 'monk'        // 僧人（寺庙）
+  | 'scholar'     // 学子（书院）
+  | 'herbalist'   // 郎中（药铺）
+  | 'logger'      // 伐木工（采木场）
+  | 'papermaker'  // 造纸工（造纸坊）
 
 export type CropType = 'rice' | 'millet' | 'wheat' | 'soybean' | 'vegetable' | 'tea'
 export type CropInventory = Record<CropType, number>

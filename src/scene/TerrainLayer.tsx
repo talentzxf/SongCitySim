@@ -5,7 +5,7 @@
 import React from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { RIVER_TILES, RIVER_CENTER_LINE, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
+import { RIVER_TILES, RIVER_CENTER_LINE, RIVER_TRIB_CHAINS, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { tileH } from '../config/characters/_shared'
@@ -134,6 +134,67 @@ function SmoothRiverMesh() {
     <mesh geometry={_riverRibbonGeo} frustumCulled={false} renderOrder={1}>
       <meshBasicMaterial color={palette.map.river} side={THREE.DoubleSide} depthWrite={false} />
     </mesh>
+  )
+}
+
+// ─── Tributary ribbon data (computed once, one entry per chain) ────────────
+
+const TRIB_WATER_Y = 0.028
+const TRIB_WIDTH   = 1.15
+
+const _tribData: Array<{
+  geo:      THREE.BufferGeometry
+  foamPts:  { x: number; y: number }[]
+} | null> = RIVER_TRIB_CHAINS.map(chain => {
+  if (chain.length < 4) return null
+  const smooth     = chaikinSmooth(chain, 3)
+  if (smooth.length < 4) return null
+  const simplified = rdpSimplify(smooth, 0.5)
+  const used       = simplified.length >= 4 ? simplified : smooth
+  const pts        = used.map(p => new THREE.Vector3(p.x, 0, p.y))
+  if (pts.length < 2) return null
+  const d0x = pts[1].x - pts[0].x, d0z = pts[1].z - pts[0].z
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(pts[0].x - d0x, 0, pts[0].z - d0z), // virtual start: smooth entry tangent
+    ...pts,
+    // ← no virtual end: curve stops exactly at the junction tile, no overshoot into the main river
+  ], false, 'centripetal', 0.5)
+  const SAMPLES = Math.max(Math.floor(chain.length * 8), 32)
+  const cpts = curve.getPoints(SAMPLES)
+  const pos: number[] = [], uvs: number[] = [], idx: number[] = []
+  for (let i = 0; i < cpts.length; i++) {
+    const p = cpts[i], u = i / (cpts.length - 1)
+    const tan = curve.getTangent(u)
+    const len = Math.sqrt(tan.x * tan.x + tan.z * tan.z) || 1
+    const px = -tan.z / len, pz = tan.x / len
+    pos.push(
+      p.x + px * TRIB_WIDTH * 0.5, TRIB_WATER_Y, p.z + pz * TRIB_WIDTH * 0.5,
+      p.x - px * TRIB_WIDTH * 0.5, TRIB_WATER_Y, p.z - pz * TRIB_WIDTH * 0.5,
+    )
+    uvs.push(u, 0, u, 1)
+    if (i < cpts.length - 1) { const b = i * 2; idx.push(b, b+1, b+2, b+1, b+3, b+2) }
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs, 2))
+  geo.setIndex(idx); geo.computeVertexNormals()
+  const foamPts = curve.getPoints(chain.length * 2).map(p => ({ x: p.x, y: p.z }))
+  return { geo, foamPts }
+})
+
+// ─── Tributary river ribbons ───────────────────────────────────────────────
+
+function TributaryRibbons() {
+  return (
+    <>
+      {_tribData.map((td, i) =>
+        td ? (
+          <mesh key={i} geometry={td.geo} frustumCulled={false} renderOrder={1}>
+            <meshBasicMaterial color={palette.map.river} side={THREE.DoubleSide} depthWrite={false} />
+          </mesh>
+        ) : null
+      )}
+    </>
   )
 }
 
@@ -459,6 +520,8 @@ export function TerrainLayer({
     <>
       <TileInstances tiles={visibleTiles} />
       <MountainInstances tiles={visibleMountainTiles} />
+      <TributaryRibbons />
+      {_tribData.map((td, i) => td ? <AnimatedRiverFoam key={`trib-foam-${i}`} tiles={td.foamPts} /> : null)}
       <SmoothRiverMesh />
       <AnimatedRiverFoam tiles={RIVER_FOAM_POSITIONS} />
       {visibleGrasslandTiles.length > 0 && <GrasslandInstances tiles={visibleGrasslandTiles} />}

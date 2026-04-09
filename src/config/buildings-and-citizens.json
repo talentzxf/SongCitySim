@@ -124,6 +124,14 @@
       "label": "矿工",
       "buildingTypes": ["mine"]
     },
+    "logger": {
+      "label": "伐木工",
+      "buildingTypes": ["lumbercamp"]
+    },
+    "papermaker": {
+      "label": "造纸工",
+      "buildingTypes": ["papermill"]
+    },
     "farmer": {
       "label": "农夫",
       "buildingTypes": []

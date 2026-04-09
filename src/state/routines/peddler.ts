@@ -91,6 +91,13 @@ export const peddlerRoutine: TickRoutine = (ctx) => {
       }
     }
     // ── routing ────────────────────────────────────────────────────────────
+    // 行商生病：立即返回市集，把名额让给健康的坐商
+    if (p.phase === 'outbound' && p.citizenId) {
+      const boundCitizen = citizens.find(c => c.id === p.citizenId)
+      if (boundCitizen?.isSick) {
+        p.stepsLeft = 0   // 强制结束外出阶段
+      }
+    }
     if (p.phase === 'outbound') {
       p.stepsLeft--
       // decide: keep walking or begin the return journey

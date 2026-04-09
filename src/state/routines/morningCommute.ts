@@ -37,11 +37,19 @@ export const morningCommuteRoutine: TickRoutine = (ctx) => {
   for (const market of marketsList) {
     if (!adjacentHasRoad(s.roads, market.x, market.y)) continue
     const cfg          = getMarketCfg(market.id, s.marketConfig)
-    const alreadyOut   = peddlers.filter(p => p.marketId === market.id).length
+    const alreadyOut   = peddlers.filter(p =>
+      p.marketId === market.id &&
+      // 生病的行商不占名额——让坐商顶替
+      !(p.citizenId && citizens.find(c => c.id === p.citizenId)?.isSick)
+    ).length
     const needed       = Math.max(0, cfg.peddlers - alreadyOut)
     if (!needed) continue
     const busyCitizenIds = new Set(
-      peddlers.filter(p => p.marketId === market.id && p.citizenId).map(p => p.citizenId!)
+      peddlers.filter(p =>
+        p.marketId === market.id && p.citizenId &&
+        // 同上：生病的行商不锁定名额
+        !citizens.find(c => c.id === p.citizenId)?.isSick
+      ).map(p => p.citizenId!)
     )
     // find market workers who are home, healthy, and not already peddling.
     // Sort by id so the selection is deterministic and matches the HUD designation:

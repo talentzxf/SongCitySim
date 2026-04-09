@@ -11,6 +11,11 @@ export const farmAssignmentRoutine: TickRoutine = (ctx) => {
       // clear workplaceId if the building no longer exists
       if (!s.buildings.some(b => b.id === c.workplaceId))
         return { ...c, workplaceId: null, profession: null }
+      // 修复已在职但职业为空的市民（如采木场、造纸坊工人）
+      if (c.profession === null) {
+        const bldg = s.buildings.find(b => b.id === c.workplaceId)
+        if (bldg) return { ...c, profession: PROFESSION_BY_BUILDING[bldg.type] ?? null }
+      }
       return c
     }
     if (c.farmZoneId) {

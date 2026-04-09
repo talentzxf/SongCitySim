@@ -11,21 +11,33 @@ import { isMountainAt } from '../state/worldgen'
 // ─── Crop colour by growth stage ──────────────────────────────────────────
 
 function getFarmColor(cropType: string, progress: number): THREE.Color {
-  if (progress < 0.08) return new THREE.Color('#9a7850')
-  if (progress < 0.38) return new THREE.Color('#7acc48')
+  if (progress < 0.08) return new THREE.Color('#c8a060')   // 刚播种：浅暖棕（沃土）
+  if (progress < 0.38) return new THREE.Color('#88d050')   // 幼苗：鲜嫩绿
   if (progress < 0.72) {
-    const mid: Record<string, string> = { rice: '#3a9030', millet: '#6a9820', wheat: '#8a8e20', soybean: '#2a8440', vegetable: '#1a7030' }
-    return new THREE.Color(mid[cropType] ?? '#3a9030')
+    const mid: Record<string, string> = {
+      rice:      '#50b840',   // 水稻：明亮中绿
+      millet:    '#90b830',   // 粟：黄绿
+      wheat:     '#aab030',   // 麦：浅橄榄绿
+      soybean:   '#40b060',   // 大豆：清绿
+      vegetable: '#30b850',   // 蔬菜：翠绿
+    }
+    return new THREE.Color(mid[cropType] ?? '#50b840')
   }
-  const ripe: Record<string, string> = { rice: '#e8c040', millet: '#e09028', wheat: '#c8a028', soybean: '#b8b838', vegetable: '#208020' }
+  const ripe: Record<string, string> = {
+    rice:      '#e8c040',   // 水稻成熟：金黄
+    millet:    '#e09028',   // 粟成熟：橙黄
+    wheat:     '#c8a028',   // 麦成熟：深金
+    soybean:   '#b8b838',   // 大豆成熟：黄绿
+    vegetable: '#60c840',   // 蔬菜成熟：鲜绿
+  }
   return new THREE.Color(ripe[cropType] ?? '#e8c040')
 }
 
 function getTeaColor(progress: number): THREE.Color {
-  if (progress < 0.08) return new THREE.Color('#7a5a30')
-  if (progress < 0.38) return new THREE.Color('#2a7530')
-  if (progress < 0.72) return new THREE.Color('#1a6028')
-  return new THREE.Color('#0e4820')
+  if (progress < 0.08) return new THREE.Color('#a87840')   // 茶苗初植：浅棕
+  if (progress < 0.38) return new THREE.Color('#3aaa48')   // 嫩茶：亮绿
+  if (progress < 0.72) return new THREE.Color('#2a9040')   // 中期：中绿
+  return new THREE.Color('#1a6830')                         // 成熟茶园：深绿
 }
 
 // ─── Grain field coloured ground ──────────────────────────────────────────
@@ -55,7 +67,7 @@ function GrainFieldInstances({ zones }: { zones: Array<{ x: number; y: number; c
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
       <planeGeometry args={[0.96, 0.96]} />
-      <meshBasicMaterial vertexColors />
+      <meshBasicMaterial />
     </instancedMesh>
   )
 }
@@ -89,7 +101,7 @@ function TeaGardenInstances({ zones }: { zones: Array<{ x: number; y: number; gr
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
       <planeGeometry args={[0.96, 0.96]} />
-      <meshBasicMaterial vertexColors />
+      <meshBasicMaterial />
     </instancedMesh>
   )
 }

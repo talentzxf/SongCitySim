@@ -84,6 +84,7 @@ const {
   forestTiles:       _FOREST_TILES,
   grasslandTiles:    _GRASSLAND_TILES,
   mountainForestTiles: _MOUNTAIN_FOREST_TILES,
+  riverTribChains:   _RIVER_TRIB_CHAINS,
 } = (() => {
   const perm    = buildPermTable(WORLD_SEED)
   const oreRand = createRng(WORLD_SEED ^ 0xdeadbeef)
@@ -240,77 +241,177 @@ const {
     for (const p of smoothed) { const iy = Math.round(p.y); riverTiles.push({ x: p.x, y: iy }); riverSet.add(`${p.x},${iy}`) }
   }
 
-  // Tributaries
-  let maxAcc = 0
-  for (let i = 0; i < N; i++) if (acc[i] > maxAcc) maxAcc = acc[i]
-  const TRIB_THRESHOLD = Math.max(2, maxAcc * 0.02)
-  const seedIdxs = Array.from({ length: N }, (_, i) => i)
-    .filter(i => acc[i] >= TRIB_THRESHOLD)
-    .sort((a, b) => acc[b] - acc[a])
-
-  const TRIB_MIN_LENGTH   = 3
-  const TRIB_PROTECT_RADIUS = (worldGenConfig.river?.protectRadius) || 28
-  const seedRand = createRng(WORLD_SEED ^ 0x9e3779b9)
-  const rcfg     = worldGenConfig.river || {}
-  const cfgBranchMin      = rcfg.branchMin  || 4
-  const cfgBranchMax      = rcfg.branchMax  || 8
-  const actualDesiredBranches = cfgBranchMin + Math.floor(seedRand() * (cfgBranchMax - cfgBranchMin + 1))
-  const actualSnapDist        = rcfg.snapDist     || 3
-  const actualMaxLen          = rcfg.maxLength    || 240
-  const actualAttemptLimit    = rcfg.attemptLimit || 2000
-  const protectRadiusFromCity = (worldGenConfig.city?.flatOuter || 0) + (worldGenConfig.city?.protectPadding || 0)
-  const finalProtectRadius    = Math.max(TRIB_PROTECT_RADIUS, protectRadiusFromCity)
-
-  let addedTribs = 0, attempts = 0
-  for (const si of seedIdxs) {
-    if (addedTribs >= actualDesiredBranches || attempts++ > actualAttemptLimit) break
-    const sx = (si % W) + minX, sy = Math.floor(si / W) + minY
-    if (riverSet.has(`${sx},${sy}`) || Math.hypot(sx, sy) < finalProtectRadius) continue
-    const path: { x: number; y: number }[] = []
-    let curi = si
-    const visited = new Set<number>()
-    let joined = false
-    for (let steps = 0; steps < actualMaxLen; steps++) {
-      if (visited.has(curi)) break; visited.add(curi)
-      const cx = (curi % W) + minX, cy = Math.floor(curi / W) + minY
-      if (Math.hypot(cx, cy) < TRIB_PROTECT_RADIUS + (worldGenConfig.city?.protectPadding || 0)) break
-      path.push({ x: cx, y: cy })
-      if (riverSet.has(`${cx},${cy}`)) {
-        if (path.length >= TRIB_MIN_LENGTH) {
-          for (const p of path) { const kk = `${p.x},${p.y}`; if (!riverSet.has(kk)) { riverSet.add(kk); riverTiles.push({ x: p.x, y: p.y }) } }
-          addedTribs++
-        }
-        joined = true; break
-      }
-      const di = dirIdx[curi]; if (di < 0) break
-      curi = toI(cx + DIRS8[di][0], cy + DIRS8[di][1])
-    }
-    if (!joined && path.length >= Math.max(2, Math.floor(TRIB_MIN_LENGTH / 2))) {
-      const last = path[path.length - 1]
-      let snapped = false
-      for (let rx = last.x - actualSnapDist; rx <= last.x + actualSnapDist && !snapped; rx++) {
-        for (let ry = last.y - actualSnapDist; ry <= last.y + actualSnapDist && !snapped; ry++) {
-          if (rx < minX || rx > maxX || ry < minY || ry > maxY) continue
-          if (!riverSet.has(`${rx},${ry}`)) continue
-          const dx2 = rx - last.x, dy2 = ry - last.y
-          const steps2 = Math.max(Math.abs(dx2), Math.abs(dy2))
-          for (let s = 1; s <= steps2; s++) {
-            const kk = `${last.x + Math.round(dx2*(s/steps2))},${last.y + Math.round(dy2*(s/steps2))}`
-            if (!riverSet.has(kk)) { riverSet.add(kk); riverTiles.push(JSON.parse(`{"x":${kk.split(',')[0]},"y":${kk.split(',')[1]}}`)) }
-          }
-          addedTribs++; snapped = true
-        }
-      }
-    }
-  }
-
-  // Fallback
+  // ── Main river fallback ───────────────────────────────────────────────────
   if (riverTiles.length < Math.max(6, Math.floor((maxX - minX + 1) * 0.3))) {
     riverTiles.length = 0; riverSet.clear()
     for (let ix = minX; ix <= maxX; ix++) {
       let bestY = minY, bestVal = Infinity
       for (let iy = minY; iy <= maxY; iy++) { const v = atH(ix, iy); if (v < bestVal) { bestVal = v; bestY = iy } }
       riverTiles.push({ x: ix, y: bestY }); riverSet.add(`${ix},${bestY}`)
+    }
+  }
+
+  // ── 2.5: River centre-line (from main river only, before tributaries) ─────
+  const colMap = new Map<number, number[]>()
+  for (const t of riverTiles) { if (!colMap.has(t.x)) colMap.set(t.x, []); colMap.get(t.x)!.push(t.y) }
+  let riverCenterLine = Array.from(colMap.keys()).sort((a, b) => a - b).map(x => {
+    const ys = colMap.get(x)!
+    let bestY = ys[0], bestH = atH(x, bestY)
+    for (const y of ys) { const hv = atH(x, y); if (hv < bestH) { bestH = hv; bestY = y } }
+    return { x, y: bestY }
+  })
+  const minAcceptLen = Math.max(Math.floor((maxX - minX + 1) * 0.5), 6)
+  if (riverCenterLine.length < minAcceptLen) {
+    riverCenterLine = []
+    for (let ix = minX; ix <= maxX; ix++) {
+      let bestY = minY, bestVal = Infinity
+      for (let iy = minY; iy <= maxY; iy++) { const hv = atH(ix, iy); if (hv < bestVal) { bestVal = hv; bestY = iy } }
+      riverCenterLine.push({ x: ix, y: bestY })
+    }
+  }
+
+  // ── 3: Tributary chains (Dijkstra W→E, parallel to main river) ───────────
+  // Each tributary starts from the west edge at a Y-offset from the main river,
+  // flows generally eastward (W→E bias) following the lowest-cost terrain path,
+  // and ends either at the east edge or where it naturally merges with the main river.
+  const rcfg = worldGenConfig.river || {}
+  const protectRadiusFromCity = (worldGenConfig.city?.flatOuter || 0) + (worldGenConfig.city?.protectPadding || 0)
+  const finalProtectRadius = Math.max((rcfg.protectRadius) || 28, protectRadiusFromCity)
+  // Main river entry Y at leftmost column of centre-line
+  const mainEntryY = riverCenterLine[0]?.y ?? 0
+  // Up to 3 well-separated tributaries.
+  // Offsets are ordered so within each side the CLOSEST trib to the main river comes first.
+  // Each trib is constrained to its side — no crossing the main river, no tangling with
+  // earlier tribs on the same side.
+  const tribYOffsets = [-22, 18, -42, 34, -58, 48].filter(off => {
+    const ty = Math.round(mainEntryY + off)
+    return ty >= minY + 8 && ty <= maxY - 8
+  }).slice(0, 3)
+  // Local min-heap factory (each tributary needs its own distance array)
+  const makeH = (d: Float32Array) => {
+    const h: number[] = []
+    const up = (i: number) => { while(i>0){const p=(i-1)>>1; if(d[h[p]]<=d[h[i]])break;[h[p],h[i]]=[h[i],h[p]];i=p} }
+    const dn = (i: number) => { const n=h.length; for(;;){let l=i*2+1,r=l+1,m=i; if(l<n&&d[h[l]]<d[h[m]])m=l; if(r<n&&d[h[r]]<d[h[m]])m=r; if(m===i)break;[h[m],h[i]]=[h[i],h[m]];i=m} }
+    return { push: (v: number) => { h.push(v); up(h.length-1) }, pop: (): number|undefined => { if(!h.length)return undefined; const r=h[0]; const last=h.pop()!; if(h.length){h[0]=last;dn(0)} return r } }
+  }
+  const TRIB_EAST_BIAS = 0.06
+  const TRIB_WEST_PEN  = 0.40
+  const TRIB_MIN_LEN = Math.max(40, Math.floor((maxX - minX + 1) * 0.25))
+  const mainRiverYatX = new Map(riverCenterLine.map(p => [p.x, p.y]))
+  const TRIB_REPEL_R    = 4
+  const TRIB_REPEL_COST = 0.9
+  const riverTribChains: { x: number; y: number }[][] = []
+  const riverTribSides:   number[]                    = []  // +1 = above main river, -1 = below
+
+  for (const yOff of tribYOffsets) {
+    const startY = Math.round(mainEntryY + yOff)
+    if (startY < minY || startY > maxY) continue
+
+    // Which side of the main river this trib is on (-1 = below, +1 = above)
+    const tribSide = yOff < 0 ? -1 : 1
+
+    // Inner-trib lane boundary: collect the Y positions of every already-generated trib
+    // on the SAME side that is CLOSER to the main river. The current trib must stay
+    // outside (farther from main river) of those lanes before the join zone.
+    const innerBoundAtX = new Map<number, number>()
+    for (let pi = 0; pi < riverTribChains.length; pi++) {
+      if (riverTribSides[pi] !== tribSide) continue  // different side
+      // Earlier entries have smaller |yOff|, so they are closer to the main river.
+      // Every earlier same-side trib is an inner lane that we must not cross.
+      for (const p of riverTribChains[pi]) {
+        const ex = innerBoundAtX.get(p.x) ?? null
+        // For a below-trib: keep the MAX inner-bound Y (closest from below = most positive)
+        // For an above-trib: keep the MIN inner-bound Y (closest from above = most negative)
+        innerBoundAtX.set(p.x, ex === null ? p.y
+          : (tribSide < 0 ? Math.max(ex, p.y) : Math.min(ex, p.y)))
+      }
+    }
+
+    const td = new Float32Array(N).fill(Infinity)
+    const tp = new Int32Array(N).fill(-1)
+    const ts = new Uint8Array(N)
+    const th = makeH(td)
+    for (let dyi = -2; dyi <= 2; dyi++) {
+      const sy = startY + dyi; if (sy < minY || sy > maxY) continue
+      const si = toI(minX, sy); td[si] = Math.max(0, atH(minX, sy)); th.push(si)
+    }
+    let tgt = -1
+    for (;;) {
+      const cur = th.pop(); if (cur === undefined) break
+      if (ts[cur]) continue; ts[cur] = 1
+      const ux = (cur % W) + minX, uy = Math.floor(cur / W) + minY
+      if (ux === maxX || (riverSet.has(`${ux},${uy}`) && ux >= minX + TRIB_MIN_LEN)) { tgt = cur; break }
+      for (const [ddx, ddy] of DIRS8) {
+        const nx = ux + ddx, ny = uy + ddy
+        if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue
+        const vi = toI(nx, ny); if (ts[vi]) continue
+        const dirCost   = ddx < 0 ? TRIB_WEST_PEN : (ddx === 0 ? TRIB_EAST_BIAS : 0)
+        const protCost  = Math.hypot(nx, ny) < finalProtectRadius ? 2.5 : 0
+        const mainYhere = mainRiverYatX.get(nx) ?? null
+
+        // Before the join zone: apply repulsion + hard crossing barriers.
+        // After the join zone: all off — the trib can now approach and merge cleanly
+        // at a single point instead of running parallel for many extra columns.
+        const isJoinZone = nx >= minX + TRIB_MIN_LEN
+
+        // Repulsion: keeps trib away from the main-river valley so it finds its own path
+        const repelCost = (!isJoinZone && mainYhere !== null)
+          ? Math.max(0, TRIB_REPEL_R - Math.abs(ny - mainYhere)) * TRIB_REPEL_COST
+          : 0
+
+        // Hard barrier: trib must not cross to the wrong side of the main river
+        const crossMainCost = (!isJoinZone && mainYhere !== null)
+          ? (tribSide < 0 ? (ny >= mainYhere ? 100.0 : 0)
+                          : (ny <= mainYhere ? 100.0 : 0))
+          : 0
+
+        // Hard barrier: trib must not cross an inner (closer-to-river) trib on same side
+        const innerBound    = innerBoundAtX.get(nx) ?? null
+        const crossTribCost = (!isJoinZone && innerBound !== null)
+          ? (tribSide < 0 ? (ny >= innerBound ? 80.0 : 0)
+                          : (ny <= innerBound ? 80.0 : 0))
+          : 0
+
+        const nd = td[cur] + Math.max(0, atH(nx, ny)) + 0.01
+                 + dirCost + protCost + repelCost + crossMainCost + crossTribCost
+        if (nd < td[vi]) { td[vi] = nd; tp[vi] = cur; th.push(vi) }
+      }
+    }
+    if (tgt < 0) continue
+    const tgtX = (tgt % W) + minX
+    const trev: { x: number; y: number }[] = []
+    let c = tgt
+    while (c >= 0) {
+      trev.push({ x: (c % W) + minX, y: Math.floor(c / W) + minY })
+      if (tp[c] === -1) break; c = tp[c]
+    }
+    trev.reverse()
+    const tColMap = new Map<number, number[]>()
+    for (const p of trev) {
+      if (p.x > tgtX) continue
+      if (!tColMap.has(p.x)) tColMap.set(p.x, [])
+      tColMap.get(p.x)!.push(p.y)
+    }
+    const tChain = Array.from(tColMap.keys()).sort((a, b) => a - b).map(x => {
+      const ys = tColMap.get(x)!
+      const avg = ys.reduce((s, v) => s + v, 0) / ys.length
+      return { x, y: Math.round(avg) }
+    })
+    if (tChain.length < TRIB_MIN_LEN) continue
+    // Clamp every chain point to its correct side of the main river.
+    // Points that briefly crossed (via diagonal moves near the junction, when barriers
+    // were relaxed) are snapped to the main-river Y rather than removed, so the chain
+    // has no gaps and the ribbon ends cleanly AT the junction line.
+    const clampedChain = tChain.map(p => {
+      const mY = mainRiverYatX.get(p.x) ?? mainEntryY
+      return { x: p.x, y: tribSide < 0 ? Math.min(p.y, mY) : Math.max(p.y, mY) }
+    })
+    if (clampedChain.length < TRIB_MIN_LEN) continue
+    riverTribChains.push(clampedChain)
+    riverTribSides.push(tribSide)
+    for (const p of clampedChain) {
+      const k = `${p.x},${p.y}`
+      if (!riverSet.has(k)) { riverSet.add(k); riverTiles.push({ x: p.x, y: p.y }) }
     }
   }
 
@@ -353,24 +454,6 @@ const {
     if (h >= MTHRESH) { mountainTiles.push({ x: ix, y: iy }); mountainHeightMap.set(key, (h - MTHRESH) / (1 - MTHRESH)) }
   }
 
-  // ── 5. River centre-line ──────────────────────────────────────────────────
-  const colMap = new Map<number, number[]>()
-  for (const t of riverTiles) { if (!colMap.has(t.x)) colMap.set(t.x, []); colMap.get(t.x)!.push(t.y) }
-  let riverCenterLine = Array.from(colMap.keys()).sort((a, b) => a - b).map(x => {
-    const ys = colMap.get(x)!
-    let bestY = ys[0], bestH = atH(x, bestY)
-    for (const y of ys) { const hv = atH(x, y); if (hv < bestH) { bestH = hv; bestY = y } }
-    return { x, y: bestY }
-  })
-  const minAcceptLen = Math.max(Math.floor((maxX - minX + 1) * 0.5), 6)
-  if (riverCenterLine.length < minAcceptLen) {
-    riverCenterLine = []
-    for (let ix = minX; ix <= maxX; ix++) {
-      let bestY = minY, bestVal = Infinity
-      for (let iy = minY; iy <= maxY; iy++) { const hv = atH(ix, iy); if (hv < bestVal) { bestVal = hv; bestY = iy } }
-      riverCenterLine.push({ x: ix, y: bestY })
-    }
-  }
 
   // ── Highway corridor: keep mountains away from the entry road ─────────────
   const DIR4 = [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]
@@ -509,7 +592,7 @@ const {
   }
   const mountainForestTiles = Array.from(mountainForestSet).map(k => { const [x,y]=k.split(',').map(Number); return{x,y} })
 
-  return { riverTiles, riverCenterLine, mountainTiles, mountainHeightMap, oreVeinTiles, forestTiles, grasslandTiles, mountainForestTiles }
+  return { riverTiles, riverCenterLine, mountainTiles, mountainHeightMap, oreVeinTiles, forestTiles, grasslandTiles, mountainForestTiles, riverTribChains }
 })()
 
 // ─── Exports ──────────────────────────────────────────────────────────────
@@ -521,14 +604,11 @@ export const FOREST_TILES:           { x: number; y: number }[] = _FOREST_TILES
 export const GRASSLAND_TILES:        { x: number; y: number }[] = _GRASSLAND_TILES
 export const MOUNTAIN_FOREST_TILES:  { x: number; y: number }[] = _MOUNTAIN_FOREST_TILES
 export { MOUNTAIN_HEIGHT_MAP }
+/** Ordered tributary chain arrays (one chain per tributary, west→east). */
+export const RIVER_TRIB_CHAINS: { x: number; y: number }[][] = _RIVER_TRIB_CHAINS
 
-// ─── River tile keys: built from CENTER-LINE ±1 buffer, NOT from all RIVER_TILES ──
-// RIVER_TILES includes tributary tiles and widened tiles that are NOT covered by the
-// visual SmoothRiverMesh ribbon (width 2.15 ≈ ±1.075 tiles from centre-line).
-// Using all RIVER_TILES caused "river-occupied" errors on visually-dry land where
-// invisible tributary tiles existed.  The ±1 Chebyshev buffer around RIVER_CENTER_LINE
-// exactly matches what the ribbon mesh actually covers (|Δy| ≤ 1 < 1.075 is inside
-// ribbon; |Δy| = 2 is outside).
+// ─── River tile keys ───────────────────────────────────────────────────────
+// Main river: centre-line ±1 Chebyshev buffer matches the visual ribbon (width 2.15).
 const RIVER_TILE_KEYS = (() => {
   const set = new Set<string>()
   for (const { x, y } of RIVER_CENTER_LINE)
@@ -537,13 +617,21 @@ const RIVER_TILE_KEYS = (() => {
         set.add(`${x + dx},${y + dy}`)
   return set
 })()
+// Tributaries: centre-line tiles only (visual ribbon width 1.15 ≈ ±0.575 tile)
+const RIVER_TRIB_TILE_KEYS = new Set<string>(
+  _RIVER_TRIB_CHAINS.flatMap(chain => chain.map(p => `${p.x},${p.y}`))
+)
+/** All tributary tiles as a flat array (backward-compat + foam positions). */
+export const RIVER_TRIB_TILES: { x: number; y: number }[] =
+  Array.from(RIVER_TRIB_TILE_KEYS).map(k => { const [x, y] = k.split(',').map(Number); return { x, y } })
+
 const MOUNTAIN_TILE_KEYS  = new Set(MOUNTAIN_TILES.map(t => `${t.x},${t.y}`))
 const ORE_VEIN_TILE_KEYS  = new Set(ORE_VEIN_TILES.map(t => `${t.x},${t.y}`))
 const FOREST_TILE_KEYS    = new Set(FOREST_TILES.map(t => `${t.x},${t.y}`))
 const GRASSLAND_TILE_KEYS = new Set(GRASSLAND_TILES.map(t => `${t.x},${t.y}`))
 const MOUNTAIN_FOREST_TILE_KEYS = new Set(MOUNTAIN_FOREST_TILES.map(t => `${t.x},${t.y}`))
 
-export function isRiverAt(x: number, y: number): boolean          { return RIVER_TILE_KEYS.has(`${x},${y}`) }
+export function isRiverAt(x: number, y: number): boolean          { return RIVER_TILE_KEYS.has(`${x},${y}`) || RIVER_TRIB_TILE_KEYS.has(`${x},${y}`) }
 export function isMountainAt(x: number, y: number): boolean       { return MOUNTAIN_TILE_KEYS.has(`${x},${y}`) }
 export function isOreVeinAt(x: number, y: number): boolean        { return ORE_VEIN_TILE_KEYS.has(`${x},${y}`) }
 export function isForestAt(x: number, y: number): boolean         { return FOREST_TILE_KEYS.has(`${x},${y}`) }
