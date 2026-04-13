@@ -38,8 +38,12 @@ export const migrantRoutine: TickRoutine = (ctx) => {
       (occupiedSlots.get(b.id) ?? 0) < BUILDING_DEFS[b.type].workerSlots &&
       buildingHasRoadAccess(s.roads, b))
     const wp = wps[Math.floor(Math.random() * wps.length)] ?? null
+    // Derive citizen ID from the migrant's own ID (already unique via nextTick counter).
+    // Using seed-based IDs caused same-millisecond collisions when multiple migrants arrive
+    // in one tick, producing duplicate React keys and corrupted citizen arrays.
+    const citizenId = `c-${m.id.slice(2)}`   // "m-12345-67890" → "c-12345-67890"
     citizens = [...citizens, {
-      id: `c-${Math.floor(seed)}`, houseId: house.id,
+      id: citizenId, houseId: house.id,
       name: profile.name, age: profile.age, gender: profile.gender,
       workplaceId: wp?.id ?? null, farmZoneId: null,
       profession: wp ? PROFESSION_BY_BUILDING[wp.type] ?? null : null,

@@ -121,8 +121,14 @@ export function applyTickResult(ctx: TickContext): CityState {
   const yangminCost = monthlyDue ? Math.floor(ctx.population * 2) : 0
   const occByHouse = new Map<string, number>()
   for (const c of ctx.citizens) occByHouse.set(c.houseId, (occByHouse.get(c.houseId) ?? 0) + 1)
-  const buildings = s.buildings.map(b =>
-    b.type === 'house' ? { ...b, occupants: occByHouse.get(b.id) ?? 0 } : b)
+
+  // Only rebuild buildings array when house occupants actually changed —
+  // keeps the reference stable across ticks so downstream useMemo stays cached.
+  const occupantsChanged = s.buildings.some(
+    b => b.type === 'house' && (occByHouse.get(b.id) ?? 0) !== b.occupants)
+  const buildings = occupantsChanged
+    ? s.buildings.map(b => b.type === 'house' ? { ...b, occupants: occByHouse.get(b.id) ?? 0 } : b)
+    : s.buildings
   return {
     ...s,
     tick:    ctx.nextTick,

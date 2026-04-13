@@ -1246,7 +1246,7 @@ function FarmZonePanel() {
           </div>
         }
         style={{ borderRadius: 8 }}
-        bodyStyle={{ padding: assignedFarmers.length === 0 ? '8px' : '4px 0' }}
+        styles={{ body: { padding: assignedFarmers.length === 0 ? '8px' : '4px 0' } }}
       >
         {assignedFarmers.length === 0
           ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无农夫分配</Typography.Text>
@@ -2208,7 +2208,7 @@ function BuildingPanel() {
             </div>
           }
           style={{ borderRadius: 8 }}
-          bodyStyle={{ padding: residents.length === 0 ? '8px' : '4px 0' }}
+          styles={{ body: { padding: residents.length === 0 ? '8px' : '4px 0' } }}
         >
           {residents.length === 0
             ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无住户</Typography.Text>
@@ -2255,7 +2255,7 @@ function BuildingPanel() {
             </div>
           }
           style={{ borderRadius: 8 }}
-          bodyStyle={{ padding: '4px 0' }}
+          styles={{ body: { padding: '4px 0' } }}
         >
           {workers.map(c => {
             const profLabel = c.profession

@@ -2,12 +2,23 @@ import React from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { ConfigProvider } from 'antd'
+import { ConfigProvider, App as AntdApp } from 'antd'
 import { SimulationProvider, useSimulation, MAP_SIZE_X, MAP_SIZE_Y, getMountainHeight } from './state/simulation'
 import worldGenConfig from './config/world-gen'
 import HUD from './ui/HUD'
 import MapScene from './scene/MapScene'
 import { palette } from './theme/palette'
+
+// Bridges the antd App.useApp() message API to window.__MESSAGE_API__ so that
+// components inside R3F <Canvas> (a separate React reconciler) can use it
+// consistently with the existing window bridge pattern (__THREE_CONTROLS__ etc.)
+function MessageBridge() {
+  const { message } = AntdApp.useApp()
+  React.useEffect(() => {
+    ;(window as any).__MESSAGE_API__ = message
+  }, [message])
+  return null
+}
 
 // Debug: marker that visualizes OrbitControls.target - removed
 
@@ -88,15 +99,18 @@ export default function App() {
     <ConfigProvider
       theme={{ token: { colorPrimary: palette.ui.primary, borderRadius: 10, colorBgContainer: palette.ui.surface } }}
     >
-      <SimulationProvider>
-        <div className="app-root">
-          <HUD />
-          <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
-            <MapScene />
-            <ControlsBridge controlsRef={controlsRef} />
-          </Canvas>
-        </div>
-      </SimulationProvider>
+      <AntdApp>
+        <MessageBridge />
+        <SimulationProvider>
+          <div className="app-root">
+            <HUD />
+            <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
+              <MapScene />
+              <ControlsBridge controlsRef={controlsRef} />
+            </Canvas>
+          </div>
+        </SimulationProvider>
+      </AntdApp>
     </ConfigProvider>
   )
 }

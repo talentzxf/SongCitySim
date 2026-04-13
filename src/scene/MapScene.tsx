@@ -28,7 +28,7 @@ import { tileH } from '../config/characters/_shared'
 import { SpatialBST, type RangeRect } from './spatialBst'
 import { BuildingGLBRenderer, hasBuildingGLB } from './BuildingRenderer'
 import { BUILDING_MESH_REGISTRY } from '../config/buildings/_registry'
-import { message } from 'antd'
+// message API is bridged via window.__MESSAGE_API__ (set by MessageBridge in App.tsx)
 // --- Layer components ------------------------------------------------------
 import { DayNightLighting, NightOverlay } from './DayNight'
 import { TerrainLayer } from './TerrainLayer'
@@ -113,6 +113,20 @@ if (typeof window !== 'undefined') {
   ;(window as any).__MAP_DEBUG__         = (window as any).__MAP_DEBUG__ || {}
 }
 
+// --- Module-level static set: tiles truly covered by the visual river ribbon ---
+// isRiverAt() includes edge tiles that the smooth curve doesn't visually reach;
+// this set restricts bridges to tiles within 1.4 tiles of any river centre-line point.
+const VISUAL_BRIDGE_TILE_SET: Set<string> = (() => {
+  const out = new Set<string>()
+  for (const { x, y } of RIVER_CENTER_LINE) {
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dy = -2; dy <= 2; dy++)
+        if (Math.hypot(dx, dy) <= 1.4 && isRiverAt(x + dx, y + dy))
+          out.add(`${x + dx},${y + dy}`)
+  }
+  return out
+})()
+
 // ===========================================================================
 // MapScene
 // ===========================================================================
@@ -120,6 +134,7 @@ if (typeof window !== 'undefined') {
 export default function MapScene() {
   const halfX = Math.floor(MAP_SIZE_X / 2)
   const halfY = Math.floor(MAP_SIZE_Y / 2)
+
 
   // All tile coords (constant, depends only on map size)
   const tiles = React.useMemo<[number, number][]>(() => {
@@ -212,41 +227,50 @@ export default function MapScene() {
     minY: viewRect.minY - cullMargin, maxY: viewRect.maxY + cullMargin,
   }), [viewRect])
 
+  // --- O(1) tile-occupancy sets (only rebuild when buildings/roads actually change) ----
+  const buildingTileSet = React.useMemo(
+    () => new Set(state.buildings.map(b => `${b.x},${b.y}`)),
+    [state.buildings],
+  )
+  const roadTileSet = React.useMemo(
+    () => new Set(state.roads.map(r => `${r.x},${r.y}`)),
+    [state.roads],
+  )
+
   // --- Visible entity sets ---------------------------------------------------
   const visibleTiles          = React.useMemo(() => tileTree.rangeQuery(cullRect), [tileTree, cullRect])
   const visibleRoads          = React.useMemo(() => roadTree.rangeQuery(cullRect), [roadTree, cullRect])
-  const visibleBridges        = React.useMemo(() => visibleRoads.filter(r => isRiverAt(r.x, r.y)), [visibleRoads])
+  const visibleBridges        = React.useMemo(() => visibleRoads.filter(r => VISUAL_BRIDGE_TILE_SET.has(`${r.x},${r.y}`)), [visibleRoads])
   const visibleNonBridgeRoads = React.useMemo(() => visibleRoads.filter(r => !isRiverAt(r.x, r.y)), [visibleRoads])
   const visibleBuildings      = React.useMemo(() => buildingTree.rangeQuery(cullRect), [buildingTree, cullRect])
   const visibleResidents      = React.useMemo(() => residentTree.rangeQuery(cullRect), [residentTree, cullRect])
   const visibleMountainTiles  = React.useMemo(() => mountainTree.rangeQuery(cullRect), [mountainTree, cullRect])
   const visibleOreVeinTiles   = React.useMemo(() =>
     oreVeinTree.rangeQuery(cullRect).filter(t =>
-      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
+      !buildingTileSet.has(`${t.x},${t.y}`) &&
       (state.oreVeinHealth[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) > 0),
-    [oreVeinTree, cullRect, state.buildings, state.oreVeinHealth],
+    [oreVeinTree, cullRect, buildingTileSet, state.oreVeinHealth],
   )
   const visibleForestTiles    = React.useMemo(() =>
     forestTree.rangeQuery(cullRect).filter(t =>
-      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
-      !state.roads.some(r => r.x === t.x && r.y === t.y) &&
+      !buildingTileSet.has(`${t.x},${t.y}`) &&
+      !roadTileSet.has(`${t.x},${t.y}`) &&
       (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
-    [forestTree, cullRect, state.buildings, state.roads, state.forestHealth],
+    [forestTree, cullRect, buildingTileSet, roadTileSet, state.forestHealth],
   )
   const visibleGrasslandTiles = React.useMemo(() =>
     grassTree.rangeQuery(cullRect).filter(t =>
-      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
-      !state.roads.some(r => r.x === t.x && r.y === t.y) &&
+      !buildingTileSet.has(`${t.x},${t.y}`) &&
+      !roadTileSet.has(`${t.x},${t.y}`) &&
       (state.grasslandHealth[`${t.x},${t.y}`] ?? GRASSLAND_TILE_INITIAL_HEALTH) > 0),
-    [grassTree, cullRect, state.buildings, state.roads, state.grasslandHealth],
+    [grassTree, cullRect, buildingTileSet, roadTileSet, state.grasslandHealth],
   )
-
   const visibleMountainForestTiles = React.useMemo(() =>
     mtnForestTree.rangeQuery(cullRect).filter(t =>
-      !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
-      !state.roads.some(r => r.x === t.x && r.y === t.y) &&
+      !buildingTileSet.has(`${t.x},${t.y}`) &&
+      !roadTileSet.has(`${t.x},${t.y}`) &&
       (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
-    [mtnForestTree, cullRect, state.buildings, state.roads, state.forestHealth],
+    [mtnForestTree, cullRect, buildingTileSet, roadTileSet, state.forestHealth],
   )
 
   // Resource health overlay (shown when mine or lumbercamp is selected)
@@ -605,13 +629,13 @@ export default function MapScene() {
             'no-forest':              'No forest here - lumber camps must be on forest tiles.',
             'no-papermill':           'No paper mill within range - academy requires a 造纸坊 within 20 tiles.',
           }
-          try { message.warning(reasonMap[action.reason] ?? action.reason) } catch {}
+          try { (window as any).__MESSAGE_API__?.warning(reasonMap[action.reason] ?? action.reason) } catch {}
         }
       } else if (tool === 'road') {
         const isForest = isForestAt(wx, wy) && !stateRef.current.roads.some(r => r.x === wx && r.y === wy)
         actionsRef.current.placeRoad(wx, wy)
         if (isForest) {
-          try { message.warning({ content: `🌲 伐木清路 · 额外耗费 ¥${FOREST_CLEAR_COST} 文`, duration: 2 }) } catch {}
+          try { (window as any).__MESSAGE_API__?.warning({ content: `🌲 伐木清路 · 额外耗费 ¥${FOREST_CLEAR_COST} 文`, duration: 2 }) } catch {}
         }
       } else if (tool === 'farmZone') {
         actionsRef.current.placeFarmZone(wx, wy, 'grain')

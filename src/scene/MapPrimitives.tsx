@@ -10,10 +10,11 @@ import { palette } from '../theme/palette'
 
 export function FlatInstances({
   items, y = 0, size = [1, 1] as [number, number],
-  color, opacity = 1, rotationZ = 0,
+  color, opacity = 1, rotationZ = 0, renderOrder = 0,
 }: {
   items: Array<{ x: number; y: number }>
   y?: number; size?: [number, number]; color: string; opacity?: number; rotationZ?: number
+  renderOrder?: number
 }) {
   const ref = React.useRef<THREE.InstancedMesh>(null)
   React.useLayoutEffect(() => {
@@ -29,9 +30,9 @@ export function FlatInstances({
     mesh.instanceMatrix.needsUpdate = true
   }, [items, y, rotationZ])
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false}>
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(items.length, 1)]} frustumCulled={false} renderOrder={renderOrder}>
       <planeGeometry args={size} />
-      <meshBasicMaterial color={color} transparent={opacity < 1} opacity={opacity} />
+      <meshBasicMaterial color={color} transparent={opacity < 1} opacity={opacity} depthWrite={renderOrder === 0} />
     </instancedMesh>
   )
 }

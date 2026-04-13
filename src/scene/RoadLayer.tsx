@@ -18,12 +18,13 @@ function BridgeInstances({ bridges }: { bridges: Array<{ x: number; y: number }>
   const railNeg = React.useMemo(() => bridges.map(b => ({ x: b.x, y: b.y - 0.43 })), [bridges])
   const railPos = React.useMemo(() => bridges.map(b => ({ x: b.x, y: b.y + 0.43 })), [bridges])
   if (!bridges.length) return null
+  // renderOrder=2: bridges must render AFTER the water ribbon (renderOrder=1, depthWrite=false)
   return (
     <>
-      <FlatInstances items={bridges}  y={0.058} size={[0.96, 0.96]} color={palette.map.bridgeDeck} />
-      <FlatInstances items={bridges}  y={0.062} size={[0.82, 0.11]} color={palette.map.bridgePlank} opacity={0.75} />
-      <FlatInstances items={railNeg}  y={0.07}  size={[0.9,  0.07]} color={palette.map.bridgeRail} />
-      <FlatInstances items={railPos}  y={0.07}  size={[0.9,  0.07]} color={palette.map.bridgeRail} />
+      <FlatInstances items={bridges}  y={0.075} size={[0.96, 0.96]} color={palette.map.bridgeDeck}   renderOrder={2} />
+      <FlatInstances items={bridges}  y={0.080} size={[0.82, 0.11]} color={palette.map.bridgePlank} opacity={0.75} renderOrder={2} />
+      <FlatInstances items={railNeg}  y={0.085} size={[0.9,  0.07]} color={palette.map.bridgeRail}   renderOrder={2} />
+      <FlatInstances items={railPos}  y={0.085} size={[0.9,  0.07]} color={palette.map.bridgeRail}   renderOrder={2} />
     </>
   )
 }
