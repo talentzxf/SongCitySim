@@ -1,0 +1,38 @@
+{
+  "id": "manor",
+  "label": "宅邸",
+  "labelEn": "Manor",
+  "category": "residential",
+  "tier": 2,
+  "cost": 800,
+  "maintenanceCostPerMonth": 12,
+  "footprint": { "w": 2, "h": 2 },
+  "capacity": 16,
+  "workerSlots": 4,
+  "jobs": [
+    { "jobId": "servant", "slots": 3 },
+    { "jobId": "steward", "slots": 1 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 10,
+    "minCityMoney": 600,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "大户人家的宅邸园林，可容纳更多居民，内设丫鬟仆役岗位。宅邸贵族需求更高，若得不到侍从服务与精致饮食，满意度将大幅下滑",
+  "icon": "🏯",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.manorBody"
+}
+

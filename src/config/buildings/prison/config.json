@@ -1,0 +1,37 @@
+{
+  "id": "prison",
+  "label": "囹圄",
+  "labelEn": "Prison",
+  "category": "civic",
+  "tier": 2,
+  "cost": 400,
+  "maintenanceCostPerMonth": 10,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 2,
+  "jobs": [
+    { "jobId": "jailer", "slots": 2 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [{ "buildingId": "watchpost", "radiusTiles": 30, "minCount": 1 }],
+    "minCityPopulation": 10,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "收押由巡检司逮捕的盗贼。犯人经过改造期后释放回乡，重新成为普通闲民。须有巡检司方可建造。",
+  "icon": "⛓️",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.granaryBody"
+}
+

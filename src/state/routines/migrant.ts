@@ -42,6 +42,9 @@ export const migrantRoutine: TickRoutine = (ctx) => {
     // Using seed-based IDs caused same-millisecond collisions when multiple migrants arrive
     // in one tick, producing duplicate React keys and corrupted citizen arrays.
     const citizenId = `c-${m.id.slice(2)}`   // "m-12345-67890" → "c-12345-67890"
+    const isManor   = (house.type as string) === 'manor'
+    const isServant = isManor && wp !== null && wp.id === house.id
+    const residentTier: 'common' | 'gentry' | 'servant' = isServant ? 'servant' : isManor ? 'gentry' : 'common'
     citizens = [...citizens, {
       id: citizenId, houseId: house.id,
       name: profile.name, age: profile.age, gender: profile.gender,
@@ -50,6 +53,7 @@ export const migrantRoutine: TickRoutine = (ctx) => {
       needs, needUnmetTicks: {}, satisfaction: sat,
       isAtHome: true, isSick: false, sickTicks: 0,
       status: 'idle', statusTicks: 0,
+      residentTier,
     }]
   }
   // spawn a new migrant toward a vacant, road-accessible house

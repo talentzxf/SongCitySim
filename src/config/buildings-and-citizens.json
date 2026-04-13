@@ -1,13 +1,22 @@
 {
   "buildings": {
-    "house": {
-      "label": "民居",
-      "labelEn": "house",
-      "cost": 100,
-      "capacity": 6,
-      "workerSlots": 0,
+    "lumbercamp": {
+      "label": "采木场",
+      "labelEn": "lumbercamp",
+      "cost": 280,
+      "capacity": 0,
+      "workerSlots": 3,
       "needBonus": {},
-      "desc": "住宅，吸引居民"
+      "desc": "砍伐木材，供造纸坊原料"
+    },
+    "manor": {
+      "label": "宅邸",
+      "labelEn": "manor",
+      "cost": 800,
+      "capacity": 16,
+      "workerSlots": 4,
+      "needBonus": {},
+      "desc": "大户人家的宅邸园林，可容纳更多居民，内设丫鬟仆役岗位。宅邸贵族需求更高，若得不到侍从服务与精致饮食，满意度将大幅下滑"
     },
     "market": {
       "label": "集市",
@@ -131,6 +140,14 @@
     "papermaker": {
       "label": "造纸工",
       "buildingTypes": ["papermill"]
+    },
+    "servant": {
+      "label": "丫鬟/仆役",
+      "buildingTypes": ["manor"]
+    },
+    "steward": {
+      "label": "管家",
+      "buildingTypes": []
     },
     "farmer": {
       "label": "农夫",

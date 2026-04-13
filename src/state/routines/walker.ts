@@ -2,7 +2,7 @@
 import type { CitizenStatus } from '../types'
 import type { TickRoutine } from './types'
 import { WALKER_SPEED, SIM_TICK_MS } from '../../config/simulation'
-import { CROP_KEYS, FARM_TOOL_PRICE, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, clampCrop, clampFood, cropPrice, inventoryTotal, createEmptyInventory } from '../helpers'
+import { CROP_KEYS, FARM_TOOL_PRICE, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, clampCrop, clampFood, cropPrice, createEmptyInventory, isRoadAt } from '../helpers'
 export const walkerRoutine: TickRoutine = (ctx) => {
   const { nextTick, houseMap } = ctx
   let citizens        = ctx.citizens
@@ -14,9 +14,13 @@ export const walkerRoutine: TickRoutine = (ctx) => {
   let marketInventory = ctx.marketInventory
   const aliveIds = new Set(citizens.map(c => c.id))
   const arrived: typeof ctx.walkers = []
+  // Keep patrol/arrest walkers even without real citizen backing
   let walkers = ctx.walkers
-    .filter(w => aliveIds.has(w.citizenId))
+    .filter(w => w.purpose === 'patrol' || w.purpose === 'arrest' || aliveIds.has(w.citizenId))
     .map(w => ({ ...w, route: w.route.map(p => ({ ...p })) }))
+
+  const newPatrolWalkers: typeof ctx.walkers = []
+
   walkers = walkers.filter(w => {
     let rem = w.speed * (SIM_TICK_MS / 1000)
     while (rem > 0 && w.routeIndex < w.route.length - 1) {
@@ -24,13 +28,36 @@ export const walkerRoutine: TickRoutine = (ctx) => {
       if (rem < seg) { w.routeT += rem; rem = 0 }
       else { rem -= seg; w.routeIndex += 1; w.routeT = 0 }
     }
-    if (w.routeIndex >= w.route.length - 1) { arrived.push(w); return false }
+    if (w.routeIndex >= w.route.length - 1) {
+      // ── 巡逻兵到达一步，继续随机行走 ──────────────────────────────────
+      if (w.purpose === 'patrol') {
+        const stepsLeft = (w.stepsLeft ?? 0) - 1
+        if (stepsLeft > 0) {
+          const cur = w.route[w.route.length - 1]
+          const adj = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+            .map(d => ({ x: cur.x + d.x, y: cur.y + d.y }))
+            .filter(t => isRoadAt(ctx.s.roads, t.x, t.y))
+          const prev = w.route.length >= 2 ? w.route[w.route.length - 2] : null
+          const pool = prev ? adj.filter(t => !(t.x === prev.x && t.y === prev.y)) : adj
+          const candidates = pool.length > 0 ? pool : adj
+          const nextTile = candidates[Math.floor(Math.random() * candidates.length)]
+          if (nextTile) {
+            newPatrolWalkers.push({ ...w, route: [cur, nextTile], routeIndex: 0, routeT: 0, stepsLeft })
+          }
+        }
+        arrived.push(w); return false
+      }
+      arrived.push(w); return false
+    }
     return true
   })
+
+  walkers = [...walkers, ...newPatrolWalkers]
+
   for (const w of arrived) {
+    if (w.purpose === 'patrol' || w.purpose === 'arrest') continue
     const idx = citizens.findIndex(c => c.id === w.citizenId); if (idx < 0) continue
     if (w.purpose === 'toShop') {
-      // buy food from market inventory
       const houseId = citizens[idx].houseId
       const hcNow   = houseCrops[houseId] ?? createEmptyInventory()
       const stored  = CROP_KEYS.reduce((s, k) => s + hcNow[k], 0)
@@ -50,7 +77,6 @@ export const walkerRoutine: TickRoutine = (ctx) => {
         }
       }
       houseSavings = { ...houseSavings, [houseId]: Math.max(0, (houseSavings[houseId] ?? 0) - totalCost) }
-      // also buy a farm tool if the farmer needs one (no tool or low durability)
       if (citizens[idx].farmZoneId && smithInventory > 0 && (houseTools[houseId] ?? 0) < TOOL_DURABILITY_LOW) {
         const savingsNow = houseSavings[houseId] ?? 0
         if (savingsNow >= FARM_TOOL_PRICE) {
@@ -59,7 +85,6 @@ export const walkerRoutine: TickRoutine = (ctx) => {
           houseTools     = { ...houseTools,   [houseId]: TOOL_DURABILITY_MAX }
         }
       }
-      // spawn the return walk
       const house  = houseMap.get(houseId)
       const market = w.targetId ? ctx.s.buildings.find(b => b.id === w.targetId) : null
       if (house && market)
@@ -70,7 +95,6 @@ export const walkerRoutine: TickRoutine = (ctx) => {
         }]
       citizens = citizens.map((c, i) => i === idx ? { ...c, status: 'returning' as CitizenStatus, statusTicks: 0 } : c)
     } else if (w.purpose === 'fromShop') {
-      // unload basket into house
       const houseId = citizens[idx].houseId
       if (w.cargo) {
         const hc = { ...(houseCrops[houseId] ?? createEmptyInventory()) }
@@ -80,7 +104,6 @@ export const walkerRoutine: TickRoutine = (ctx) => {
       }
       citizens = citizens.map((c, i) => i === idx ? { ...c, isAtHome: true, status: 'idle' as CitizenStatus, statusTicks: 0 } : c)
     } else {
-      // commute arrival: update isAtHome and status
       const newStatus: CitizenStatus = w.purpose === 'toWork'
         ? (citizens[idx].farmZoneId ? 'farming' : 'working')
         : 'idle'

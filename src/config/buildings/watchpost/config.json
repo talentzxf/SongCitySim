@@ -1,0 +1,37 @@
+{
+  "id": "watchpost",
+  "label": "巡检司",
+  "labelEn": "Patrol Post",
+  "category": "civic",
+  "tier": 2,
+  "cost": 300,
+  "maintenanceCostPerMonth": 15,
+  "footprint": { "w": 1, "h": 1 },
+  "capacity": 0,
+  "workerSlots": 4,
+  "jobs": [
+    { "jobId": "patroller", "slots": 4 }
+  ],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 8,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [],
+  "outputs": [],
+  "addons": [],
+  "serviceRadius": 12,
+  "needBonus": { "safety": 0.02 },
+  "desc": "巡检司派驻弓手沿街巡逻，维护地方治安。百姓吃饱饭后自然产生治安需求，巡逻兵经过附近民居时提升覆盖度；若发现盗贼，押送至囹圄收押。",
+  "icon": "🏮",
+  "renderAssets": {
+    "model": "./model.glb",
+    "texture": "./texture.png",
+    "iconSvg": "./icon.svg"
+  },
+  "paletteRef": "building.blacksmithBody"
+}
+

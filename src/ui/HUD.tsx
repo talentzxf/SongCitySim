@@ -59,6 +59,8 @@ const STATUS_LABEL: Record<string, string> = {
   shopping:   '🛒 前往集市',
   returning:  '🏠 买粮回家',
   sick:       '卧病在家',
+  thief:      '🗡 盗贼作乱',
+  jailed:     '⛓ 系狱改造',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -120,12 +122,14 @@ export default function HUD() {
       'road-occupied': '格子已有道路，请先推平。',
       'river-occupied': '该处为河流，无法建造。',
       'no-ore-vein': '此处无铁矿脉，铁矿坑只能建于铁矿脉（地图上铁矿图标）之上。',
-      'no-forest': '此处无林地，采木场只能建于林地（地图上绿色树林）之上。',
+      'no-forest': '此处无林地，采木场只能建于林地或山中树林（地图上绿色/墨绿树林）之上。',
       'no-papermill': '方圆二十格内无造纸坊，书院须在造纸坊附近方可建造。',
       'no-river-access': '此处离水太远，造纸坊须建于河流五格之内（需靠水碓）。',
+      'no-wenmai': `文脉不足（当前 ${state.cityWenmai}/100，需≥30），宅邸须城中文风兴盛方可建造。请先建书院、造纸坊、寺庙。`,
+      'no-shangmai': `商脉不足（当前 ${state.cityShangmai}/100，需≥30），宅邸须贸易繁荣方可建造。请先建草市、常平仓。`,
     }
     return { type: 'warning' as const, message: `建造失败: ${reasonMap[attempt.reason] ?? attempt.reason}` }
-  }, [attempt])
+  }, [attempt, state.cityWenmai, state.cityShangmai])
 
   const hour = Math.floor(state.dayTime * 24)
   const isNight = state.dayTime < 0.25 || state.dayTime > 0.75
@@ -204,6 +208,29 @@ export default function HUD() {
               <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>民心</Typography.Text><div>{state.avgSatisfaction}%</div></Card></Col>
               <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>通勤</Typography.Text><div><Badge count={state.walkers.length} showZero color="blue" size="small" /> <TeamOutlined /></div></Card></Col>
             </Row>
+            {/* 城市文脉 & 商脉 */}
+            <Row gutter={6}>
+              <Col span={12}>
+                <Tooltip title={`文脉：书院×12 + 造纸坊×6 + 寺庙×8 + 学子×3。宅邸须文脉≥30`}>
+                  <Card size="small" style={{ textAlign: 'center', cursor: 'help', borderColor: state.cityWenmai >= 30 ? '#52c41a' : '#faad14' }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>📚 文脉</Typography.Text>
+                    <div style={{ fontWeight: 700, color: state.cityWenmai >= 30 ? '#52c41a' : '#d4b106' }}>
+                      {state.cityWenmai} / 100
+                    </div>
+                  </Card>
+                </Tooltip>
+              </Col>
+              <Col span={12}>
+                <Tooltip title={`商脉：草市×12 + 常平仓×4 + 商贩×3 + 月销售额×0.1（上限30）。宅邸须商脉≥30`}>
+                  <Card size="small" style={{ textAlign: 'center', cursor: 'help', borderColor: state.cityShangmai >= 30 ? '#52c41a' : '#faad14' }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>💰 商脉</Typography.Text>
+                    <div style={{ fontWeight: 700, color: state.cityShangmai >= 30 ? '#52c41a' : '#d4b106' }}>
+                      {state.cityShangmai} / 100
+                    </div>
+                  </Card>
+                </Tooltip>
+              </Col>
+            </Row>
 
             {/* Need pressure + supply */}
             <Space wrap size={4}>
@@ -218,6 +245,16 @@ export default function HUD() {
               {state.marketBuyers.length > 0 && <Tag color="purple">🧺 行商 {state.marketBuyers.length}</Tag>}
               {state.migrants.length > 0 && <Tag color="processing">🐴 入城 {state.migrants.length}</Tag>}
               {state.timberInventory > 0 && <Tag color="green">🪵 木料 {state.timberInventory}</Tag>}
+              {(() => {
+                const thiefCount  = state.citizens.filter(c => c.status === 'thief').length
+                const jailedCount = state.citizens.filter(c => c.status === 'jailed').length
+                const patrolCount = state.walkers.filter(w => w.purpose === 'patrol').length
+                return <>
+                  {patrolCount > 0 && <Tag color="blue">🏮 巡逻 {patrolCount}</Tag>}
+                  {thiefCount  > 0 && <Tag color="error">🗡 盗贼 {thiefCount}</Tag>}
+                  {jailedCount > 0 && <Tag color="default">⛓ 系狱 {jailedCount}</Tag>}
+                </>
+              })()}
             </Space>
 
             {/* Start / Stop + speed control */}
@@ -334,7 +371,7 @@ export default function HUD() {
             }]} />
 
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              Pan: 左键平移 / 右键旋转。粮田须在河流五步以内。茶园须在山地（2×2全山格）。铁矿坑须建于铁矿脉，采木场须建于林地，书院须先建造纸坊（方圆二十格内）。草市与常平仓占地 2×2。
+              Pan: 左键平移 / 右键旋转。粮田须在河流五步以内。茶园须在山地（2×2全山格）。铁矿坑须建于铁矿脉，采木场须建于林地<b>或山中树林</b>，书院须先建造纸坊（方圆二十格内）。草市与常平仓占地 2×2。<b>宅邸须文脉≥30且商脉≥30</b>。巡检司派弓手巡逻维护治安，须配合囹圄收押盗贼。
             </Typography.Text>
 
             {feedback && <Alert showIcon type={feedback.type} message={feedback.message} style={{ padding: '4px 8px' }} />}
@@ -379,7 +416,7 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
   }
 
   // 2. 无业游民 ──────────────────────────────────────────────────────────────
-  const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId).length
+  const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId && c.status !== 'thief' && c.status !== 'jailed').length
   if (idleCount > 0) {
     items.push({
       severity: idleCount > pop * 0.4 ? 'error' : 'warning',
@@ -388,6 +425,24 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
       body: idleCount > pop * 0.4
         ? '城中大半居民无所事事，怨声载道，民心不稳。速建集市、粮仓、冶铁厂以安置流民。'
         : '闲散人口渐增，久居无业则民心衰颓。可修筑农地或再开工坊以纳闲丁。',
+    })
+  }
+
+  // 2b. 盗贼 ──────────────────────────────────────────────────────────────────
+  const thiefCount  = state.citizens.filter(c => c.status === 'thief').length
+  const jailedCount = state.citizens.filter(c => c.status === 'jailed').length
+  const hasWatchpost = state.buildings.some(b => (b.type as string) === 'watchpost')
+  const hasPrison    = state.buildings.some(b => (b.type as string) === 'prison')
+  if (thiefCount > 0) {
+    items.push({
+      severity: thiefCount > pop * 0.1 ? 'error' : 'warning',
+      icon: '🗡',
+      title: `盗贼横行（${thiefCount}人为匪${jailedCount > 0 ? `，${jailedCount}人在押` : ''}）`,
+      body: !hasWatchpost
+        ? '城中已有盗贼滋事，却无巡检司约束！速建巡检司，派弓手日夜巡逻以震慑宵小。'
+        : !hasPrison
+          ? '巡检司已在巡逻，然无囹圄收押盗贼，抓了也关不住。请尽快建造囹圄。'
+          : '巡逻弓手正在追捕盗贼，系狱改造中。可适当增开工坊安置闲民，从根源化解问题。',
     })
   }
 
@@ -459,6 +514,19 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
       icon: '🌸',
       title: '四境安宁',
       body: '臣等奏曰：城内粮丰民足，百业兴旺，居民安居乐业，请官家宽心。',
+    })
+  }
+
+  // 9. 文脉/商脉提示（接近宅邸门槛时出现）──────────────────────────────────
+  if (pop >= 6 && (state.cityWenmai < 30 || state.cityShangmai < 30)) {
+    const lacks: string[] = []
+    if (state.cityWenmai  < 30) lacks.push(`文脉 ${state.cityWenmai}/30`)
+    if (state.cityShangmai < 30) lacks.push(`商脉 ${state.cityShangmai}/30`)
+    items.push({
+      severity: 'info',
+      icon: '🏯',
+      title: `宅邸尚需积累（${lacks.join('、')}）`,
+      body: `宅邸须文脉与商脉各达 30 方可建造。文脉：建书院、造纸坊、寺庙；商脉：开草市、设常平仓、发展集市贸易。`,
     })
   }
 
@@ -1446,7 +1514,7 @@ function BuildingPanel() {
   const b = state.buildings.find(x => x.id === state.selectedBuildingId)
   if (!b) return null
 
-  const isHouse    = b.type === 'house'
+  const isHouse    = b.type === 'house' || b.type === 'manor'
   const isMarket   = b.type === 'market'
   const isGranary  = b.type === 'granary'
 
@@ -1613,7 +1681,7 @@ function BuildingPanel() {
           </Tag>
         )}
         <span data-testid="selected-building-label" style={{ display: 'none' }}>{BUILDING_LABEL[b.type]}</span>
-        {isHouse && <span data-testid="selected-building-type" style={{ display: 'none' }}>Type: house</span>}
+        {isHouse && <span data-testid="selected-building-type" style={{ display: 'none' }}>Type: {b.type}</span>}
       </Space>
 
       {!hasRoadAccess && (
@@ -2199,7 +2267,7 @@ function BuildingPanel() {
           size="small"
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>🏠 住户列表</span>
+              <span>{b.type === 'manor' ? '🏯 宅邸住户' : '🏠 住户列表'}</span>
               {residents.length > 0 && (
                 <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
                   点击查看详情
@@ -2219,6 +2287,12 @@ function BuildingPanel() {
                     ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
                     : '待业'
                 const satColor = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
+                const tier = c.residentTier ?? 'common'
+                const tierTag = tier === 'gentry'
+                  ? <Tag color="gold" style={{ fontSize: 10, padding: '0 4px' }}>贵族</Tag>
+                  : tier === 'servant'
+                    ? <Tag color="blue" style={{ fontSize: 10, padding: '0 4px' }}>仆役</Tag>
+                    : null
                 return (
                   <div key={c.id} className="info-panel-citizen-row"
                     onClick={() => selectCitizen(c.id)}>
@@ -2230,6 +2304,7 @@ function BuildingPanel() {
                       </div>
                     </Space>
                     <Space size={3}>
+                      {tierTag}
                       {c.isSick && <Tag color="error" style={{ fontSize: 10, padding: '0 4px' }}>病</Tag>}
                       <Tag color={c.isAtHome ? 'default' : 'processing'} style={{ fontSize: 10, padding: '0 4px' }}>
                         {c.isAtHome ? '在家' : '通勤'}
@@ -2243,6 +2318,48 @@ function BuildingPanel() {
               })}
         </Card>
       )}
+
+      {/* ── 宅邸专属：贵族/仆役信息 ── */}
+      {b.type === 'manor' && residents.length > 0 && (() => {
+        const gentryList  = residents.filter(c => c.residentTier === 'gentry')
+        const servantList = residents.filter(c => c.residentTier === 'servant')
+        const avgGentryS  = gentryList.length > 0
+          ? Math.round(gentryList.reduce((s, c) => s + c.satisfaction, 0) / gentryList.length)
+          : 0
+        return (
+          <Card size="small" title="🏯 宅邸内部" style={{ borderRadius: 8, borderColor: '#d4b106', background: '#fffbe6' }}>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography.Text style={{ fontSize: 12 }}>🎎 贵族住户</Typography.Text>
+                <Space size={4}>
+                  <Tag color="gold">{gentryList.length} 人</Tag>
+                  {gentryList.length > 0 && (
+                    <Tag color={avgGentryS >= 70 ? 'success' : avgGentryS >= 40 ? 'warning' : 'error'}>
+                      均安乐 {avgGentryS}
+                    </Tag>
+                  )}
+                </Space>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography.Text style={{ fontSize: 12 }}>👘 丫鬟仆役</Typography.Text>
+                <Space size={4}>
+                  <Tag color={servantList.length >= 2 ? 'blue' : 'orange'}>
+                    {servantList.length} / {b.workerSlots} 人
+                  </Tag>
+                  {servantList.length < 2 && gentryList.length > 0 && (
+                    <Tag color="error" style={{ fontSize: 10 }}>侍从不足</Tag>
+                  )}
+                </Space>
+              </div>
+              {servantList.length < 2 && gentryList.length > 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  💡 贵族需要至少 2 名仆役服侍，方可满足「侍从服务」需求。
+                </Typography.Text>
+              )}
+            </Space>
+          </Card>
+        )
+      })()}
 
       {/* ── Non-house: worker list ── */}
       {!isHouse && workers.length > 0 && (
@@ -2342,6 +2459,14 @@ function CitizenPanel() {
       const pile = state.farmPiles.find(p => p.zoneId === c.farmZoneId)
       if (pile && pile.age > 20) return '粮食堆在田里，运不出去，白忙活了！盼着粮仓赶紧来人收粮。'
     }
+    // 宅邸贵族专属
+    if (c.residentTier === 'gentry') {
+      if (c.satisfaction < 40) return '家中仆役不足，茶水冷了也无人续，这日子实在难熬。'
+      if (c.satisfaction < 65) return '城里缺些雅趣，书院、茶坊都不近，委实无聊。'
+      return '家资丰厚，茶香四溢，倒也颇为惬意。'
+    }
+    // 宅邸仆役专属
+    if (c.residentTier === 'servant') return '在宅邸当差，虽然辛苦，好歹衣食不愁。'
     if (!c.workplaceId && !c.farmZoneId) return configData.citizensThoughts.unemployed
     if (c.needs.safety < 0.35) return configData.citizensThoughts.unsafety
     if (c.needs.culture < 0.35) return configData.citizensThoughts.lowCulture
@@ -2355,8 +2480,14 @@ function CitizenPanel() {
       ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
       : '待业'
 
-  // Back button: if we came from a house, go back to it
-  const canGoBack = Boolean(house && state.buildings.some(b => b.id === c.houseId && b.type === 'house'))
+  // Back button: if we came from a house or manor, go back to it
+  const canGoBack = Boolean(house && state.buildings.some(b => b.id === c.houseId && (b.type === 'house' || b.type === 'manor')))
+
+  const tierTag = c.residentTier === 'gentry'
+    ? <Tag color="gold" style={{ fontSize: 11 }}>宅邸贵族</Tag>
+    : c.residentTier === 'servant'
+      ? <Tag color="blue" style={{ fontSize: 11 }}>宅邸仆役</Tag>
+      : null
 
   return (
     <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
@@ -2366,6 +2497,7 @@ function CitizenPanel() {
           <Typography.Text strong style={{ fontSize: 15 }} data-testid="selected-citizen-name">
             {c.name}
           </Typography.Text>
+          {tierTag}
           <Tag color={c.isSick ? 'error' : 'success'} style={{ fontSize: 11 }}>
             {c.isSick ? '生病' : '健康'}
           </Tag>
@@ -2443,23 +2575,62 @@ function CitizenPanel() {
         )
       })()}
 
-      {/* Needs */}
-      <Card size="small" title="民生需求" style={{ borderRadius: 8 }}>
-        <Space direction="vertical" size={6} style={{ width: '100%' }}>
-          {[
-            { label: '🍚 衣食充裕', val: c.needs.food },
-            { label: '🛡 太平安定', val: c.needs.safety },
-            { label: '📚 文风蔚盛', val: c.needs.culture },
-          ].map(({ label, val }) => (
-            <div key={label}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                <Typography.Text style={{ fontSize: 12 }}>{label}</Typography.Text>
-                <Typography.Text style={{ fontSize: 12 }}>{Math.round(val * 100)}%</Typography.Text>
+      {/* Needs — detailed ladder */}
+      <Card size="small" title="需求层次" style={{ borderRadius: 8 }}>
+        <Space direction="vertical" size={3} style={{ width: '100%' }}>
+          {(() => {
+            const hc = state.houseCrops[c.houseId]
+            const food = state.houseFood[c.houseId] ?? 0
+            const savings = state.houseSavings[c.houseId] ?? 0
+            const dietVarietyHere = hc ? Object.values(hc).filter(v => v > 0.1).length : 0
+            const hasTea = hc ? (hc.tea ?? 0) > 0.1 : false
+            const house2 = state.buildings.find(b => b.id === c.houseId)
+            const hx = house2?.x ?? 0, hy = house2?.y ?? 0
+            const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - hx), Math.abs(by - hy))
+            const nearMarket = state.buildings.some(b => b.type === 'market' && cheb(b.x, b.y) <= 10)
+            const nearAcademy = dietVarietyHere >= 2 && state.buildings.some(b => (b.type as string) === 'academy' && cheb(b.x, b.y) <= 15)
+            const nearEntertainment = state.buildings.some(b =>
+              ((b.type as string) === 'tavern' || (b.type as string) === 'teahouse') && cheb(b.x, b.y) <= 8)
+            const nearTemple = state.buildings.some(b => (b.type as string) === 'temple' && cheb(b.x, b.y) <= 12)
+            const nearCulturalVenue = state.buildings.some(b =>
+              ((b.type as string) === 'academy' || (b.type as string) === 'papermill') && cheb(b.x, b.y) <= 15)
+            const isGentry = c.residentTier === 'gentry'
+            const servantCount = house2 && (house2.type as string) === 'manor'
+              ? state.citizens.filter(x => x.houseId === house2.id && x.workplaceId === house2.id).length
+              : 0
+            const hasJob = Boolean(c.workplaceId || c.farmZoneId)
+            const hasRoad = state.roads.some(r =>
+              (Math.abs(r.x - hx) === 1 && r.y === hy) ||
+              (Math.abs(r.y - hy) === 1 && r.x === hx))
+            const needRows: { label: string; met: boolean; tier: number; gentry?: boolean }[] = [
+              { tier: 1, label: '🍚 温饱',    met: food >= 2 },
+              { tier: 2, label: '🌾 粮足',    met: food >= 8 },
+              { tier: 2, label: '🛣 道路通达', met: hasRoad },
+              { tier: 3, label: '💼 有业可从', met: hasJob },
+              { tier: 3, label: '🍱 饮食多样', met: dietVarietyHere >= 2 },
+              { tier: 3, label: '💰 积蓄盈余', met: savings >= 20 },
+              { tier: 4, label: '🎨 食多味美', met: dietVarietyHere >= 3 },
+              { tier: 4, label: '🏪 市场便利', met: nearMarket },
+              { tier: 5, label: '📚 文教兴旺', met: nearAcademy },
+              { tier: 5, label: '🎭 娱乐休闲', met: nearEntertainment },
+              { tier: 6, label: '🎉 节庆热闹', met: nearEntertainment && nearTemple },
+              { tier: 6, label: '📖 书香雅物', met: nearCulturalVenue },
+              { tier: 7, label: '👘 侍从服务', met: isGentry && servantCount >= 2, gentry: true },
+              { tier: 7, label: '🍜 精馔佳肴', met: isGentry && food >= 20 && hasTea && dietVarietyHere >= 4, gentry: true },
+            ]
+            const visibleRows = needRows.filter(r => !r.gentry || isGentry)
+            return visibleRows.map(({ label, met, tier, gentry }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Space size={4}>
+                  <Tag style={{ fontSize: 9, padding: '0 3px', opacity: 0.7 }}>T{tier}</Tag>
+                  <Typography.Text style={{ fontSize: 12, color: gentry ? '#d48806' : undefined }}>{label}</Typography.Text>
+                </Space>
+                <Tag color={met ? 'success' : 'error'} style={{ fontSize: 10, padding: '0 4px' }}>
+                  {met ? '✓ 已满足' : '✗ 未满足'}
+                </Tag>
               </div>
-              <Progress percent={Math.round(val * 100)} size="small" showInfo={false}
-                strokeColor={val < 0.4 ? '#ff4d4f' : val < 0.65 ? '#faad14' : '#52c41a'} />
-            </div>
-          ))}
+            ))
+          })()}
         </Space>
       </Card>
 

@@ -4,10 +4,31 @@ import type { TickRoutine } from './types'
 import { SAT_DELTA, BOREDOM, updateNeedsAndDelta } from '../needs'
 import { CROP_KEYS, clamp01, distance, adjacentHasRoad } from '../helpers'
 export const citizenStatusRoutine: TickRoutine = (ctx) => {
-  const { s, houseMap, workplacePos, walkers, houseFood, houseCrops, houseSavings } = ctx
+  const { s, houseMap, workplacePos, walkers, houseFood, houseCrops, houseSavings, houseSafety } = ctx
   const walkerByCitizen = new Map(walkers.map(w => [w.citizenId, w]))
+
+  // Precompute servant counts per manor building id
+  const manorServantCount = new Map<string, number>()
+  for (const c of ctx.citizens) {
+    const house = houseMap.get(c.houseId)
+    if (house && (house.type as string) === 'manor' && c.workplaceId === house.id) {
+      manorServantCount.set(house.id, (manorServantCount.get(house.id) ?? 0) + 1)
+    }
+  }
+
   ctx.citizens = ctx.citizens.map(c => {
     const house = houseMap.get(c.houseId); if (!house) return c
+
+    // 系狱者和盗贼：满意度缓慢下滑，不走正常状态机
+    if (c.status === 'jailed') {
+      const satisfaction = Math.round(Math.max(0, Math.min(100, c.satisfaction - 0.05)))
+      return { ...c, satisfaction }
+    }
+    if (c.status === 'thief') {
+      const satisfaction = Math.round(Math.max(0, Math.min(100, c.satisfaction - 0.03)))
+      return { ...c, satisfaction }
+    }
+
     const prevFood = houseFood[c.houseId] ?? 0
     const starving = prevFood <= 0.05
     // sickness onset / recovery
@@ -28,13 +49,27 @@ export const citizenStatusRoutine: TickRoutine = (ctx) => {
     const hasRoad     = adjacentHasRoad(s.roads, house.x, house.y)
     const hc          = houseCrops[c.houseId]
     const dietVariety = hc ? CROP_KEYS.filter(k => hc[k] > 0.1).length : 0
+    const hasTea      = hc ? (hc.tea ?? 0) > 0.1 : false
     const hasJob      = Boolean(c.workplaceId || c.farmZoneId)
     const savings     = houseSavings[c.houseId] ?? 0
     const cheb        = (bx: number, by: number) => Math.max(Math.abs(bx - house.x), Math.abs(by - house.y))
     const nearMarket        = s.buildings.some(b => b.type === 'market'                                                       && cheb(b.x, b.y) <= 10)
     const nearAcademy       = dietVariety >= 2 && s.buildings.some(b => (b.type as string) === 'academy'                      && cheb(b.x, b.y) <= 15)
     const nearEntertainment = s.buildings.some(b => ((b.type as string) === 'tavern' || (b.type as string) === 'teahouse')    && cheb(b.x, b.y) <= 8)
-    const needCtx: NeedContext = { food: prevFood, hasRoad, dietVariety, hasJob, savings, nearMarket, nearAcademy, nearEntertainment }
+    const nearTemple        = s.buildings.some(b => (b.type as string) === 'temple'                                           && cheb(b.x, b.y) <= 12)
+    const nearCulturalVenue = s.buildings.some(b => ((b.type as string) === 'academy' || (b.type as string) === 'papermill')  && cheb(b.x, b.y) <= 15)
+    // Determine residentTier
+    const isManor   = (house.type as string) === 'manor'
+    const isServant = isManor && c.workplaceId === house.id
+    const isGentry  = isManor && !isServant
+    const residentTier = isServant ? 'servant' : isGentry ? 'gentry' : 'common'
+    const servantCnt   = manorServantCount.get(house.id) ?? 0
+    const needCtx: NeedContext = {
+      food: prevFood, hasRoad, dietVariety, hasJob, savings,
+      nearMarket, nearAcademy, nearEntertainment,
+      nearTemple, nearCulturalVenue,
+      isGentry, manorServantCount: servantCnt, hasTea,
+    }
     // satisfaction delta: status machine + boredom penalty + needs hierarchy
     const idleMult = (status === 'idle' && hasJob) ? 1.6 : 1
     let satDelta = SAT_DELTA[status] * idleMult
@@ -44,14 +79,21 @@ export const citizenStatusRoutine: TickRoutine = (ctx) => {
     satDelta += needsDelta
     const satisfaction = Math.round(Math.max(0, Math.min(100, c.satisfaction + satDelta)))
     // legacy needs vector (used by HUD pressure bars)
-    const nearWork = workplacePos.some(p => distance(p, house) <= 8) && !isSick
+    const nearWork    = workplacePos.some(p => distance(p, house) <= 8) && !isSick
+    const safetyScore = houseSafety[c.houseId] ?? 0
+    const isWellFed   = prevFood >= 8
     const n = { ...c.needs }
-    n.food    = clamp01(n.food    + (starving ? -0.04 : (nearWork ? 0.015 : -0.01)))
-    n.safety  = clamp01(n.safety  + (hasRoad  ?  0.008 : -0.012))
+    n.food    = clamp01(n.food + (starving ? -0.04 : (nearWork ? 0.015 : -0.01)))
+    // 治安：吃饱饭后才产生治安需求，由巡检司覆盖度驱动
+    if (isWellFed) {
+      n.safety = clamp01(n.safety + (safetyScore > 0.4 ? 0.012 : hasRoad ? -0.006 : -0.016))
+    } else {
+      n.safety = clamp01(n.safety + (hasRoad ? 0.004 : -0.008))
+    }
     n.culture = clamp01(n.culture + (workplacePos.length > 0 ? 0.006 : -0.008))
     if (!c.workplaceId && !c.farmZoneId) n.culture = clamp01(n.culture - 0.005)
     if (isSick) { n.food = clamp01(n.food - 0.01); n.safety = clamp01(n.safety - 0.004) }
-    return { ...c, needs: n, needUnmetTicks: updatedUnmetTicks, isSick, sickTicks, status, statusTicks, satisfaction }
+    return { ...c, needs: n, needUnmetTicks: updatedUnmetTicks, isSick, sickTicks, status, statusTicks, satisfaction, residentTier }
   })
   return ctx
 }

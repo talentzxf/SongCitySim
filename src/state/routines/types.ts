@@ -54,6 +54,8 @@ export interface TickContext {
   oreVeinHealth:   Record<string, number>
   forestHealth:    Record<string, number>
   grasslandHealth: Record<string, number>
+  /** 各民居治安覆盖度（巡逻加成，自然衰减） */
+  houseSafety: Record<string, number>
   // mutable: monthly accumulators
   monthlyFarmOutput: number
   monthlyFarmValue: number
@@ -62,6 +64,10 @@ export interface TickContext {
   population: number
   avgSatisfaction: number
   needPressure: { food: number; safety: number; culture: number }
+  /** 城市文脉指数 0-100 */
+  cityWenmai: number
+  /** 城市商脉指数 0-100 */
+  cityShangmai: number
   // output: written by monthlyTaxRoutine
   lastTaxBreakdown: { ding: number; tian: number; shang: number }
   totalMonthlyTax: number

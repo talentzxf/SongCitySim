@@ -1,6 +1,7 @@
 // ─── Building types (宋朝) ─────────────────────────────────────────────────
 export type BuildingType =
   | 'house'        // 院落（民居）
+  | 'manor'        // 宅邸（园林大院，豪华民居）
   | 'market'       // 草市
   | 'granary'      // 常平仓
   | 'blacksmith'   // 铁作坊
@@ -8,9 +9,12 @@ export type BuildingType =
   | 'academy'      // 书院
   | 'papermill'    // 造纸坊
   | 'lumbercamp'   // 采木场
+  | 'watchpost'    // 巡检司（治安）
+  | 'prison'       // 囹圄（大牢）
 
 export const ALL_BUILDING_TYPES: BuildingType[] = [
-  'house', 'market', 'granary', 'blacksmith', 'mine', 'academy', 'papermill', 'lumbercamp',
+  'house', 'manor', 'market', 'granary', 'blacksmith', 'mine', 'academy', 'papermill', 'lumbercamp',
+  'watchpost', 'prison',
 ]
 
 export type Profession =
@@ -25,6 +29,8 @@ export type Profession =
   | 'herbalist'   // 郎中（药铺）
   | 'logger'      // 伐木工（采木场）
   | 'papermaker'  // 造纸工（造纸坊）
+  | 'servant'     // 丫鬟/仆役（宅邸服侍）
+  | 'steward'     // 管家（宅邸管理）
 
 export type CropType = 'rice' | 'millet' | 'wheat' | 'soybean' | 'vegetable' | 'tea'
 export type CropInventory = Record<CropType, number>
@@ -94,23 +100,29 @@ export type CitizenStatus =
   | 'shopping'   // 在集市采购
   | 'returning'  // 购完带货回家
   | 'sick'       // 患病
+  | 'thief'      // 盗贼（游手好闲，为祸乡里）
+  | 'jailed'     // 系狱（被巡检司收押）
 
 // ─── 需求层次（Maslow 式，宋代城市情境）──────────────────────────────────────
 export type NeedId =
-  | 'food_basic'     // T1 温饱：houseFood ≥ 2
-  | 'food_adequate'  // T2 粮足：houseFood ≥ 8
-  | 'shelter'        // T2 道路通达：有路与外界相连
-  | 'employment'     // T3 有业可从：有工位或农田
-  | 'food_variety'   // T3 饮食多样：≥2 种粮食
-  | 'savings'        // T3 积蓄盈余：houseSavings ≥ 20
-  | 'food_rich'      // T4 食多味美：≥3 种粮食
-  | 'market_access'  // T4 市场便利：附近有集市
-  | 'education'      // T5 文教兴旺：附近有学堂
-  | 'entertainment'  // T5 娱乐休闲：附近有酒楼/茶馆
+  | 'food_basic'       // T1 温饱：houseFood ≥ 2
+  | 'food_adequate'    // T2 粮足：houseFood ≥ 8
+  | 'shelter'          // T2 道路通达：有路与外界相连
+  | 'employment'       // T3 有业可从：有工位或农田
+  | 'food_variety'     // T3 饮食多样：≥2 种粮食
+  | 'savings'          // T3 积蓄盈余：houseSavings ≥ 20
+  | 'food_rich'        // T4 食多味美：≥3 种粮食
+  | 'market_access'    // T4 市场便利：附近有集市
+  | 'education'        // T5 文教兴旺：附近有学堂
+  | 'entertainment'    // T5 娱乐休闲：附近有酒楼/茶馆
+  | 'festive_life'     // T6 节庆热闹：附近同时有娱乐场所与寺庙
+  | 'refined_goods'    // T6 书香雅物：附近有书院或造纸坊（文化消费品）
+  | 'personal_service' // T7 侍从服务：宅邸内有丫鬟/仆役（仅宅邸贵族）
+  | 'luxury_feast'     // T7 精馔佳肴：粮满且饮食精致≥4种含茶（仅宅邸贵族）
 
 export type NeedCheck = {
   id: NeedId
-  tier: 1 | 2 | 3 | 4 | 5
+  tier: 1 | 2 | 3 | 4 | 5 | 6 | 7
   labelCn: string            // 中文短标签（HUD 显示）
   deltaIfMet: number         // 每 tick 满意度加成
   deltaIfUnmet: number       // 每 tick 满意度扣减（负数）
@@ -122,6 +134,16 @@ export type NeedContext = {
   food: number; hasRoad: boolean; dietVariety: number
   hasJob: boolean; savings: number
   nearMarket: boolean; nearAcademy: boolean; nearEntertainment: boolean
+  /** T6: 是否附近同时有娱乐场所和寺庙 */
+  nearTemple: boolean
+  /** T6: 是否附近有书院或造纸坊 */
+  nearCulturalVenue: boolean
+  /** T7 专属：住在宅邸且非仆役（大户人家/小姐） */
+  isGentry: boolean
+  /** T7 专属：本宅邸内的仆役人数 */
+  manorServantCount: number
+  /** T7 专属：是否有茶叶且饮食≥4种 */
+  hasTea: boolean
 }
 
 export type Citizen = {
@@ -142,6 +164,11 @@ export type Citizen = {
   sickTicks: number
   status: CitizenStatus
   statusTicks: number
+  /** 居住等级：common=普通民居，gentry=宅邸贵族，servant=宅邸仆役 */
+  residentTier: 'common' | 'gentry' | 'servant'
+  /** 系狱相关（仅系狱状态下有效） */
+  jailTicks?: number
+  jailPrisonId?: string
 }
 
 export type Migrant = {
@@ -156,9 +183,11 @@ export type Walker = {
   citizenId: string
   route: { x: number; y: number }[]
   routeIndex: number; routeT: number; speed: number
-  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop'
+  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop' | 'patrol' | 'arrest'
   targetId?: string
   cargo?: CropInventory
+  /** 巡逻步数剩余（purpose='patrol' 时使用） */
+  stepsLeft?: number
 }
 
 export type PeddlerCargo = {
@@ -269,5 +298,11 @@ export type CityState = {
   needPressure: CitizenNeeds
   houseDead: Record<string, number>
   simSpeed: number
+  /** 各民居的治安覆盖度（巡逻加成，自然衰减） */
+  houseSafety: Record<string, number>
+  /** 城市文脉指数 0-100（学堂书院繁盛程度） */
+  cityWenmai: number
+  /** 城市商脉指数 0-100（市场贸易繁盛程度） */
+  cityShangmai: number
 }
 

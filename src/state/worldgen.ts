@@ -637,6 +637,8 @@ export function isOreVeinAt(x: number, y: number): boolean        { return ORE_V
 export function isForestAt(x: number, y: number): boolean         { return FOREST_TILE_KEYS.has(`${x},${y}`) }
 export function isGrasslandAt(x: number, y: number): boolean      { return GRASSLAND_TILE_KEYS.has(`${x},${y}`) }
 export function isMountainForestAt(x: number, y: number): boolean { return MOUNTAIN_FOREST_TILE_KEYS.has(`${x},${y}`) }
+/** True for any forested tile — flat or mountain forest. Used for lumbercamp placement. */
+export function isAnyForestAt(x: number, y: number): boolean      { return FOREST_TILE_KEYS.has(`${x},${y}`) || MOUNTAIN_FOREST_TILE_KEYS.has(`${x},${y}`) }
 /** Normalised [0,1] height for mountain tiles (0 = just above threshold, 1 = peak). */
 export function getMountainHeight(x: number, y: number): number { return MOUNTAIN_HEIGHT_MAP.get(`${x},${y}`) ?? 0 }
 

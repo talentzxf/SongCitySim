@@ -5,10 +5,10 @@ import { SIM_TICK_MS } from '../../config/simulation'
 import { palette } from '../../theme/palette'
 import { useCharacterAnim, lerpTerrainY } from './_shared'
 
-/** 通勤步行市民（上下班途中） */
+/** 通勤步行市民（上下班途中）及巡逻兵 */
 export default function CommutingWalker({ x, y, purpose, selected, onClick }: {
   x: number; y: number
-  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop'
+  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop' | 'patrol' | 'arrest'
   selected?: boolean
   onClick?: (e: any) => void
 }) {
@@ -31,7 +31,7 @@ export default function CommutingWalker({ x, y, purpose, selected, onClick }: {
     if (bodyRef.current) bodyRef.current.rotation.z = moving ? Math.sin(a.time * 10) * 0.06 : 0
   })
 
-  const robeColor = purpose === 'toWork' ? palette.character.robe : palette.character.robeAccent
+  const robeColor = purpose === 'patrol' ? '#cc2200' : purpose === 'toWork' ? palette.character.robe : palette.character.robeAccent
 
   return (
     <group ref={ref} position={[x, 0, y]} onClick={onClick}>

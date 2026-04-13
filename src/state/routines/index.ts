@@ -28,6 +28,8 @@ import { daytimeMarketRestockRoutine }  from './daytimeMarketRestock'
 import { migrantRoutine }               from './migrant'
 import { statsRoutine }                 from './stats'
 import { monthlyTaxRoutine }            from './monthlyTax'
+import { patrolRoutine }               from './patrol'
+import { thiefRoutine }                from './thief'
 /** Ordered chain - routines execute left to right every tick. */
 export const TICK_CHAIN: TickRoutine[] = [
   farmAssignmentRoutine,        //  1. Assign idle workers to unfarmed zones
@@ -37,15 +39,17 @@ export const TICK_CHAIN: TickRoutine[] = [
   peddlerRoutine,               //  5. Peddler walk, sell food & tools
   buildingBehaviorRoutine,      //  6. Per-building lifecycle callbacks (mine ore, smith tools, …)
   dailyProductionRoutine,       //  7. Household food consumption, wages, tool wear (non-building logic)
-  citizenStatusRoutine,         //  7. State machine + needs hierarchy -> satisfaction
-  diseaseRoutine,               //  8. Sickness death + neighbourhood spread
-  walkerRoutine,                //  9. Advance walkers, handle arrivals
-  morningCommuteRoutine,        // 10. Morning: commute + shopping + restock + peddler spawn
-  eveningCommuteRoutine,        // 11. Evening: workers & farmers return home
-  daytimeMarketRestockRoutine,  // 12. Emergency restock when market runs low mid-day
-  migrantRoutine,               // 13. Advance migrants, settle arrivals, spawn new
-  statsRoutine,                 // 14. Aggregate population, satisfaction, need pressure
-  monthlyTaxRoutine,            // 15. Monthly tax collection and expense settlement
+  citizenStatusRoutine,         //  8. State machine + needs hierarchy -> satisfaction
+  diseaseRoutine,               //  9. Sickness death + neighbourhood spread
+  patrolRoutine,                // 10. 巡检司巡逻：治安覆盖衰减、派出巡逻兵、逮捕盗贼
+  thiefRoutine,                 // 11. 盗贼系统：无业转盗贼、系狱计时释放
+  walkerRoutine,                // 12. Advance walkers, handle arrivals
+  morningCommuteRoutine,        // 13. Morning: commute + shopping + restock + peddler spawn
+  eveningCommuteRoutine,        // 14. Evening: workers & farmers return home
+  daytimeMarketRestockRoutine,  // 15. Emergency restock when market runs low mid-day
+  migrantRoutine,               // 16. Advance migrants, settle arrivals, spawn new
+  statsRoutine,                 // 17. Aggregate population, satisfaction, need pressure
+  monthlyTaxRoutine,            // 18. Monthly tax collection and expense settlement
 ]
 /** Run the full chain, threading ctx through every routine. */
 export function runTickChain(ctx: TickContext): TickContext {
@@ -97,6 +101,7 @@ export function buildTickContext(s: CityState): TickContext {
     oreVeinHealth:   { ...s.oreVeinHealth },
     forestHealth:    { ...s.forestHealth },
     grasslandHealth: { ...s.grasslandHealth },
+    houseSafety:     { ...s.houseSafety },
     monthlyFarmOutput:  s.monthlyFarmOutput,
     monthlyFarmValue:   s.monthlyFarmValue,
     monthlyMarketSales: s.monthlyMarketSales,
@@ -104,6 +109,8 @@ export function buildTickContext(s: CityState): TickContext {
     population:      s.citizens.length,
     avgSatisfaction: s.avgSatisfaction,
     needPressure:    { ...s.needPressure },
+    cityWenmai:      s.cityWenmai,
+    cityShangmai:    s.cityShangmai,
     lastTaxBreakdown:            s.lastTaxBreakdown,
     totalMonthlyTax:             0,
     lastMonthlyFarmValue:        s.lastMonthlyFarmValue,
@@ -158,6 +165,7 @@ export function applyTickResult(ctx: TickContext): CityState {
     oreVeinHealth:    ctx.oreVeinHealth,
     forestHealth:     ctx.forestHealth,
     grasslandHealth:  ctx.grasslandHealth,
+    houseSafety:      ctx.houseSafety,
     monthlyFarmOutput:  ctx.nextMonthlyFarmOutput,
     monthlyFarmValue:   ctx.nextMonthlyFarmValue,
     monthlyMarketSales: ctx.nextMonthlyMarketSales,
@@ -171,6 +179,8 @@ export function applyTickResult(ctx: TickContext): CityState {
     population:      ctx.population,
     avgSatisfaction: ctx.avgSatisfaction,
     needPressure:    ctx.needPressure,
+    cityWenmai:      ctx.cityWenmai,
+    cityShangmai:    ctx.cityShangmai,
     lastHouseholdBuyDay: s.lastHouseholdBuyDay,
     marketConfig:        s.marketConfig,
     peddlerTripLog:      ctx.peddlerTripLog,

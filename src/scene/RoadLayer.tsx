@@ -5,7 +5,7 @@
 import React from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, isNearRiverFive, getMountainHeight } from '../state/worldgen'
+import { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, isMountainForestAt, isNearRiverFive, getMountainHeight } from '../state/worldgen'
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { tileH } from '../config/characters/_shared'
@@ -224,7 +224,7 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
         }
       }
       if (bt === 'mine'       && !isOreVeinAt(tx, ty)) valid = false
-      if (bt === 'lumbercamp' && !isForestAt(tx, ty))  valid = false
+      if (bt === 'lumbercamp' && !isForestAt(tx, ty) && !isMountainForestAt(tx, ty))  valid = false
       if ((bt as string) === 'papermill' && !isNearRiverFive(tx, ty)) valid = false
       if (bt === 'academy') {
         const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - tx), Math.abs(by - ty))

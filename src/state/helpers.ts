@@ -16,6 +16,7 @@ import type {
 
 // ─── Re-exported terrain helpers ─────────────────────────────────────────
 export { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y } from './worldgen'
+export { isAnyForestAt, isMountainForestAt } from './worldgen'
 
 // ─── Clamp / round helpers ────────────────────────────────────────────────
 export function clamp01(v: number) { return Math.max(0, Math.min(1, v)) }
@@ -39,12 +40,16 @@ export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
   lumbercamp: { cost: 280, capacity: 0, workerSlots: 3, needBonus: {} },
   papermill:  { cost: 380, capacity: 0, workerSlots: 3, needBonus: { culture: 0.01 } },
   academy:    _defsFromJson['academy'] ?? { cost: 400, capacity: 0, workerSlots: 4, needBonus: { culture: 0.03 } },
+  manor:      { cost: 800, capacity: 16, workerSlots: 4, needBonus: {} },
+  watchpost:  { cost: 300, capacity: 0, workerSlots: 4, needBonus: { safety: 0.02 } },
+  prison:     { cost: 400, capacity: 0, workerSlots: 2, needBonus: {} },
 } as unknown as Record<BuildingType, BuildingDef>
 
 /** Grid footprint in tiles for each building type (defaults to 1×1). */
 const BUILDING_SIZE: Partial<Record<BuildingType, { w: number; h: number }>> = {
   market:  { w: 2, h: 2 },
   granary: { w: 2, h: 2 },
+  manor:   { w: 2, h: 2 },
 }
 export function getBuildingSize(bt: BuildingType): { w: number; h: number } {
   return BUILDING_SIZE[bt] ?? { w: 1, h: 1 }

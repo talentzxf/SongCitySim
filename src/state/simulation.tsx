@@ -9,7 +9,7 @@ export * from './helpers'
 // --- Local imports (to use internally) -----------------------------------
 import type { BuildingType, CropType, CropInventory, MarketConfig, Tool, CityState } from './types'
 import { ALL_BUILDING_TYPES } from './types'
-import { isMountainAt, isRiverAt, isOreVeinAt, isForestAt, isNearRiverFive, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y, ORE_VEIN_TILES, FOREST_TILES, GRASSLAND_TILES, MOUNTAIN_FOREST_TILES } from './worldgen'
+import { isMountainAt, isRiverAt, isOreVeinAt, isForestAt, isNearRiverFive, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y, ORE_VEIN_TILES, FOREST_TILES, GRASSLAND_TILES, MOUNTAIN_FOREST_TILES, isAnyForestAt, isMountainForestAt } from './worldgen'
 import {
   BUILDING_DEFS, DEFAULT_MARKET_CFG, BRIDGE_BASE_COST, FOREST_CLEAR_COST, CROP_KEYS,
   clampFood, clampCrop, createEmptyInventory,
@@ -58,6 +58,9 @@ const initial: CityState = {
   lastMonthlyTax: 0, avgSatisfaction: 71, needPressure: { food: 32, safety: 28, culture: 44 },
   houseDead: {},
   simSpeed: 1,
+  houseSafety: {},
+  cityWenmai: 0,
+  cityShangmai: 0,
 }
 
 // Starter house adjacent to highway so migrants can spawn on day 1
@@ -171,8 +174,12 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
           }
         }
         if (bt === 'mine'                  && !isOreVeinAt(x, y))  { action.reason = 'no-ore-vein';     return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
-        if ((bt as string) === 'lumbercamp' && !isForestAt(x, y))   { action.reason = 'no-forest';       return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        if ((bt as string) === 'lumbercamp' && !isAnyForestAt(x, y))  { action.reason = 'no-forest';       return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
         if ((bt as string) === 'papermill'  && !isNearRiverFive(x, y)) { action.reason = 'no-river-access'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        if ((bt as string) === 'manor') {
+          if (s.cityWenmai < 30) { action.reason = 'no-wenmai'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+          if (s.cityShangmai < 30) { action.reason = 'no-shangmai'; return { ...s, lastBuildAttempt: { ...ba, reason: action.reason } } }
+        }
         if ((bt as string) === 'academy') {
           const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - x), Math.abs(by - y))
           if (!s.buildings.some(b => (b.type as string) === 'papermill' && cheb(b.x, b.y) <= 20)) {
@@ -181,11 +188,12 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         }
         const id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`
         const newB = { id, type: bt, x, y, w: bw, h: bh, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: effectiveCost }
-        const houseFood    = bt === 'house' ? { ...s.houseFood,    [id]: 15 }  : s.houseFood
-        const houseCrops   = bt === 'house' ? { ...s.houseCrops,   [id]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } } : s.houseCrops
-        const houseSavings = bt === 'house' ? { ...s.houseSavings, [id]: 50 }  : s.houseSavings
-        const houseTools   = bt === 'house' ? { ...s.houseTools,   [id]: 0 }   : s.houseTools
-        const houseDead    = bt === 'house' ? { ...s.houseDead,    [id]: 0 }   : s.houseDead
+        const isResidential = bt === 'house' || bt === 'manor'
+        const houseFood    = isResidential ? { ...s.houseFood,    [id]: bt === 'manor' ? 30 : 15 }  : s.houseFood
+        const houseCrops   = isResidential ? { ...s.houseCrops,   [id]: { rice: bt === 'manor' ? 30 : 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } } : s.houseCrops
+        const houseSavings = isResidential ? { ...s.houseSavings, [id]: bt === 'manor' ? 200 : 50 } : s.houseSavings
+        const houseTools   = isResidential ? { ...s.houseTools,   [id]: 0 }                          : s.houseTools
+        const houseDead    = isResidential ? { ...s.houseDead,    [id]: 0 }                          : s.houseDead
         const marketConfig = bt === 'market' ? { ...s.marketConfig, [id]: { ...DEFAULT_MARKET_CFG } } : s.marketConfig
         // 新建集市时，注入启动库存（米 30 担），让集市开业即有货
         const marketInventory = bt === 'market'
@@ -205,7 +213,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   function removeBuilding(id: string) {
     setState(s => {
       const bldg = s.buildings.find(b => b.id === id); if (!bldg) return s
-      const isHouse = bldg.type === 'house'
+      const isHouse = bldg.type === 'house' || bldg.type === 'manor'
       const houseFood:    Record<string, number>        = { ...s.houseFood }
       const houseCrops:   Record<string, CropInventory> = Object.fromEntries(Object.entries(s.houseCrops).map(([k, v]) => [k, { ...v }]))
       const houseSavings: Record<string, number>        = { ...s.houseSavings }
@@ -404,7 +412,8 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
               if (s.money < def.cost || isBuildingAt(s.buildings, x, y) || isRoadAt(s.roads, x, y) || s.farmZones.some(z => z.x === x && z.y === y)) return s
               const id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`
               const { w: bw2, h: bh2 } = getBuildingSize(bt)
-              const houseFood = bt === 'house' ? { ...s.houseFood, [id]: 15 } : s.houseFood
+              const isRes = bt === 'house' || bt === 'manor'
+              const houseFood = isRes ? { ...s.houseFood, [id]: bt === 'manor' ? 30 : 15 } : s.houseFood
               action.success = true
               return { ...s, buildings: [...s.buildings, { id, type: bt, x, y, w: bw2, h: bh2, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: def.cost }], houseFood, money: s.money - def.cost, monthlyConstructionCost: s.monthlyConstructionCost + def.cost }
             })
