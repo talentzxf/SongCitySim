@@ -5,11 +5,11 @@
 import React from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { RIVER_TILES, RIVER_CENTER_LINE, RIVER_TRIB_CHAINS, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
+import { RIVER_TILES, RIVER_CENTER_LINE, RIVER_TRIB_CHAINS, MOUNTAIN_TILES, getMountainHeight, isMountainAt, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { tileH } from '../config/characters/_shared'
-import { TileInstances, FlatInstances, CircleInstances } from './MapPrimitives'
+import { FlatInstances, CircleInstances } from './MapPrimitives'
 
 // ─── River curve (computed once at module load) ────────────────────────────
 
@@ -69,7 +69,6 @@ export const RIVER_FOAM_POSITIONS: { x: number; y: number }[] = RIVER_CURVE
   ? RIVER_CURVE.getPoints(RIVER_CENTER_LINE.length * 3).map(p => ({ x: p.x, y: p.z }))
   : RIVER_TILES as { x: number; y: number }[]
 
-const _MAX_MOUNTAIN_H = 0.04 + worldGenConfig.mountain.tileScale
 
 const _riverRibbonGeo: THREE.BufferGeometry | null = (() => {
   if (!RIVER_CURVE) return null
@@ -94,35 +93,145 @@ const _riverRibbonGeo: THREE.BufferGeometry | null = (() => {
   return geo
 })()
 
-// ─── Mountain instanced boxes ──────────────────────────────────────────────
 
-function MountainInstances({ tiles }: { tiles: [number, number][] }) {
-  const ref = React.useRef<THREE.InstancedMesh>(null)
-  const data = React.useMemo(() => tiles.map(([x, y]) => ({ x, y, h: tileH(x, y) })), [tiles])
-  React.useLayoutEffect(() => {
-    if (!ref.current || data.length === 0) return
-    const mesh = ref.current; const temp = new THREE.Object3D(); const color = new THREE.Color()
-    mesh.count = data.length
-    for (let i = 0; i < data.length; i++) {
-      const { x, y, h } = data[i]
-      temp.position.set(x, h * 0.5, y); temp.scale.set(0.97, h, 0.97)
-      temp.rotation.set(0, 0, 0); temp.updateMatrix()
-      mesh.setMatrixAt(i, temp.matrix)
-      const t2 = h / _MAX_MOUNTAIN_H
-      const noise = 0.88 + (Math.abs((x * 7 + y * 13) % 14)) / 100
-      color.setRGB((0.44 - t2 * 0.10) * noise, (0.38 - t2 * 0.07) * noise, (0.32 - t2 * 0.03) * noise)
-      mesh.setColorAt(i, color)
+// ─── Unified full-map terrain mesh ────────────────────────────────────────
+// One mesh for ALL tiles: flat ground + mountains.
+// • 4 unique vertices per tile (no cross-tile sharing) → crisp checkerboard
+//   colours while still having smooth height transitions at every corner.
+// • Heights use bilinear average of 4 surrounding mountain-tile heights,
+//   so mountains taper naturally into flat ground — zero seams.
+// • Road tiles baked in as dynamic vertex-colour updates (no road geometry).
+
+const _HX = Math.floor(MAP_SIZE_X / 2)   // half-width  (90 for 180-wide map)
+const _HY = Math.floor(MAP_SIZE_Y / 2)   // half-height (67 for 135-tall map)
+const _MAX_MOUNTAIN_H = 0.04 + worldGenConfig.mountain.tileScale
+
+/** Raw mountain tile height at (tx,ty); 0 for non-mountain tiles. */
+function _rawH(tx: number, ty: number): number {
+  const mh = getMountainHeight(tx, ty)
+  return mh > 0 ? 0.04 + mh * worldGenConfig.mountain.tileScale : 0
+}
+/** Smooth height at tile-corner (vx,vy) — average of the 4 sharing tiles. */
+function _vtxH(vx: number, vy: number): number {
+  return (_rawH(vx-1,vy-1) + _rawH(vx,vy-1) + _rawH(vx-1,vy) + _rawH(vx,vy)) / 4
+}
+/** Index of first of the 4 vertices belonging to tile (tx,ty). */
+function _tileVI(tx: number, ty: number): number {
+  return ((ty + _HY) * MAP_SIZE_X + (tx + _HX)) * 4
+}
+
+const _tlC = new THREE.Color(palette.map.tileLight)
+const _tdC = new THREE.Color(palette.map.tileDark)
+/**
+ * Write colour for one vertex.
+ * Checkerboard (from tile coords) is the universal base — mountain tiles
+ * inherit it too, ensuring a seamless flat→mountain boundary.
+ * A rock tint is blended in proportional to THIS VERTEX'S own height, so
+ * the gradient is smooth both across tile boundaries and within a single
+ * sloped quad.  No per-tile noise → no blocky grid artefact.
+ */
+function _writeTileColor(tx: number, ty: number, vtxH: number, arr: Float32Array, off: number) {
+  const flatC = (tx + ty) % 2 === 0 ? _tlC : _tdC
+  let r = flatC.r, g = flatC.g, b = flatC.b
+  if (vtxH > 0.005) {
+    const t2    = Math.min(1, vtxH / _MAX_MOUNTAIN_H)
+    // Blend 0 at ground level → ~0.85 at high peaks (never fully erases checker)
+    const blend = Math.min(0.85, t2 * 2.8)
+    const rr = 0.43 - t2 * 0.08
+    const rg = 0.37 - t2 * 0.06
+    const rb = 0.30 - t2 * 0.03
+    r = r + (rr - r) * blend
+    g = g + (rg - g) * blend
+    b = b + (rb - b) * blend
+  }
+  arr[off] = r; arr[off+1] = g; arr[off+2] = b
+}
+
+/** Build static terrain geometry + a saved copy of the base colours. */
+const { _terrainGeo, _baseCol } = (() => {
+  const W = MAP_SIZE_X, H = MAP_SIZE_Y
+  const pos = new Float32Array(W * H * 4 * 3)
+  const col = new Float32Array(W * H * 4 * 3)
+  const idx: number[] = []
+  for (let iy = 0; iy < H; iy++) {
+    for (let ix = 0; ix < W; ix++) {
+      const tx = ix - _HX, ty = iy - _HY
+      const vi = (iy * W + ix) * 4
+      const hTL = _vtxH(tx, ty),     hTR = _vtxH(tx+1, ty)
+      const hBL = _vtxH(tx, ty+1),   hBR = _vtxH(tx+1, ty+1)
+      // TL TR BL BR vertices
+      pos[ vi   *3]=tx-0.5; pos[ vi   *3+1]=hTL; pos[ vi   *3+2]=ty-0.5
+      pos[(vi+1)*3]=tx+0.5; pos[(vi+1)*3+1]=hTR; pos[(vi+1)*3+2]=ty-0.5
+      pos[(vi+2)*3]=tx-0.5; pos[(vi+2)*3+1]=hBL; pos[(vi+2)*3+2]=ty+0.5
+      pos[(vi+3)*3]=tx+0.5; pos[(vi+3)*3+1]=hBR; pos[(vi+3)*3+2]=ty+0.5
+      // Per-vertex height for colour → smooth gradient, no grid artefact
+      _writeTileColor(tx, ty, hTL, col,  vi    *3)
+      _writeTileColor(tx, ty, hTR, col, (vi+1)*3)
+      _writeTileColor(tx, ty, hBL, col, (vi+2)*3)
+      _writeTileColor(tx, ty, hBR, col, (vi+3)*3)
+      idx.push(vi, vi+2, vi+3,  vi, vi+3, vi+1)   // two CCW triangles
     }
-    mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  }, [data])
-  if (tiles.length === 0) return null
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  const cAttr = new THREE.Float32BufferAttribute(col, 3)
+  cAttr.setUsage(THREE.DynamicDrawUsage)
+  geo.setAttribute('color', cAttr)
+  geo.setIndex(idx)
+  geo.computeVertexNormals()
+  return { _terrainGeo: geo, _baseCol: col.slice() }
+})()
+
+const _roadC    = new THREE.Color(palette.map.road)
+const _mtnRoadC = new THREE.Color(palette.map.mountainRoad)
+const _hwyC     = new THREE.Color(palette.map.highway)
+
+/** Full-map terrain mesh; road tiles are re-coloured via dynamic vertex colours. */
+function UnifiedTerrainMesh({ roads }: { roads: Array<{ x: number; y: number }> }) {
+  const prevKeys = React.useRef(new Set<string>())
+
+  React.useEffect(() => {
+    const cAttr = _terrainGeo.attributes.color as THREE.BufferAttribute
+    const arr   = cAttr.array as Float32Array
+    const next  = new Set(roads.map(r => `${r.x},${r.y}`))
+    const prev  = prevKeys.current
+    let dirty   = false
+
+    // Restore tiles no longer roads
+    for (const key of prev) {
+      if (next.has(key)) continue
+      const [tx, ty] = key.split(',').map(Number)
+      if (tx < -_HX || tx >= _HX || ty < -_HY || ty >= _HY) continue
+      const vi = _tileVI(tx, ty)
+      for (let k = 0; k < 4; k++) {
+        arr[(vi+k)*3]   = _baseCol[(vi+k)*3]
+        arr[(vi+k)*3+1] = _baseCol[(vi+k)*3+1]
+        arr[(vi+k)*3+2] = _baseCol[(vi+k)*3+2]
+      }
+      dirty = true
+    }
+
+    // Colour new road tiles
+    for (const key of next) {
+      if (prev.has(key)) continue
+      const [tx, ty] = key.split(',').map(Number)
+      if (tx < -_HX || tx >= _HX || ty < -_HY || ty >= _HY) continue
+      const vi = _tileVI(tx, ty)
+      const c  = isMountainAt(tx, ty) ? _mtnRoadC : (ty === 0 && tx <= -6 ? _hwyC : _roadC)
+      for (let k = 0; k < 4; k++) {
+        arr[(vi+k)*3] = c.r; arr[(vi+k)*3+1] = c.g; arr[(vi+k)*3+2] = c.b
+      }
+      dirty = true
+    }
+
+    if (dirty) cAttr.needsUpdate = true
+    prevKeys.current = next
+  }, [roads])
+
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(data.length, 1)]}
-      frustumCulled={false} castShadow receiveShadow>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial roughness={0.95} metalness={0.05} />
-    </instancedMesh>
+    <mesh geometry={_terrainGeo} frustumCulled={false} castShadow receiveShadow>
+      <meshStandardMaterial vertexColors roughness={0.88} metalness={0.04} />
+    </mesh>
   )
 }
 
@@ -498,8 +607,7 @@ function ResourceHealthOverlay({ tiles }: { tiles: ResourceOverlayTile[] }) {
 // ─── Public layer component ────────────────────────────────────────────────
 
 export interface TerrainLayerProps {
-  visibleTiles: [number, number][]
-  visibleMountainTiles: [number, number][]
+  // visibleTiles / visibleMountainTiles removed — unified terrain mesh covers all
   visibleOreVeinTiles: Array<{ x: number; y: number }>
   visibleForestTiles: Array<{ x: number; y: number }>
   visibleMountainForestTiles: Array<{ x: number; y: number }>
@@ -508,18 +616,20 @@ export interface TerrainLayerProps {
   visibleMountainArableTiles: Array<{ x: number; y: number }>
   showTerrainOverlay: boolean
   resourceOverlay: ResourceOverlayTile[] | null
+  roads: Array<{ x: number; y: number }>
 }
 
 export function TerrainLayer({
-  visibleTiles, visibleMountainTiles, visibleOreVeinTiles,
+  visibleOreVeinTiles,
   visibleForestTiles, visibleMountainForestTiles, visibleGrasslandTiles,
   visibleArableTiles, visibleMountainArableTiles,
   showTerrainOverlay, resourceOverlay,
+  roads,
 }: TerrainLayerProps) {
   return (
     <>
-      <TileInstances tiles={visibleTiles} />
-      <MountainInstances tiles={visibleMountainTiles} />
+      {/* Full-map heightmap — replaces TileInstances + SmoothMountainMesh */}
+      <UnifiedTerrainMesh roads={roads} />
       <TributaryRibbons />
       {_tribData.map((td, i) => td ? <AnimatedRiverFoam key={`trib-foam-${i}`} tiles={td.foamPts} /> : null)}
       <SmoothRiverMesh />

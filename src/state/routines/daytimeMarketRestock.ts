@@ -11,7 +11,7 @@ export const daytimeMarketRestockRoutine: TickRoutine = (ctx) => {
   const granaryInventory = ctx.granaryInventory
   for (const market of marketsList) {
     if (marketBuyers.some(mb => mb.marketId === market.id)) continue
-    if (inventoryTotal(marketInventory) >= 10) continue
+    if (inventoryTotal(marketInventory) >= 30) continue  // 库存低于30担才补货（原10）
     if (!granaries.length || inventoryTotal(granaryInventory) < 2) continue
     const g = granaries.reduce((best, gr) =>
       (gr.x - market.x) ** 2 + (gr.y - market.y) ** 2 <

@@ -3,7 +3,7 @@ import type { TickRoutine } from './types'
 import { MIGRANT_TILES_PER_SECOND, SIM_TICK_MS } from '../../config/simulation'
 import {
   BUILDING_DEFS, PROFESSION_BY_BUILDING,
-  adjacentHasRoad, roadsAdjacent, findRoadPath, seededNeeds, createCitizenProfile,
+  adjacentHasRoad, buildingHasRoadAccess, roadsAdjacent, findRoadPath, seededNeeds, createCitizenProfile,
   ENTRY_TILE, bfsHighwayPath,
 } from '../helpers'
 export const migrantRoutine: TickRoutine = (ctx) => {
@@ -36,7 +36,7 @@ export const migrantRoutine: TickRoutine = (ctx) => {
     const wps = s.buildings.filter(b =>
       BUILDING_DEFS[b.type].workerSlots > 0 &&
       (occupiedSlots.get(b.id) ?? 0) < BUILDING_DEFS[b.type].workerSlots &&
-      adjacentHasRoad(s.roads, b.x, b.y))
+      buildingHasRoadAccess(s.roads, b))
     const wp = wps[Math.floor(Math.random() * wps.length)] ?? null
     citizens = [...citizens, {
       id: `c-${Math.floor(seed)}`, houseId: house.id,

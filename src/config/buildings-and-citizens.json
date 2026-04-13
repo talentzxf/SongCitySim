@@ -165,7 +165,9 @@
     "lowCulture": "城里再多些热闹和学问就好了。",
     "lowFood": "粮储不算宽裕，还是要精打细算。",
     "atHomeHappy": "今天还算安稳，希望明日也风调雨顺。",
-    "atWorkFocused": "先把手头活计做好，回家再歇。"
+    "atWorkFocused": "先把手头活计做好，回家再歇。",
+    "shopping": "家里粮食快见底了，下班顺路去集市买些回来。",
+    "returning": "货买好了，挑着担子赶紧回家，今晚不会断炊了。"
   },
   "timePhases": {
     "deepNight": { "range": [0, 0.1], "label": "深夜", "emoji": "🌙", "color": "blue" },

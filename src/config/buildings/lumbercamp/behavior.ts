@@ -5,7 +5,7 @@
  */
 import type { BuildingLifecycle } from '../_lifecycle'
 import { LUMBER_CAPACITY_PER, TIMBER_PER_LOGGER_DAY } from '../../../state/helpers'
-import { FOREST_TILES } from '../../../state/worldgen'
+import { FOREST_TILES, MOUNTAIN_FOREST_TILES } from '../../../state/worldgen'
 
 const HARVEST_RADIUS = 6   // Chebyshev 距离
 
@@ -16,8 +16,9 @@ export const behavior: BuildingLifecycle = {
 
     const { x: bx, y: by } = ctx.building
 
-    // 找出周边有剩余储量的林地格
-    const nearby = FOREST_TILES.filter(t => {
+    // 找出周边有剩余储量的林地格（平地林地 + 山地松柏均可采伐）
+    const allForestTiles = [...FOREST_TILES, ...MOUNTAIN_FOREST_TILES]
+    const nearby = allForestTiles.filter(t => {
       if (Math.max(Math.abs(t.x - bx), Math.abs(t.y - by)) > HARVEST_RADIUS) return false
       return ctx.pool.get(`forest.health.${t.x},${t.y}`) > 0
     })

@@ -10,7 +10,7 @@ import { WALKER_SPEED, MARKET_BUYER_SPEED, SHOP_INTERVAL_DAYS } from '../../conf
 import {
   CROP_KEYS, PEDDLER_MAX_STEPS, PEDDLER_SPEED,
   PEDDLER_CARRY_FOOD, PEDDLER_CARRY_TOOLS, FARM_TOOL_PRICE, TOOL_DURABILITY_LOW,
-  inventoryTotal, adjacentHasRoad, roadsAdjacent, findRoadPath, bestPath, isRoadAt,
+  inventoryTotal, adjacentHasRoad, buildingHasRoadAccess, roadsAdjacent, findRoadPath, bestPath, isRoadAt,
   getMarketCfg, transferInventory, createEmptyPeddlerCargo,
 } from '../helpers'
 export const morningCommuteRoutine: TickRoutine = (ctx) => {
@@ -35,7 +35,7 @@ export const morningCommuteRoutine: TickRoutine = (ctx) => {
   // Map: marketId -> list of citizen ids chosen to peddle today
   const peddlerAssignments = new Map<string, string[]>()
   for (const market of marketsList) {
-    if (!adjacentHasRoad(s.roads, market.x, market.y)) continue
+    if (!buildingHasRoadAccess(s.roads, market)) continue
     const cfg          = getMarketCfg(market.id, s.marketConfig)
     const alreadyOut   = peddlers.filter(p =>
       p.marketId === market.id &&

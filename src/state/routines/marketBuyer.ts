@@ -22,7 +22,7 @@ export const marketBuyerRoutine: TickRoutine = (ctx) => {
     if (mb.routeIndex >= 1 && !mb.pickedUp) {
       const total = inventoryTotal(granaryInventory)
       if (total > 1) {
-        const pickAmt = Math.min(20, total)
+        const pickAmt = Math.min(80, total)   // 每次最多取 80 担（原20），加快补货速度
         const topCrop = CROP_KEYS.reduce((best, k) =>
           granaryInventory[k] > granaryInventory[best] ? k : best, CROP_KEYS[0])
         const take = Math.min(pickAmt, granaryInventory[topCrop])

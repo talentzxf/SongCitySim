@@ -225,7 +225,7 @@ export type CityState = {
   selectedBuildingId: string | null
   selectedCitizenId: string | null
   selectedFarmZoneId: string | null
-  selectedTerrainTile: { x: number; y: number; kind: 'forest' | 'grassland' | 'ore' } | null
+  selectedTerrainTile: { x: number; y: number; kind: 'forest' | 'grassland' | 'ore' | 'mountainForest' } | null
   lastAction: LastAction | null
   lastBuildAttempt: BuildAttempt | null
   citizens: Citizen[]

@@ -18,7 +18,7 @@ import {
   logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos, logicalPeddlerPos,
   RIVER_TILES, RIVER_CENTER_LINE,
   MOUNTAIN_TILES, ORE_VEIN_TILES, FOREST_TILES, GRASSLAND_TILES, MOUNTAIN_FOREST_TILES,
-  isRiverAt, isNearRiverFive, isMountainAt, isForestAt, isGrasslandAt, isOreVeinAt,
+  isRiverAt, isNearRiverFive, isMountainAt, isForestAt, isGrasslandAt, isOreVeinAt, isMountainForestAt,
   MAP_SIZE_X, MAP_SIZE_Y,
   ALL_BUILDING_TYPES, type BuildingType, type CityState,
   FOREST_CLEAR_COST, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH,
@@ -38,6 +38,73 @@ import { OverlayLayer, type RingInfo, type SickHouseInfo } from './OverlayLayer'
 import { CharacterLayer, type ResidentRenderItem } from './CharacterLayer'
 // --- Pathfinding ------------------------------------------------------------
 import { astarRoad, rasterLine, expandToFourNeighborPath } from './pathfinding'
+
+// ===========================================================================
+// CompassArrow — Genshin-style bouncing navigation marker for ore veins
+// ===========================================================================
+function CompassArrow({ x, y }: { x: number; y: number }) {
+  const groupRef    = React.useRef<THREE.Group>(null)
+  const ringMeshRef = React.useRef<THREE.Mesh>(null)
+  const mat1Ref     = React.useRef<THREE.MeshStandardMaterial>(null)
+  const mat2Ref     = React.useRef<THREE.MeshStandardMaterial>(null)
+  const mat3Ref     = React.useRef<THREE.MeshStandardMaterial>(null)
+  const ringMatRef  = React.useRef<THREE.MeshStandardMaterial>(null)
+  const ageRef      = React.useRef(0)
+  const baseH       = tileH(x, y)
+  const FLOAT_H     = baseH + 3.2
+  const DURATION    = 6 // seconds before the arrow fades away
+
+  useFrame((_, delta) => {
+    ageRef.current += delta
+    const age = ageRef.current
+    if (!groupRef.current) return
+
+    // Bouncing: two harmonics for a natural spring feel
+    const bounce = Math.sin(age * 5.5) * 0.42 + Math.sin(age * 11) * 0.10
+    groupRef.current.position.y = FLOAT_H + bounce
+
+    // Fade out in last 1.5 seconds
+    const opacity = age < DURATION - 1.5 ? 1.0 : Math.max(0, (DURATION - age) / 1.5)
+    const mats = [mat1Ref.current, mat2Ref.current, mat3Ref.current]
+    for (const mat of mats) {
+      if (!mat) continue
+      mat.opacity = opacity
+      mat.emissiveIntensity = 1.4 * opacity
+    }
+    if (ringMatRef.current)  ringMatRef.current.opacity = opacity * 0.75
+    // Pulsing ground ring
+    if (ringMeshRef.current) {
+      const scale = 1 + Math.sin(age * 2.8) * 0.22
+      ringMeshRef.current.scale.setScalar(scale)
+    }
+  })
+
+  return (
+    <>
+      {/* Triple-chevron bouncing arrow (three downward cones) */}
+      <group ref={groupRef} position={[x + 0.5, FLOAT_H, y + 0.5]}>
+        <mesh rotation={[Math.PI, 0, 0]} position={[0, 0, 0]}>
+          <coneGeometry args={[0.58, 0.92, 4]} />
+          <meshStandardMaterial ref={mat1Ref} color="#ffd700" emissive="#ff9900" emissiveIntensity={1.4} transparent />
+        </mesh>
+        <mesh rotation={[Math.PI, 0, 0]} position={[0, 0.80, 0]}>
+          <coneGeometry args={[0.58, 0.92, 4]} />
+          <meshStandardMaterial ref={mat2Ref} color="#ffd700" emissive="#ff9900" emissiveIntensity={1.4} transparent />
+        </mesh>
+        <mesh rotation={[Math.PI, 0, 0]} position={[0, 1.60, 0]}>
+          <coneGeometry args={[0.58, 0.92, 4]} />
+          <meshStandardMaterial ref={mat3Ref} color="#ffd700" emissive="#ff9900" emissiveIntensity={1.4} transparent />
+        </mesh>
+      </group>
+      {/* Pulsing ground ring */}
+      <mesh ref={ringMeshRef} rotation={[-Math.PI / 2, 0, 0]} position={[x + 0.5, baseH + 0.06, y + 0.5]}>
+        <ringGeometry args={[0.60, 1.05, 32]} />
+        <meshStandardMaterial ref={ringMatRef} color="#ffd700" emissive="#ff9900" emissiveIntensity={0.9}
+          transparent opacity={0.75} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+    </>
+  )
+}
 
 // --- Module-level window globals (read by Playwright e2e tests) ------------
 if (typeof window !== 'undefined') {
@@ -77,6 +144,18 @@ export default function MapScene() {
     placeFarmZone, removeFarmZone, selectBuilding, selectCitizen, selectFarmZone,
     selectTerrainTile,
   })
+
+  // --- Compass marker (ore-vein navigator) -----------------------------------
+  const [compassMarker, setCompassMarker] = React.useState<{ x: number; y: number } | null>(null)
+  const lastCompassIdRef = React.useRef<number>(-1)
+  const flyToRef         = React.useRef<{ x: number; y: number } | null>(null)
+  // Auto-clear marker after 6 seconds
+  React.useEffect(() => {
+    if (!compassMarker) return
+    const tid = setTimeout(() => setCompassMarker(null), 6200)
+    return () => clearTimeout(tid)
+  }, [compassMarker])
+
   const dragRef          = React.useRef({ active: false, didDrag: false, lastTileKey: '',
                                           lastTile: null as null | { x: number; y: number } })
   const objectClickedRef = React.useRef(false)
@@ -165,8 +244,9 @@ export default function MapScene() {
   const visibleMountainForestTiles = React.useMemo(() =>
     mtnForestTree.rangeQuery(cullRect).filter(t =>
       !state.buildings.some(b => b.x === t.x && b.y === t.y) &&
-      !state.roads.some(r => r.x === t.x && r.y === t.y)),
-    [mtnForestTree, cullRect, state.buildings, state.roads],
+      !state.roads.some(r => r.x === t.x && r.y === t.y) &&
+      (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
+    [mtnForestTree, cullRect, state.buildings, state.roads, state.forestHealth],
   )
 
   // Resource health overlay (shown when mine or lumbercamp is selected)
@@ -378,6 +458,28 @@ export default function MapScene() {
   const hitRef       = React.useRef(new THREE.Vector3())
 
   useFrame((_, delta) => {
+    // --- Compass fly-to (runs every frame, before culling throttle) ----------
+    const newCompassTarget = (window as any).__ORE_COMPASS_TARGET__
+    if (newCompassTarget && typeof newCompassTarget.id === 'number' &&
+        newCompassTarget.id !== lastCompassIdRef.current) {
+      lastCompassIdRef.current = newCompassTarget.id
+      setCompassMarker({ x: newCompassTarget.x, y: newCompassTarget.y })
+      flyToRef.current = { x: newCompassTarget.x, y: newCompassTarget.y }
+    }
+    if (flyToRef.current) {
+      const ctrl = (window as any).__THREE_CONTROLS__
+      if (ctrl?.target) {
+        const tx = flyToRef.current.x + 0.5, tz = flyToRef.current.y + 0.5
+        const dt = Math.min(1, delta * 3.5)
+        const dx = (tx - ctrl.target.x) * dt
+        const dz = (tz - ctrl.target.z) * dt
+        ctrl.target.x += dx; ctrl.target.z += dz
+        if (ctrl.object) { ctrl.object.position.x += dx; ctrl.object.position.z += dz }
+        if (typeof ctrl.update === 'function') ctrl.update()
+        if (Math.hypot(tx - ctrl.target.x, tz - ctrl.target.z) < 0.15) flyToRef.current = null
+      }
+    }
+    // --- Culling (10 Hz) -----------------------------------------------------
     cullClockRef.current += delta
     if (cullClockRef.current < 0.1) return
     cullClockRef.current = 0
@@ -483,6 +585,7 @@ export default function MapScene() {
         if (isOreVeinAt(wx, wy)) { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'ore' }); return }
         if (isForestAt(wx, wy))  { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'forest' }); return }
         if (isGrasslandAt(wx, wy)) { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'grassland' }); return }
+        if (isMountainForestAt(wx, wy)) { actionsRef.current.selectTerrainTile({ x: wx, y: wy, kind: 'mountainForest' }); return }
         actionsRef.current.selectBuilding(null)
         actionsRef.current.selectCitizen(null)
         actionsRef.current.selectFarmZone(null)
@@ -661,8 +764,7 @@ export default function MapScene() {
 
       {/* Ground, mountains, river, ore veins, arable overlay */}
       <TerrainLayer
-        visibleTiles={visibleTiles}
-        visibleMountainTiles={visibleMountainTiles}
+        roads={state.roads}
         visibleOreVeinTiles={visibleOreVeinTiles}
         visibleForestTiles={visibleForestTiles}
         visibleMountainForestTiles={visibleMountainForestTiles}
@@ -728,6 +830,9 @@ export default function MapScene() {
         selectedCitizenId={state.selectedCitizenId}
         onCitizenClick={handleCitizenClick}
       />
+
+      {/* Ore-compass bouncing arrow */}
+      {compassMarker && <CompassArrow key={`${compassMarker.x},${compassMarker.y}`} x={compassMarker.x} y={compassMarker.y} />}
     </group>
   )
 }

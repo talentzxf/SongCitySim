@@ -5,7 +5,7 @@
 import React from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, isNearRiverFive } from '../state/worldgen'
+import { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, isNearRiverFive, getMountainHeight } from '../state/worldgen'
 import worldGenConfig from '../config/world-gen'
 import { palette } from '../theme/palette'
 import { tileH } from '../config/characters/_shared'
@@ -28,24 +28,118 @@ function BridgeInstances({ bridges }: { bridges: Array<{ x: number; y: number }>
   )
 }
 
+// ─── Terrain-conforming mountain road helpers ─────────────────────────────
+//
+// The smooth mountain terrain mesh (SmoothMountainMesh in TerrainLayer) places
+// each vertex at world position (vx-0.5, h, vy-0.5) where
+//   h = avg of the four mountain-tile heights sharing corner (vx, vy).
+// Mountain roads must use the SAME corner heights so they sit flush on the
+// terrain surface — no floating planes, no holes, no visible grid edges.
+
+const _MTILE_SCALE_R = worldGenConfig.mountain.tileScale
+
+/** Raw mountain tile height used by the terrain mesh (0 for non-mountain). */
+function _tileH(tx: number, ty: number): number {
+  const mh = getMountainHeight(tx, ty)
+  return mh > 0 ? 0.04 + mh * _MTILE_SCALE_R : 0
+}
+
+/** Height of terrain mesh vertex at integer corner (vx, vy). */
+function terrainVtxH(vx: number, vy: number): number {
+  return (_tileH(vx - 1, vy - 1) + _tileH(vx, vy - 1) +
+          _tileH(vx - 1, vy)     + _tileH(vx, vy)) / 4
+}
+
+/** Height of terrain mesh surface at tile centre (tx, ty). */
+function terrainCentreH(tx: number, ty: number): number {
+  return (terrainVtxH(tx, ty) + terrainVtxH(tx + 1, ty) +
+          terrainVtxH(tx, ty + 1) + terrainVtxH(tx + 1, ty + 1)) / 4
+}
+
+/**
+ * Build a single BufferGeometry whose quads conform exactly to the smooth
+ * mountain terrain surface.  Adjacent tiles share corner vertices → no seams,
+ * no grid-step artefacts along the road.
+ *
+ * @param yOffset  Small positive value to lift road above terrain (prevents z-fight).
+ */
+function buildConformingRoadGeo(
+  tiles: Array<{ x: number; y: number }>,
+  yOffset: number,
+): THREE.BufferGeometry | null {
+  if (!tiles.length) return null
+
+  // Collect unique corner vertices (same pattern as SmoothMountainMesh)
+  const vtxSet = new Set<string>()
+  for (const { x, y } of tiles)
+    for (let dx = 0; dx <= 1; dx++)
+      for (let dy = 0; dy <= 1; dy++)
+        vtxSet.add(`${x + dx},${y + dy}`)
+
+  const vtxKeys = Array.from(vtxSet)
+  const vtxIdx  = new Map<string, number>()
+  vtxKeys.forEach((k, i) => vtxIdx.set(k, i))
+  const N = vtxKeys.length
+
+  const positions = new Float32Array(N * 3)
+  for (let i = 0; i < N; i++) {
+    const [vx, vy] = vtxKeys[i].split(',').map(Number)
+    const h = terrainVtxH(vx, vy) + yOffset
+    positions[i * 3]     = vx - 0.5
+    positions[i * 3 + 1] = h
+    positions[i * 3 + 2] = vy - 0.5
+  }
+
+  // Same CCW winding as SmoothMountainMesh
+  const indices: number[] = []
+  for (const { x, y } of tiles) {
+    const tl = vtxIdx.get(`${x},${y}`)!
+    const tr = vtxIdx.get(`${x + 1},${y}`)!
+    const bl = vtxIdx.get(`${x},${y + 1}`)!
+    const br = vtxIdx.get(`${x + 1},${y + 1}`)!
+    indices.push(tl, bl, br,  tl, br, tr)
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setIndex(indices)
+  geo.computeVertexNormals()
+  return geo
+}
+
+/** Mountain road surface + stripe markers that sit flush on the terrain mesh. */
+function MountainRoadMesh({ roads }: { roads: Array<{ x: number; y: number }> }) {
+  const roadGeo = React.useMemo(() => buildConformingRoadGeo(roads, 0.012), [roads])
+
+  // Stripes are small centred squares — use tile-centre height (flat, tiny, barely visible tilt)
+  const stripeItems = React.useMemo(
+    () => roads.map(r => ({ x: r.x, y: r.y, h: terrainCentreH(r.x, r.y) + 0.016 })),
+    [roads],
+  )
+
+  React.useEffect(() => () => { roadGeo?.dispose() }, [roadGeo])
+
+  if (!roads.length) return null
+  return (
+    <>
+      {roadGeo && (
+        <mesh geometry={roadGeo} frustumCulled={false}>
+          <meshStandardMaterial color={palette.map.mountainRoad} roughness={0.85} metalness={0.05} />
+        </mesh>
+      )}
+      <VariableHeightFlatInstances items={stripeItems} size={[0.32, 0.32]} color={palette.map.roadDust} opacity={0.9} />
+    </>
+  )
+}
+
 // ─── Road instances ────────────────────────────────────────────────────────
 
 function RoadInstances({ roads }: { roads: Array<{ x: number; y: number }> }) {
-  const normalRoads   = React.useMemo(() => roads.filter(r => !(r.y === 0 && r.x <= -6)), [roads])
-  const mountainRoads = React.useMemo(() => normalRoads.filter(r => isMountainAt(r.x, r.y)),  [normalRoads])
-  const flatRoads     = React.useMemo(() => normalRoads.filter(r => !isMountainAt(r.x, r.y)), [normalRoads])
-  const highwayRoads  = React.useMemo(() => roads.filter(r => r.y === 0 && r.x <= -6), [roads])
-  const mtnRoadItems   = React.useMemo(() => mountainRoads.map(r => ({ x: r.x, y: r.y, h: tileH(r.x, r.y) + 0.010 })), [mountainRoads])
-  const mtnStripeItems = React.useMemo(() => mountainRoads.map(r => ({ x: r.x, y: r.y, h: tileH(r.x, r.y) + 0.014 })), [mountainRoads])
+  const highwayRoads = React.useMemo(() => roads.filter(r => r.y === 0 && r.x <= -6), [roads])
+  // Flat + mountain road base colours live in UnifiedTerrainMesh vertex colours.
+  // Only highway decorative details are rendered here as separate geometry.
   return (
     <>
-      {flatRoads.length > 0 && <FlatInstances items={flatRoads} y={0.05} size={[0.98, 0.98]} color={palette.map.road} />}
-      {mtnRoadItems.length > 0 && (
-        <>
-          <VariableHeightFlatInstances items={mtnRoadItems}   size={[0.98, 0.98]} color={palette.map.mountainRoad} />
-          <VariableHeightFlatInstances items={mtnStripeItems} size={[0.32, 0.32]} color={palette.map.roadDust} opacity={0.9} />
-        </>
-      )}
       {highwayRoads.length > 0 && (
         <>
           <FlatInstances items={highwayRoads} y={0.042} size={[1.22, 1.22]} color={palette.map.highwayEdge} />
@@ -63,15 +157,20 @@ function RoadInstances({ roads }: { roads: Array<{ x: number; y: number }> }) {
 function RoadPreviewInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }) {
   const flatFree   = React.useMemo(() => tiles.filter(t => !isMountainAt(t.x, t.y) && !isForestAt(t.x, t.y)), [tiles])
   const flatForest = React.useMemo(() => tiles.filter(t => !isMountainAt(t.x, t.y) &&  isForestAt(t.x, t.y)), [tiles])
-  const mtnItems   = React.useMemo(() =>
-    tiles.filter(t => isMountainAt(t.x, t.y)).map(t => ({ x: t.x, y: t.y, h: tileH(t.x, t.y) + 0.05 })),
-    [tiles])
+  const mtnTiles   = React.useMemo(() => tiles.filter(t => isMountainAt(t.x, t.y)), [tiles])
+  const mtnGeo     = React.useMemo(() => buildConformingRoadGeo(mtnTiles, 0.05), [mtnTiles])
+  React.useEffect(() => () => { mtnGeo?.dispose() }, [mtnGeo])
   if (!tiles.length) return null
   return (
     <>
       {flatFree.length   > 0 && <FlatInstances items={flatFree}   y={0.09} size={[0.88, 0.88]} color="#1890ff" opacity={0.60} />}
       {flatForest.length > 0 && <FlatInstances items={flatForest} y={0.09} size={[0.88, 0.88]} color="#fa8c16" opacity={0.75} />}
-      {mtnItems.length   > 0 && <VariableHeightFlatInstances items={mtnItems} size={[0.88, 0.88]} color="#fa8c16" opacity={0.65} />}
+      {mtnGeo && (
+        <mesh geometry={mtnGeo} frustumCulled={false}>
+          {/* Yellow = mountain road costs more (警示：山地修路费用更高) */}
+          <meshBasicMaterial color="#faad14" transparent opacity={0.70} depthWrite={false} />
+        </mesh>
+      )}
     </>
   )
 }
@@ -108,8 +207,10 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
       const bt = tool as BuildingType
       const { w: bw, h: bh } = getBuildingSize(bt)
       const isMtn = isMountainAt(tx, ty)
+      // Only houses are penalised on mountain terrain
+      const isMtnPenalized   = isMtn && bt === 'house'
       const mountainMultiplier = worldGenConfig.building?.mountainMultiplier || 1
-      const effectiveCost = Math.ceil(BUILDING_COST[bt] * (isMtn ? mountainMultiplier : 1))
+      const effectiveCost = Math.ceil(BUILDING_COST[bt] * (isMtnPenalized ? mountainMultiplier : 1))
       // check all footprint tiles
       let valid = s.money >= effectiveCost && !isRiverAt(tx, ty)
       for (let dx = 0; dx < bw && valid; dx++) {
@@ -132,7 +233,10 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
       mesh.position.set(tx + (bw - 1) * 0.5, (isMtn ? tileH(tx, ty) : 0) + 0.32, ty + (bh - 1) * 0.5)
       mesh.scale.set(bw, 1, bh)
       mesh.visible = true
-      ;(mesh.material as THREE.MeshBasicMaterial).color.set(valid ? '#52c41a' : '#ff4d4f')
+      // green = valid, yellow = valid but mountain penalty (costs 3×), red = invalid
+      ;(mesh.material as THREE.MeshBasicMaterial).color.set(
+        !valid ? '#ff4d4f' : isMtnPenalized ? '#faad14' : '#52c41a'
+      )
     }
     if (isFarmTool) {
       const mesh = farmRef.current; if (!mesh) return

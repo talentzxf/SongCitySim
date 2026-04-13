@@ -64,6 +64,8 @@ function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<a
   React.useEffect(() => {
     const ctrl = controlsRef.current
     if (ctrl) (ctrl as any).screenSpacePanning = false
+    // Expose to window so HUD / MapScene can drive camera fly-to
+    try { if (ctrl) (window as any).__THREE_CONTROLS__ = ctrl } catch {}
   }) // no deps — re-apply every render to be safe (controls may remount)
 
   const maxDist = Math.max(MAP_SIZE_X, MAP_SIZE_Y) * 2

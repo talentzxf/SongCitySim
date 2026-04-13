@@ -5,7 +5,7 @@ import {
   ExperimentOutlined, HomeOutlined, MedicineBoxOutlined,
   PauseCircleOutlined, PlayCircleOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons'
-import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH } from '../state/simulation'
+import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, ORE_VEIN_TILES } from '../state/simulation'
 import configData from '../config/buildings-and-citizens.json'
 import { BUILDING_REGISTRY } from '../config/buildings/_loader'
 import type { BuildingCategory } from '../config/buildings/_schema'
@@ -51,6 +51,16 @@ const CROP_LABEL: Record<CropType, string> = {
 
 const GENDER_LABEL: Record<string, string> = { male: '男', female: '女' }
 
+const STATUS_LABEL: Record<string, string> = {
+  idle:       '在家闲居',
+  commuting:  '通勤途中',
+  working:    '在坊劳作',
+  farming:    '在田耕作',
+  shopping:   '🛒 前往集市',
+  returning:  '🏠 买粮回家',
+  sick:       '卧病在家',
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function dayTimeLabel(t: number) {
@@ -75,8 +85,29 @@ function dayPhaseTag(t: number) {
 // ─── Left HUD (controls) ─────────────────────────────────────────────────────
 
 export default function HUD() {
-  const { state, start, stop, selectTool, setTaxRates, setSimSpeed } = useSimulation()
+  const { state, start, stop, selectTool, selectTerrainTile, setTaxRates, setSimSpeed } = useSimulation()
   const [taxModalOpen, setTaxModalOpen] = React.useState(false)
+  // ── 找矿罗盘 state ────────────────────────────────────────────────────────
+  const [compassIdx, setCompassIdx] = React.useState(0)
+  // Deduplicate ore veins into cluster representatives (one per 8-tile neighbourhood)
+  const oreClusterPoints = React.useMemo(() => {
+    const result: { x: number; y: number }[] = []
+    for (const t of ORE_VEIN_TILES) {
+      if (result.every(r => Math.hypot(r.x - t.x, r.y - t.y) > 8)) result.push(t)
+    }
+    return result.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y))
+  }, [])
+
+  function focusOreVein() {
+    if (oreClusterPoints.length === 0) return
+    const tile = oreClusterPoints[compassIdx % oreClusterPoints.length]
+    setCompassIdx(i => (i + 1) % oreClusterPoints.length)
+    // Signal MapScene to fly camera + show bouncing arrow
+    ;(window as any).__ORE_COMPASS_TARGET__ = { x: tile.x, y: tile.y, id: Date.now() }
+    // Highlight the ore vein tile and switch to pan so the info panel appears
+    selectTerrainTile({ x: tile.x, y: tile.y, kind: 'ore' })
+    selectTool('pan')
+  }
   const attempt = state.lastBuildAttempt
 
   const feedback = React.useMemo(() => {
@@ -217,6 +248,28 @@ export default function HUD() {
                 </Button>
               ))}
             </Space.Compact>
+
+            {/* 找矿罗盘 */}
+            <Tooltip title={
+              oreClusterPoints.length > 0
+                ? `找矿罗盘：每点一次跳转到下一处铁矿脉并高亮选中，共 ${oreClusterPoints.length} 处矿藏，循环巡览。`
+                : '当前地图暂无铁矿脉。'
+            }>
+              <Button
+                size="small" block
+                onClick={focusOreVein}
+                disabled={oreClusterPoints.length === 0}
+                style={{ fontSize: 12 }}
+              >
+                🧭 找矿罗盘
+                {oreClusterPoints.length > 0
+                  ? <Typography.Text type="secondary" style={{ fontSize: 10, marginLeft: 6 }}>
+                      第 {(compassIdx === 0 ? oreClusterPoints.length : compassIdx)}/{oreClusterPoints.length} 处
+                    </Typography.Text>
+                  : <Typography.Text type="secondary" style={{ fontSize: 10, marginLeft: 6 }}>无矿脉</Typography.Text>
+                }
+              </Button>
+            </Tooltip>
             {state.selectedTool === 'road' && (
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                 🌉 跨河建桥：¥80×跨度　🌲 伐木清路：林地额外 ¥25
@@ -866,6 +919,35 @@ function TerrainTilePanel() {
   if (!tt) return null
 
   const { x, y, kind } = tt
+
+  // ── 松柏山林：now harvestable by lumbercamp ───────────────────────────────
+  if (kind === 'mountainForest') {
+    const health    = state.forestHealth[`${x},${y}`] ?? FOREST_TILE_INITIAL_HEALTH
+    const pct       = Math.max(0, Math.round(health / FOREST_TILE_INITIAL_HEALTH * 100))
+    const barColor  = pct > 60 ? '#52c41a' : pct > 20 ? '#faad14' : pct > 0 ? '#ff4d4f' : '#d9d9d9'
+    return (
+      <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Space size={6}>
+            <Typography.Text strong style={{ fontSize: 15 }}>🌲 松柏山林</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>({x}, {y})</Typography.Text>
+          </Space>
+          <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => selectTerrainTile(null)} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography.Text style={{ fontSize: 12 }}>木材储量</Typography.Text>
+          <Tag color={pct > 60 ? 'green' : pct > 20 ? 'orange' : pct > 0 ? 'red' : 'default'}>
+            {pct > 0 ? `${pct}%` : '已伐尽'}
+          </Tag>
+        </div>
+        <Progress percent={pct} size="small" showInfo={false} strokeColor={barColor} />
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {health.toFixed(0)} / {FOREST_TILE_INITIAL_HEALTH} 担 · 山地松柏与平地林木同样可由【采木场】采伐。
+        </Typography.Text>
+        <Alert type="info" showIcon message="在林地格建造【采木场】，伐木工每日采伐半径6格内所有林地（含山地松柏），产出木料。" style={{ borderRadius: 8, fontSize: 12 }} />
+      </Space>
+    )
+  }
 
   const CONFIGS = {
     ore: {
@@ -2133,7 +2215,9 @@ function BuildingPanel() {
             : residents.map(c => {
                 const profLabel = c.profession
                   ? (configData.professions as any)[c.profession]?.label ?? c.profession
-                  : '待业'
+                  : c.workplaceId
+                    ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
+                    : '待业'
                 const satColor = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
                 return (
                   <div key={c.id} className="info-panel-citizen-row"
@@ -2176,7 +2260,9 @@ function BuildingPanel() {
           {workers.map(c => {
             const profLabel = c.profession
               ? (configData.professions as any)[c.profession]?.label ?? c.profession
-              : '待业'
+              : c.workplaceId
+                ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
+                : '待业'
             const satColor    = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
             const isPeddlerRole   = peddlerWorkerIds.has(c.id)
             const isOutPeddling   = isPeddlerRole && state.peddlers.some(p => p.citizenId === c.id)
@@ -2248,6 +2334,9 @@ function CitizenPanel() {
   const thought = (() => {
     if (houseFood <= 0.1) return configData.citizensThoughts.starving
     if (c.isSick) return configData.citizensThoughts.sick
+    // 下班顺路买粮中
+    if (c.status === 'shopping')   return (configData.citizensThoughts as any).shopping   ?? '家里粮食快见底了，下班顺路去集市买些回来。'
+    if (c.status === 'returning')  return (configData.citizensThoughts as any).returning  ?? '货买好了，挑着担子赶紧回家，今晚不会断炊了。'
     // 农夫：田里有积压粮食
     if (c.farmZoneId) {
       const pile = state.farmPiles.find(p => p.zoneId === c.farmZoneId)
@@ -2262,7 +2351,9 @@ function CitizenPanel() {
 
   const profLabel = c.profession
     ? (configData.professions as any)[c.profession]?.label ?? c.profession
-    : '待业'
+    : c.workplaceId
+      ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
+      : '待业'
 
   // Back button: if we came from a house, go back to it
   const canGoBack = Boolean(house && state.buildings.some(b => b.id === c.houseId && b.type === 'house'))
@@ -2298,7 +2389,11 @@ function CitizenPanel() {
           </Row>
           <Row gutter={8}>
             <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>职业</Typography.Text><div style={{ fontWeight: 600 }}>{profLabel}</div></Col>
-            <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>状态</Typography.Text><div style={{ fontWeight: 600 }}>{c.isAtHome ? '在家' : '通勤中'}</div></Col>
+            <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>状态</Typography.Text>
+              <div style={{ fontWeight: 600, color: c.status === 'shopping' ? '#1677ff' : c.status === 'returning' ? '#52c41a' : undefined }}>
+                {STATUS_LABEL[c.status] ?? (c.isAtHome ? '在家' : '通勤中')}
+              </div>
+            </Col>
           </Row>
           {workplace && (
             <div>
@@ -2319,6 +2414,31 @@ function CitizenPanel() {
             message="粮食无法运出！"
             description={`田间堆积 ${pile.amount.toFixed(1)} 担${pile.cropType === 'rice' ? '稻米' : '粮食'}，无人来运，农田已停产。`}
             style={{ fontSize: 12, borderRadius: 8 }}
+          />
+        )
+      })()}
+
+      {/* Shopping activity card: shows when heading to / returning from market */}
+      {(c.status === 'shopping' || c.status === 'returning') && (() => {
+        const activeWalker = state.walkers.find(w => w.citizenId === c.id)
+        const targetMarket = activeWalker?.targetId ? state.buildings.find(b => b.id === activeWalker.targetId) : null
+        return (
+          <Alert
+            type={c.status === 'returning' ? 'success' : 'info'}
+            showIcon
+            message={
+              <span style={{ fontSize: 12 }}>
+                {c.status === 'shopping'
+                  ? `🛒 前往集市${targetMarket ? `（${targetMarket.x}, ${targetMarket.y}）` : ''}买粮`
+                  : '🏠 买完粮食，正挑担回家'}
+              </span>
+            }
+            description={
+              <span style={{ fontSize: 11 }}>
+                家中余粮 <b>{houseFood.toFixed(1)}</b> 担 — 下班顺路补货
+              </span>
+            }
+            style={{ borderRadius: 8 }}
           />
         )
       })()}

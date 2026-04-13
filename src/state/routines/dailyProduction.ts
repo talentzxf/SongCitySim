@@ -11,6 +11,14 @@ import {
   TOOL_WEAR_PER_DAY,
   clampCrop, clampFood, createEmptyInventory,
 } from '../helpers'
+import { JOB_REGISTRY } from '../../config/jobs/_loader'
+
+/** 按职业查询日收入；无职业或配置中没有记录时取默认 8 文/天 */
+function dailyWage(profession: string | null): number {
+  if (!profession) return 8
+  return JOB_REGISTRY[profession]?.attributes?.dailyIncome ?? 8
+}
+
 export const dailyProductionRoutine: TickRoutine = (ctx) => {
   if (!ctx.isNewDay) return ctx
   const { citizens, houses } = ctx
@@ -32,8 +40,9 @@ export const dailyProductionRoutine: TickRoutine = (ctx) => {
       houseCrops = { ...houseCrops, [h.id]: hc }
       houseFood  = { ...houseFood,  [h.id]: clampFood(CROP_KEYS.reduce((s, k) => s + hc[k], 0)) }
     }
-    const working = residents.filter(c => (c.workplaceId || c.farmZoneId) && !c.isSick).length
-    houseSavings  = { ...houseSavings, [h.id]: (houseSavings[h.id] ?? 0) + working * 3 }
+    const working = residents.filter(c => (c.workplaceId || c.farmZoneId) && !c.isSick)
+    const totalWage = working.reduce((sum, c) => sum + dailyWage(c.profession), 0)
+    houseSavings  = { ...houseSavings, [h.id]: (houseSavings[h.id] ?? 0) + totalWage }
 
     // tool wear: active farmers degrade their iron tool each day
     const activeFarmers = residents.filter(c => c.farmZoneId && !c.isSick)

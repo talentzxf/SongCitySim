@@ -200,6 +200,22 @@ export function tileInFarmZone(zones: FarmZone[], x: number, y: number) { return
 export function adjacentHasRoad(roads: { x: number; y: number }[], x: number, y: number) {
   return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(d => isRoadAt(roads, x + d[0], y + d[1]))
 }
+
+/**
+ * Returns true when ANY tile in a building's footprint has an adjacent road.
+ * Use this instead of bare adjacentHasRoad(…, b.x, b.y) for buildings that
+ * may be larger than 1×1 (market, granary are both 2×2).
+ */
+export function buildingHasRoadAccess(
+  roads: { x: number; y: number }[],
+  b: { type: BuildingType; x: number; y: number },
+): boolean {
+  const { w, h } = getBuildingSize(b.type)
+  for (let dx = 0; dx < w; dx++)
+    for (let dy = 0; dy < h; dy++)
+      if (adjacentHasRoad(roads, b.x + dx, b.y + dy)) return true
+  return false
+}
 export function roadsAdjacent(roads: { x: number; y: number }[], bx: number, by: number) {
   return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(d => ({ x: bx + d[0], y: by + d[1] })).filter(c => isRoadAt(roads, c.x, c.y))
 }

@@ -1,6 +1,6 @@
 ﻿/** Assign idle workers to farm zones and buildings that have road access. */
 import type { TickRoutine } from './types'
-import { adjacentHasRoad, BUILDING_DEFS, PROFESSION_BY_BUILDING } from '../helpers'
+import { adjacentHasRoad, buildingHasRoadAccess, BUILDING_DEFS, PROFESSION_BY_BUILDING } from '../helpers'
 export const farmAssignmentRoutine: TickRoutine = (ctx) => {
   const { s } = ctx
   const assigned = new Set<string>()
@@ -47,7 +47,7 @@ export const farmAssignmentRoutine: TickRoutine = (ctx) => {
   for (const b of s.buildings) {
     const def = BUILDING_DEFS[b.type]
     if (!def || def.workerSlots <= 0) continue
-    if (!adjacentHasRoad(s.roads, b.x, b.y)) continue
+    if (!buildingHasRoadAccess(s.roads, b)) continue
     const filled = citizens.filter(c => c.workplaceId === b.id).length
     const slots  = def.workerSlots - filled
     for (let n = 0; n < slots; n++) vacantBuildings.push(b)

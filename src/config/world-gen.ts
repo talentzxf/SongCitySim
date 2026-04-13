@@ -22,10 +22,10 @@ const worldGenConfig = {
     mountainMultiplier: 3
   },
   ore: {
-    mountainVeins:  7,      // 山地矿脉簇数量（固定个数，不按面积比例）
-    foothillVeins:  3,      // 丘陵额外矿脉簇数量
-    veinRadius:     2,      // 每簇半径（格）
-    veinFill:       0.50,   // 簇内随机填充概率
+    mountainVeins:  13,     // 山地矿脉簇数量（固定个数，不按面积比例）
+    foothillVeins:  7,      // 丘陵额外矿脉簇数量
+    veinRadius:     3,      // 每簇半径（格）
+    veinFill:       0.55,   // 簇内随机填充概率
   },
   forest: {
     clusters:    22,    // 树林簇数量（更多林地）

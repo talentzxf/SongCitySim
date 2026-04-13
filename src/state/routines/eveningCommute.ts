@@ -1,7 +1,7 @@
 ﻿/** Evening trigger (once per day at EVENING_START): workers and farmers walk home. */
 import type { TickRoutine } from './types'
 import { WALKER_SPEED } from '../../config/simulation'
-import { roadsAdjacent, findRoadPath, bestPath, isRoadAt, adjacentHasRoad, inventoryTotal } from '../helpers'
+import { roadsAdjacent, findRoadPath, bestPath, isRoadAt, adjacentHasRoad, buildingHasRoadAccess, inventoryTotal } from '../helpers'
 export const eveningCommuteRoutine: TickRoutine = (ctx) => {
   if (!ctx.crossedEvening) return ctx
   const { s, nextTick, houseMap, buildingMap, farmZones, marketsList } = ctx
@@ -13,7 +13,7 @@ export const eveningCommuteRoutine: TickRoutine = (ctx) => {
 
   // 缺粮且有钱：顺路去市集买粮再回家
   const mktFood       = inventoryTotal(ctx.marketInventory)
-  const marketsOnRoad = marketsList.filter(m => adjacentHasRoad(s.roads, m.x, m.y))
+  const marketsOnRoad = marketsList.filter(m => buildingHasRoadAccess(s.roads, m))
 
   function nearestMarket(house: { x: number; y: number }) {
     if (!marketsOnRoad.length || mktFood < 0.5) return null

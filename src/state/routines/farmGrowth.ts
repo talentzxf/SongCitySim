@@ -4,8 +4,8 @@ import type { TickRoutine } from './types'
 import configData from '../../config/buildings-and-citizens.json'
 import { DAY_TICKS } from '../../config/simulation'
 import { TOOL_EFFICIENCY_BONUS, clampCrop, cropPrice, terrainFertilityAt, adjacentHasRoad } from '../helpers'
-const FARM_CYCLE_TICKS   = 5 * DAY_TICKS
-const HARVEST_YIELD_BASE = 15
+const FARM_CYCLE_TICKS   = 3 * DAY_TICKS   // 每3天收一季（原5天），加快产粮
+const HARVEST_YIELD_BASE = 30              // 每次收获基础产量（原15），提高单产
 export const farmGrowthRoutine: TickRoutine = (ctx) => {
   const { s, nextTick } = ctx
   let farmPiles         = ctx.farmPiles.map(p => ({ ...p, age: p.age + 1 }))
