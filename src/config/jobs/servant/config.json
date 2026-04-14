@@ -1,0 +1,11 @@
+{
+  "id": "servant",
+  "label": "仆役",
+  "labelEn": "Servant",
+  "buildingIds": ["manor"],
+  "prerequisites": { "minCultureScore": 0, "minAge": 14, "maxAge": 50, "techNodes": [] },
+  "attributes": { "dailyIncome": 12, "satisfactionBonus": 4, "productivityBase": 1.0, "skillGrowthRate": 0.005 },
+  "desc": "在宅邸侍奉贵族，提升宅邸居民满意度",
+  "icon": "🧹"
+}
+

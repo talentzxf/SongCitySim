@@ -8,7 +8,7 @@ import { useCharacterAnim, lerpTerrainY } from './_shared'
 /** 通勤步行市民（上下班途中）及巡逻兵 */
 export default function CommutingWalker({ x, y, purpose, selected, onClick }: {
   x: number; y: number
-  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop' | 'patrol' | 'arrest'
+  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop' | 'patrol'
   selected?: boolean
   onClick?: (e: any) => void
 }) {

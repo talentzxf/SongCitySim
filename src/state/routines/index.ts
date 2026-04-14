@@ -29,7 +29,6 @@ import { migrantRoutine }               from './migrant'
 import { statsRoutine }                 from './stats'
 import { monthlyTaxRoutine }            from './monthlyTax'
 import { patrolRoutine }               from './patrol'
-import { thiefRoutine }                from './thief'
 /** Ordered chain - routines execute left to right every tick. */
 export const TICK_CHAIN: TickRoutine[] = [
   farmAssignmentRoutine,        //  1. Assign idle workers to unfarmed zones
@@ -37,19 +36,18 @@ export const TICK_CHAIN: TickRoutine[] = [
   oxCartRoutine,                //  3. Ox-cart logistics: pile -> granary
   marketBuyerRoutine,           //  4. Wholesale buyer: granary -> market
   peddlerRoutine,               //  5. Peddler walk, sell food & tools
-  buildingBehaviorRoutine,      //  6. Per-building lifecycle callbacks (mine ore, smith tools, …)
-  dailyProductionRoutine,       //  7. Household food consumption, wages, tool wear (non-building logic)
+  buildingBehaviorRoutine,      //  6. Per-building lifecycle callbacks
+  dailyProductionRoutine,       //  7. Household food consumption, wages, tool wear
   citizenStatusRoutine,         //  8. State machine + needs hierarchy -> satisfaction
   diseaseRoutine,               //  9. Sickness death + neighbourhood spread
-  patrolRoutine,                // 10. 巡检司巡逻：治安覆盖衰减、派出巡逻兵、逮捕盗贼
-  thiefRoutine,                 // 11. 盗贼系统：无业转盗贼、系狱计时释放
-  walkerRoutine,                // 12. Advance walkers, handle arrivals
-  morningCommuteRoutine,        // 13. Morning: commute + shopping + restock + peddler spawn
-  eveningCommuteRoutine,        // 14. Evening: workers & farmers return home
-  daytimeMarketRestockRoutine,  // 15. Emergency restock when market runs low mid-day
-  migrantRoutine,               // 16. Advance migrants, settle arrivals, spawn new
-  statsRoutine,                 // 17. Aggregate population, satisfaction, need pressure
-  monthlyTaxRoutine,            // 18. Monthly tax collection and expense settlement
+  patrolRoutine,                // 10. 巡检司巡逻：治安覆盖衰减、派出巡逻兵
+  walkerRoutine,                // 11. Advance walkers, handle arrivals
+  morningCommuteRoutine,        // 12. Morning: commute + shopping + restock + peddler spawn
+  eveningCommuteRoutine,        // 13. Evening: workers & farmers return home
+  daytimeMarketRestockRoutine,  // 14. Emergency restock when market runs low mid-day
+  migrantRoutine,               // 15. Advance migrants, settle arrivals, spawn new
+  statsRoutine,                 // 16. Aggregate population, satisfaction, need pressure
+  monthlyTaxRoutine,            // 17. Monthly tax collection and expense settlement
 ]
 /** Run the full chain, threading ctx through every routine. */
 export function runTickChain(ctx: TickContext): TickContext {

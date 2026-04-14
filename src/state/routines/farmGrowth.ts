@@ -1,7 +1,7 @@
 ﻿/** Advance crop growth each tick; harvest into a FarmPile when progress reaches 1. */
 import type { FarmZone } from '../types'
 import type { TickRoutine } from './types'
-import configData from '../../config/buildings-and-citizens.json'
+import { GOODS_REGISTRY } from '../../config/goods/_loader'
 import { DAY_TICKS } from '../../config/simulation'
 import { TOOL_EFFICIENCY_BONUS, clampCrop, cropPrice, terrainFertilityAt, adjacentHasRoad } from '../helpers'
 const FARM_CYCLE_TICKS   = 3 * DAY_TICKS   // 每3天收一季（原5天），加快产粮
@@ -28,7 +28,7 @@ export const farmGrowthRoutine: TickRoutine = (ctx) => {
     const eff: FarmZone = (zone.growthProgress === 0 && zone.pendingCropType)
       ? { ...zone, cropType: zone.pendingCropType, pendingCropType: undefined }
       : zone
-    const cropCfg    = (configData as any).crops[eff.cropType]
+    const cropCfg    = GOODS_REGISTRY[eff.cropType]
     const fertility  = (
       terrainFertilityAt(eff.x,     eff.y) + terrainFertilityAt(eff.x + 1, eff.y) +
       terrainFertilityAt(eff.x, eff.y + 1) + terrainFertilityAt(eff.x + 1, eff.y + 1)
@@ -37,7 +37,7 @@ export const farmGrowthRoutine: TickRoutine = (ctx) => {
     const efficiency = Math.max(0.5, Math.min(1.5, 0.5 + farmer.satisfaction / 100)) * toolMult
     const newProgress = eff.growthProgress + (1 / FARM_CYCLE_TICKS) * efficiency
     if (newProgress >= 1) {
-      const yieldAmt = clampCrop(HARVEST_YIELD_BASE * fertility * (cropCfg?.fertilityWeight ?? 1))
+      const yieldAmt = clampCrop(HARVEST_YIELD_BASE * fertility * (cropCfg?.cropData?.fertilityWeight ?? 1))
       farmPiles = [...farmPiles, {
         id: `pile-${nextTick}-${eff.id.slice(-5)}`,
         zoneId: eff.id, x: eff.x, y: eff.y,

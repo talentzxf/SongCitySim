@@ -2,6 +2,9 @@
  * 纯工具函数、建筑定义、物流辅助、入口公路生成
  */
 import configData from '../config/buildings-and-citizens.json'
+import { BUILDING_REGISTRY } from '../config/buildings/_loader'
+import { JOB_REGISTRY } from '../config/jobs/_loader'
+import { GOODS_REGISTRY } from '../config/goods/_loader'
 import worldGenConfig from '../config/world-gen'
 import { MONTH_TICKS } from '../config/simulation'
 import {
@@ -27,32 +30,20 @@ export function tileKey(x: number, y: number) { return `${x},${y}` }
 // ─── Building definitions ─────────────────────────────────────────────────
 export type BuildingDef = { cost: number; capacity: number; workerSlots: number; needBonus: Partial<CitizenNeeds> }
 
-const _defsFromJson: Record<string, BuildingDef> = Object.entries(configData.buildings).reduce(
-  (acc, [key, cfg]: [string, any]) => {
-    acc[key] = { cost: cfg.cost, capacity: cfg.capacity, workerSlots: cfg.workerSlots, needBonus: cfg.needBonus }
-    return acc
-  }, {} as Record<string, BuildingDef>
-)
+/**
+ * 唯一数据来源：直接从各建筑的 config.json（经 BUILDING_REGISTRY 加载）派生。
+ * 不再需要手动维护，也不再依赖 buildings-and-citizens.json 的 buildings 节。
+ */
+export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = Object.fromEntries(
+  Object.entries(BUILDING_REGISTRY).map(([id, b]) => [
+    id,
+    { cost: b.cost, capacity: b.capacity, workerSlots: b.workerSlots, needBonus: b.needBonus ?? {} },
+  ])
+) as Record<BuildingType, BuildingDef>
 
-// Extra buildings not yet in buildings-and-citizens.json
-export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
-  ..._defsFromJson,
-  lumbercamp: { cost: 280, capacity: 0, workerSlots: 3, needBonus: {} },
-  papermill:  { cost: 380, capacity: 0, workerSlots: 3, needBonus: { culture: 0.01 } },
-  academy:    _defsFromJson['academy'] ?? { cost: 400, capacity: 0, workerSlots: 4, needBonus: { culture: 0.03 } },
-  manor:      { cost: 800, capacity: 16, workerSlots: 4, needBonus: {} },
-  watchpost:  { cost: 300, capacity: 0, workerSlots: 4, needBonus: { safety: 0.02 } },
-  prison:     { cost: 400, capacity: 0, workerSlots: 2, needBonus: {} },
-} as unknown as Record<BuildingType, BuildingDef>
-
-/** Grid footprint in tiles for each building type (defaults to 1×1). */
-const BUILDING_SIZE: Partial<Record<BuildingType, { w: number; h: number }>> = {
-  market:  { w: 2, h: 2 },
-  granary: { w: 2, h: 2 },
-  manor:   { w: 2, h: 2 },
-}
+/** 建筑占地（格）——直接读 config.json 的 footprint，默认 1×1。*/
 export function getBuildingSize(bt: BuildingType): { w: number; h: number } {
-  return BUILDING_SIZE[bt] ?? { w: 1, h: 1 }
+  return BUILDING_REGISTRY[bt]?.footprint ?? { w: 1, h: 1 }
 }
 
 export const BUILDING_COST: Record<BuildingType, number> = Object.entries(BUILDING_DEFS).reduce(
@@ -60,14 +51,16 @@ export const BUILDING_COST: Record<BuildingType, number> = Object.entries(BUILDI
   {} as Record<BuildingType, number>
 )
 
-export const PROFESSION_BY_BUILDING: Partial<Record<BuildingType, Profession>> = Object.entries(configData.professions).reduce(
-  (acc, [prof, profCfg]: [string, any]) => {
-    for (const bType of profCfg.buildingTypes) acc[bType as BuildingType] = prof as Profession
-    return acc
-  }, {} as Partial<Record<BuildingType, Profession>>
-)
+export const PROFESSION_BY_BUILDING: Partial<Record<BuildingType, Profession>> = Object.fromEntries(
+  Object.values(JOB_REGISTRY).flatMap(job =>
+    job.buildingIds.map(bId => [bId, job.id as Profession])
+  )
+) as Partial<Record<BuildingType, Profession>>
 
-export const CROP_KEYS = Object.keys(configData.crops) as CropType[]
+/** 所有作物类型——从 goods/ 里 category === 'crop' 的条目派生。 */
+export const CROP_KEYS = Object.values(GOODS_REGISTRY)
+  .filter(g => g.category === 'crop')
+  .map(g => g.id) as CropType[]
 
 // ─── Economy constants ────────────────────────────────────────────────────
 export const ECONOMY = {
@@ -123,7 +116,7 @@ export function createEmptyInventory(): CropInventory {
 export function inventoryTotal(inv: CropInventory) {
   return CROP_KEYS.reduce((s, k) => s + inv[k], 0)
 }
-export function cropPrice(k: CropType): number { return (configData.crops as any)[k]?.price ?? 4 }
+export function cropPrice(k: CropType): number { return GOODS_REGISTRY[k]?.price ?? 4 }
 
 export function transferInventory(from: CropInventory, to: CropInventory, maxAmount: number) {
   if (maxAmount <= 0) return 0

@@ -10,15 +10,13 @@ import { DAY_TICKS } from '../config/simulation'
 
 // ── 每 tick 的 satisfaction 基础变化量（0-100）──────────────────────────────
 export const SAT_DELTA: Record<CitizenStatus, number> = {
-  working:   +0.042,  // 下调：仅靠工作不足以达到满分
+  working:   +0.042,
   farming:   +0.035,
   shopping:  +0.045,
   returning: +0.030,
   commuting: +0.006,
-  idle:      -0.032,  // 闲居惩罚略加重
+  idle:      -0.032,
   sick:      -0.065,
-  thief:     -0.030,  // 盗贼：满意度缓慢下滑（在 citizenStatus 中单独处理）
-  jailed:    -0.040,  // 系狱：满意度下滑（在 citizenStatus 中单独处理）
 }
 
 // 无聊惩罚：同一状态持续超过阈值后，每 tick 额外扣分

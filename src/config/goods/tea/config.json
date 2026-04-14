@@ -1,0 +1,35 @@
+{
+  "id": "tea",
+  "label": "茶叶",
+  "labelEn": "Tea",
+  "category": "crop",
+  "subCategory": "specialty",
+  "price": 8,
+  "unit": "石",
+  "unitEn": "dan",
+  "storageSlots": 1,
+  "stackSize": 100,
+  "function": "luxury_food",
+  "effects": [
+    { "type": "satisfy_need", "needId": "food_adequate", "amount": 0.5 },
+    { "type": "satisfy_need", "needId": "culture",       "amount": 0.3 }
+  ],
+  "cropData": {
+    "fertilityWeight": 0.75,
+    "growthSeasons": ["spring", "autumn"],
+    "waterRequirement": "medium",
+    "terrainPreference": ["mountain", "hill"]
+  },
+  "producedBy": ["tea_farmzone"],
+  "storedIn": ["granary", "market"],
+  "consumedBy": ["citizen", "teahouse"],
+  "tradeable": true,
+  "perishable": false,
+  "desc": "宋代茶马互市重要商品，山地茶园所产，价值不菲，可售于集市",
+  "icon": "🍵",
+  "renderAssets": {
+    "sprite": "./sprite.png",
+    "iconSvg": "./icon.svg"
+  }
+}
+

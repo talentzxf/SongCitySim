@@ -14,9 +14,9 @@ export const walkerRoutine: TickRoutine = (ctx) => {
   let marketInventory = ctx.marketInventory
   const aliveIds = new Set(citizens.map(c => c.id))
   const arrived: typeof ctx.walkers = []
-  // Keep patrol/arrest walkers even without real citizen backing
+  // Keep patrol walkers even without real citizen backing
   let walkers = ctx.walkers
-    .filter(w => w.purpose === 'patrol' || w.purpose === 'arrest' || aliveIds.has(w.citizenId))
+    .filter(w => w.purpose === 'patrol' || aliveIds.has(w.citizenId))
     .map(w => ({ ...w, route: w.route.map(p => ({ ...p })) }))
 
   const newPatrolWalkers: typeof ctx.walkers = []
@@ -30,8 +30,7 @@ export const walkerRoutine: TickRoutine = (ctx) => {
     }
     if (w.routeIndex >= w.route.length - 1) {
       // ── 巡逻兵到达一步，继续随机行走 ──────────────────────────────────
-      if (w.purpose === 'patrol') {
-        const stepsLeft = (w.stepsLeft ?? 0) - 1
+      if (w.purpose === 'patrol') {        const stepsLeft = (w.stepsLeft ?? 0) - 1
         if (stepsLeft > 0) {
           const cur = w.route[w.route.length - 1]
           const adj = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
@@ -55,7 +54,7 @@ export const walkerRoutine: TickRoutine = (ctx) => {
   walkers = [...walkers, ...newPatrolWalkers]
 
   for (const w of arrived) {
-    if (w.purpose === 'patrol' || w.purpose === 'arrest') continue
+    if (w.purpose === 'patrol') continue
     const idx = citizens.findIndex(c => c.id === w.citizenId); if (idx < 0) continue
     if (w.purpose === 'toShop') {
       const houseId = citizens[idx].houseId

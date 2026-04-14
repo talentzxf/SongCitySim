@@ -1,0 +1,11 @@
+{
+  "id": "papermaker",
+  "label": "造纸工",
+  "labelEn": "Paper Maker",
+  "buildingIds": ["papermill"],
+  "prerequisites": { "minCultureScore": 5, "minAge": 16, "maxAge": 60, "techNodes": [] },
+  "attributes": { "dailyIncome": 16, "satisfactionBonus": 3, "productivityBase": 1.0, "skillGrowthRate": 0.008 },
+  "desc": "在造纸坊以木料制纸，提升城市文脉",
+  "icon": "📄"
+}
+

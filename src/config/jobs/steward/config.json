@@ -1,0 +1,11 @@
+{
+  "id": "steward",
+  "label": "管家",
+  "labelEn": "Steward",
+  "buildingIds": ["manor"],
+  "prerequisites": { "minCultureScore": 15, "minAge": 25, "maxAge": 65, "techNodes": [] },
+  "attributes": { "dailyIncome": 22, "satisfactionBonus": 5, "productivityBase": 1.0, "skillGrowthRate": 0.009 },
+  "desc": "总管宅邸事务，协调仆役分工，提升宅邸整体运营效率",
+  "icon": "📋"
+}
+

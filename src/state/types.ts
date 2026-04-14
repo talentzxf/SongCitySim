@@ -10,11 +10,10 @@ export type BuildingType =
   | 'papermill'    // 造纸坊
   | 'lumbercamp'   // 采木场
   | 'watchpost'    // 巡检司（治安）
-  | 'prison'       // 囹圄（大牢）
 
 export const ALL_BUILDING_TYPES: BuildingType[] = [
   'house', 'manor', 'market', 'granary', 'blacksmith', 'mine', 'academy', 'papermill', 'lumbercamp',
-  'watchpost', 'prison',
+  'watchpost',
 ]
 
 export type Profession =
@@ -100,8 +99,6 @@ export type CitizenStatus =
   | 'shopping'   // 在集市采购
   | 'returning'  // 购完带货回家
   | 'sick'       // 患病
-  | 'thief'      // 盗贼（游手好闲，为祸乡里）
-  | 'jailed'     // 系狱（被巡检司收押）
 
 // ─── 需求层次（Maslow 式，宋代城市情境）──────────────────────────────────────
 export type NeedId =
@@ -166,9 +163,6 @@ export type Citizen = {
   statusTicks: number
   /** 居住等级：common=普通民居，gentry=宅邸贵族，servant=宅邸仆役 */
   residentTier: 'common' | 'gentry' | 'servant'
-  /** 系狱相关（仅系狱状态下有效） */
-  jailTicks?: number
-  jailPrisonId?: string
 }
 
 export type Migrant = {
@@ -183,7 +177,7 @@ export type Walker = {
   citizenId: string
   route: { x: number; y: number }[]
   routeIndex: number; routeT: number; speed: number
-  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop' | 'patrol' | 'arrest'
+  purpose: 'toWork' | 'toHome' | 'toShop' | 'fromShop' | 'patrol'
   targetId?: string
   cargo?: CropInventory
   /** 巡逻步数剩余（purpose='patrol' 时使用） */

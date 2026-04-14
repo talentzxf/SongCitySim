@@ -19,15 +19,6 @@ export const citizenStatusRoutine: TickRoutine = (ctx) => {
   ctx.citizens = ctx.citizens.map(c => {
     const house = houseMap.get(c.houseId); if (!house) return c
 
-    // 系狱者和盗贼：满意度缓慢下滑，不走正常状态机
-    if (c.status === 'jailed') {
-      const satisfaction = Math.round(Math.max(0, Math.min(100, c.satisfaction - 0.05)))
-      return { ...c, satisfaction }
-    }
-    if (c.status === 'thief') {
-      const satisfaction = Math.round(Math.max(0, Math.min(100, c.satisfaction - 0.03)))
-      return { ...c, satisfaction }
-    }
 
     const prevFood = houseFood[c.houseId] ?? 0
     const starving = prevFood <= 0.05

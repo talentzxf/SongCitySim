@@ -91,7 +91,7 @@ try {
       }
     }
     const { x: bx, y: by } = chosen ?? preferred
-    const bid = 'b-house-init'
+    const bid = 'b-house-1'
     initial.buildings = [{ id: bid, type: 'house', x: bx, y: by, w: 1, h: 1, level: 1, capacity: 6, occupants: 0, workerSlots: 0, cost: 100 }]
     initial.houseFood    = { [bid]: 15 }
     initial.houseCrops   = { [bid]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } }

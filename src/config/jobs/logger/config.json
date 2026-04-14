@@ -1,0 +1,11 @@
+{
+  "id": "logger",
+  "label": "伐木工",
+  "labelEn": "Logger",
+  "buildingIds": ["lumbercamp"],
+  "prerequisites": { "minCultureScore": 0, "minAge": 16, "maxAge": 60, "techNodes": [] },
+  "attributes": { "dailyIncome": 14, "satisfactionBonus": 3, "productivityBase": 1.0, "skillGrowthRate": 0.007 },
+  "desc": "在采木场伐木，产出木料供造纸坊使用",
+  "icon": "🪵"
+}
+

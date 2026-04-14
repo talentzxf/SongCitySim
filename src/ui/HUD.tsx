@@ -8,6 +8,7 @@ import {
 import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, ORE_VEIN_TILES } from '../state/simulation'
 import configData from '../config/buildings-and-citizens.json'
 import { BUILDING_REGISTRY } from '../config/buildings/_loader'
+import { JOB_REGISTRY } from '../config/jobs/_loader'
 import type { BuildingCategory } from '../config/buildings/_schema'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -59,8 +60,6 @@ const STATUS_LABEL: Record<string, string> = {
   shopping:   '🛒 前往集市',
   returning:  '🏠 买粮回家',
   sick:       '卧病在家',
-  thief:      '🗡 盗贼作乱',
-  jailed:     '⛓ 系狱改造',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -246,14 +245,8 @@ export default function HUD() {
               {state.migrants.length > 0 && <Tag color="processing">🐴 入城 {state.migrants.length}</Tag>}
               {state.timberInventory > 0 && <Tag color="green">🪵 木料 {state.timberInventory}</Tag>}
               {(() => {
-                const thiefCount  = state.citizens.filter(c => c.status === 'thief').length
-                const jailedCount = state.citizens.filter(c => c.status === 'jailed').length
                 const patrolCount = state.walkers.filter(w => w.purpose === 'patrol').length
-                return <>
-                  {patrolCount > 0 && <Tag color="blue">🏮 巡逻 {patrolCount}</Tag>}
-                  {thiefCount  > 0 && <Tag color="error">🗡 盗贼 {thiefCount}</Tag>}
-                  {jailedCount > 0 && <Tag color="default">⛓ 系狱 {jailedCount}</Tag>}
-                </>
+                return patrolCount > 0 ? <Tag color="blue">🏮 巡逻 {patrolCount}</Tag> : null
               })()}
             </Space>
 
@@ -371,7 +364,7 @@ export default function HUD() {
             }]} />
 
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              Pan: 左键平移 / 右键旋转。粮田须在河流五步以内。茶园须在山地（2×2全山格）。铁矿坑须建于铁矿脉，采木场须建于林地<b>或山中树林</b>，书院须先建造纸坊（方圆二十格内）。草市与常平仓占地 2×2。<b>宅邸须文脉≥30且商脉≥30</b>。巡检司派弓手巡逻维护治安，须配合囹圄收押盗贼。
+              Pan: 左键平移 / 右键旋转。粮田须在河流五步以内。茶园须在山地（2×2全山格）。铁矿坑须建于铁矿脉，采木场须建于林地<b>或山中树林</b>，书院须先建造纸坊（方圆二十格内）。草市与常平仓占地 2×2。<b>宅邸须文脉≥30且商脉≥30</b>。巡检司派弓手巡街，百姓吃饱后有治安需求，有巡逻兵经过则安心。
             </Typography.Text>
 
             {feedback && <Alert showIcon type={feedback.type} message={feedback.message} style={{ padding: '4px 8px' }} />}
@@ -416,7 +409,7 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
   }
 
   // 2. 无业游民 ──────────────────────────────────────────────────────────────
-  const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId && c.status !== 'thief' && c.status !== 'jailed').length
+  const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId).length
   if (idleCount > 0) {
     items.push({
       severity: idleCount > pop * 0.4 ? 'error' : 'warning',
@@ -428,23 +421,6 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
     })
   }
 
-  // 2b. 盗贼 ──────────────────────────────────────────────────────────────────
-  const thiefCount  = state.citizens.filter(c => c.status === 'thief').length
-  const jailedCount = state.citizens.filter(c => c.status === 'jailed').length
-  const hasWatchpost = state.buildings.some(b => (b.type as string) === 'watchpost')
-  const hasPrison    = state.buildings.some(b => (b.type as string) === 'prison')
-  if (thiefCount > 0) {
-    items.push({
-      severity: thiefCount > pop * 0.1 ? 'error' : 'warning',
-      icon: '🗡',
-      title: `盗贼横行（${thiefCount}人为匪${jailedCount > 0 ? `，${jailedCount}人在押` : ''}）`,
-      body: !hasWatchpost
-        ? '城中已有盗贼滋事，却无巡检司约束！速建巡检司，派弓手日夜巡逻以震慑宵小。'
-        : !hasPrison
-          ? '巡检司已在巡逻，然无囹圄收押盗贼，抓了也关不住。请尽快建造囹圄。'
-          : '巡逻弓手正在追捕盗贼，系狱改造中。可适当增开工坊安置闲民，从根源化解问题。',
-    })
-  }
 
   // 3. 无路可达 ──────────────────────────────────────────────────────────────
   const noRoadHouses = state.buildings.filter(b =>
@@ -2282,12 +2258,10 @@ function BuildingPanel() {
             ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无住户</Typography.Text>
             : residents.map(c => {
                 const profLabel = c.profession
-                  ? (configData.professions as any)[c.profession]?.label ?? c.profession
+                  ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
                   : c.workplaceId
-                    ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
+                    ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
                     : '待业'
-                const satColor = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
-                const tier = c.residentTier ?? 'common'
                 const tierTag = tier === 'gentry'
                   ? <Tag color="gold" style={{ fontSize: 10, padding: '0 4px' }}>贵族</Tag>
                   : tier === 'servant'
@@ -2376,9 +2350,9 @@ function BuildingPanel() {
         >
           {workers.map(c => {
             const profLabel = c.profession
-              ? (configData.professions as any)[c.profession]?.label ?? c.profession
+              ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
               : c.workplaceId
-                ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
+                ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
                 : '待业'
             const satColor    = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
             const isPeddlerRole   = peddlerWorkerIds.has(c.id)
@@ -2475,9 +2449,9 @@ function CitizenPanel() {
   })()
 
   const profLabel = c.profession
-    ? (configData.professions as any)[c.profession]?.label ?? c.profession
+    ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
     : c.workplaceId
-      ? ((configData.buildings as any)[state.buildings.find(b => b.id === c.workplaceId)?.type ?? '']?.label ?? '工坊') + '工'
+      ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
       : '待业'
 
   // Back button: if we came from a house or manor, go back to it

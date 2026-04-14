@@ -291,10 +291,13 @@ test('can fill all map tiles with houses using bulldoze fallback', async ({ page
 
   const expected = (maxX - minX + 1) * (maxY - minY + 1)
   await expect.poll(() =>
-    page.evaluate(() => {
+    page.evaluate(({ minX, maxX, minY, maxY }) => {
       const s = (window as any).__GET_CITY_STATE__()
-      return { roads: s.roads.length, houses: s.buildings.filter((b: any) => b.type === 'house').length }
-    })
+      return {
+        roads:  s.roads.filter((r: any) => r.x >= minX && r.x <= maxX && r.y >= minY && r.y <= maxY).length,
+        houses: s.buildings.filter((b: any) => b.type === 'house' && b.x >= minX && b.x <= maxX && b.y >= minY && b.y <= maxY).length,
+      }
+    }, { minX, maxX, minY, maxY })
   ).toEqual({ roads: 0, houses: expected })
 
   const missing = await page.evaluate(({ minX, maxX, minY, maxY }) => {
@@ -344,6 +347,50 @@ test('day/night system advances dayTime and walkers commute', async ({ page }) =
   const dayAfter = await page.evaluate(() => (window as any).__GET_CITY_STATE__().dayTime)
   const dayCount = await page.evaluate(() => (window as any).__GET_CITY_STATE__().dayCount)
   expect(dayAfter !== dayBefore || dayCount > 1).toBeTruthy()
+})
+
+test('all building types in ALL_BUILDING_TYPES can be placed (BUILDING_DEFS coverage)', async ({ page }) => {
+  expect(await gotoAvailable(page)).toBeTruthy()
+  await waitForAppReady(page)
+
+  // Give plenty of money and clear some space
+  await page.evaluate(() => {
+    const api = (window as any).__TEST_API__
+    api?.setMoney(10_000_000)
+    // Bulldoze a large safe area away from the highway
+    for (let x = 5; x <= 25; x++)
+      for (let y = -10; y <= 10; y++) api?.applyToolAt(x, y, 'bulldoze')
+  })
+
+  // Every entry in ALL_BUILDING_TYPES must be placeable via applyToolAt
+  // (applyToolAt uses BUILDING_DEFS directly — undefined def causes silent crash / no placement)
+  const ALL_BUILDING_TYPES = [
+    'house', 'manor', 'market', 'granary', 'blacksmith',
+    'mine', 'academy', 'papermill', 'lumbercamp', 'watchpost',
+  ] as const
+
+  // Place each building type at a distinct tile
+  await page.evaluate((types) => {
+    const api = (window as any).__TEST_API__
+    api?.setMoney(10_000_000)
+    types.forEach((bt, i) => {
+      const x = 6 + i * 2
+      const y = 0
+      api?.applyToolAt(x, y, bt)
+    })
+  }, [...ALL_BUILDING_TYPES])
+
+  const placed = await page.evaluate((types) => {
+    const s = (window as any).__GET_CITY_STATE__()
+    return types.map((bt: string) => ({
+      type: bt,
+      count: s.buildings.filter((b: any) => b.type === bt).length,
+    }))
+  }, [...ALL_BUILDING_TYPES])
+
+  for (const entry of placed) {
+    expect(entry.count, `Building type "${entry.type}" should be placeable but count is 0`).toBeGreaterThan(0)
+  }
 })
 
 test('farm economy pipeline moves crops from fields to granary to market and households buy food', async ({ page }) => {
