@@ -4,8 +4,8 @@
  */
 import React from 'react'
 import {
-  logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos, logicalPeddlerPos,
-  type CityState,
+  logicalMigrantPos, logicalMotionPos, logicalAgentPos, logicalPeddlerStatePos,
+  type Citizen, type Migrant, type BuildingAgent, type PeddlerState, type CitizenMotion,
 } from '../state/simulation'
 import MigrantHorse    from '../config/characters/migrant'
 import CommutingWalker from '../config/characters/walker'
@@ -17,12 +17,16 @@ import MarketBuyerMesh from '../config/characters/marketbuyer'
 export type ResidentRenderItem = { id: string; x: number; y: number; seed: number }
 
 export interface CharacterLayerProps {
-  walkers:       CityState['walkers']
-  migrants:      CityState['migrants']
+  /** Citizens with motion !== null */
+  walkers:       { id: string; motion: CitizenMotion }[]
+  migrants:      Migrant[]
   residents:     ResidentRenderItem[]
-  oxCarts:       CityState['oxCarts']
-  marketBuyers:  CityState['marketBuyers']
-  peddlers:      CityState['peddlers']
+  /** Building agents with kind='oxcart' */
+  oxCarts:       BuildingAgent[]
+  /** Building agents with kind='marketbuyer' */
+  marketBuyers:  BuildingAgent[]
+  /** Citizens with peddlerState !== null */
+  peddlers:      { id: string; peddlerState: PeddlerState }[]
   selectedCitizenId: string | null
   onCitizenClick: (citizenId: string, e: any) => void
 }
@@ -34,11 +38,11 @@ export function CharacterLayer({
   return (
     <>
       {oxCarts.map(c => {
-        const p = logicalOxCartPos(c)
+        const p = logicalAgentPos(c)
         return <OxCartMesh key={c.id} x={p.x} y={p.y} loaded={c.pickedUp} />
       })}
       {marketBuyers.map(mb => {
-        const p = logicalMarketBuyerPos(mb)
+        const p = logicalAgentPos(mb)
         return <MarketBuyerMesh key={mb.id} x={p.x} y={p.y} loaded={mb.pickedUp} />
       })}
       {migrants.map(m => {
@@ -46,12 +50,12 @@ export function CharacterLayer({
         return <MigrantHorse key={m.id} x={p.x} y={p.y} />
       })}
       {walkers.map(w => {
-        const p = logicalWalkerPos(w)
+        const p = logicalMotionPos(w.motion)
         return (
           <CommutingWalker
-            key={w.id} x={p.x} y={p.y} purpose={w.purpose}
-            selected={selectedCitizenId === w.citizenId}
-            onClick={(e: any) => onCitizenClick(w.citizenId, e)} />
+            key={w.id} x={p.x} y={p.y} purpose={w.motion.purpose}
+            selected={selectedCitizenId === w.id}
+            onClick={(e: any) => onCitizenClick(w.id, e)} />
         )
       })}
       {residents.map(r => (
@@ -61,10 +65,9 @@ export function CharacterLayer({
           onClick={(e: any) => onCitizenClick(r.id, e)} />
       ))}
       {peddlers.map(p => {
-        const pos = logicalPeddlerPos(p)
+        const pos = logicalPeddlerStatePos(p.peddlerState)
         return <PeddlerMesh key={p.id} x={pos.x} y={pos.y} />
       })}
     </>
   )
 }
-

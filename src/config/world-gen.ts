@@ -1,6 +1,6 @@
 const worldGenConfig = {
-  mapSizeX: 180,
-  mapSizeY: 135,
+  mapSizeX: 100,
+  mapSizeY: 100,
   river: {
     branchMin: 6,
     branchMax: 10,
@@ -22,26 +22,26 @@ const worldGenConfig = {
     mountainMultiplier: 3
   },
   ore: {
-    mountainVeins:  13,     // 山地矿脉簇数量（固定个数，不按面积比例）
-    foothillVeins:  7,      // 丘陵额外矿脉簇数量
-    veinRadius:     3,      // 每簇半径（格）
-    veinFill:       0.55,   // 簇内随机填充概率
+    mountainVeins:  13,
+    foothillVeins:  7,
+    veinRadius:     3,
+    veinFill:       0.55,
   },
   forest: {
-    clusters:    22,    // 树林簇数量（更多林地）
-    radius:       5,    // 每簇半径（格）
+    clusters:    22,
+    radius:       5,
     fill:        0.65,
     minDistCity:  12,
   },
   grassland: {
-    clusters:    18,    // 草地簇数量（更多草地，供将来放牧）
-    radius:       6,    // 每簇半径（格）
+    clusters:    18,
+    radius:       6,
     fill:        0.55,
     minDistCity:  10,
   },
   mountain: {
-    tileScale: 1.5,   // visual tile scale for mountains (increase to make mountains taller)
-    amplify: 2.0,     // heightmap amplification factor (stronger)
+    tileScale: 1.5,
+    amplify: 2.0,
     threshold: 0.56
   },
   walker: {

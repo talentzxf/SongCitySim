@@ -1,0 +1,20 @@
+{
+  "id": "patroller",
+  "label": "弓手",
+  "labelEn": "Patroller",
+  "buildingIds": ["watchpost"],
+  "prerequisites": {
+    "minAge": 16,
+    "maxAge": 50,
+    "techNodes": []
+  },
+  "attributes": {
+    "dailyIncome": 6,
+    "satisfactionBonus": 3,
+    "productivityBase": 1.0,
+    "skillGrowthRate": 0.003
+  },
+  "desc": "巡检司弓手，每日清晨沿街巡逻，维护地方治安。途经民居时提升该院落的治安覆盖度，保障百姓安居乐业。",
+  "icon": "🏹"
+}
+

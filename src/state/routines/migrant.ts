@@ -54,6 +54,8 @@ export const migrantRoutine: TickRoutine = (ctx) => {
       isAtHome: true, isSick: false, sickTicks: 0,
       status: 'idle', statusTicks: 0,
       residentTier,
+      motion: null,
+      peddlerState: null,
     }]
   }
   // spawn a new migrant toward a vacant, road-accessible house

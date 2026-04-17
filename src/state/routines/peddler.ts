@@ -1,9 +1,8 @@
 ﻿/**
- * Peddler walk: each peddler moves one step per tick.
- * Outbound + return phases: sells food and iron tools to nearby households and farmers.
- * Return phase: walks back to market, then the bound citizen gets a toHome walker.
+ * Peddler routine — merchant citizens with peddlerState ≠ null.
+ * Was a separate Peddler[] array; now lives on Citizen.peddlerState.
  */
-import type { Peddler, PeddlerTripStat } from '../types'
+import type { PeddlerTripStat, PeddlerState, CitizenMotion } from '../types'
 import type { TickRoutine } from './types'
 import { SIM_TICK_MS, WALKER_SPEED } from '../../config/simulation'
 import {
@@ -12,42 +11,42 @@ import {
   clampCrop, clampFood, cropPrice, inventoryTotal,
   roadsAdjacent, findRoadPath, transferInventory, computeMarketCap,
   pickNextPeddlerTile, createEmptyInventory, isPeddlerCargoEmpty, bestPath,
+  getResidentData, updateResidentData, addBldgCrop, getAggregateCrops, addBldgUnit, getAggregateBldgUnit,
 } from '../helpers'
+
 export const peddlerRoutine: TickRoutine = (ctx) => {
-  const { s, nextTick, houseMap, dayCount }  = ctx
-  let houseCrops       = ctx.houseCrops
-  let houseFood        = ctx.houseFood
-  let houseSavings     = ctx.houseSavings
-  let houseTools       = ctx.houseTools
-  let marketInventory  = ctx.marketInventory
-  let smithInventory   = ctx.smithInventory
-  let citizens         = ctx.citizens
-  let walkers          = ctx.walkers
-  let peddlerTripLog   = ctx.peddlerTripLog
+  const { s, nextTick, houseMap, dayCount } = ctx
   const { houses, farmZones, buildingMap, marketsList, smithBldgs } = ctx
-  const arrived: Peddler[] = []
-  let peddlers = ctx.peddlers.map(p => ({ ...p, cargo: { ...p.cargo, crops: { ...p.cargo.crops } } }))
-  peddlers = peddlers.filter(p => {
+  let citizens  = ctx.citizens
+  let buildings = ctx.buildings
+
+  citizens = citizens.map(c => {
+    if (!c.peddlerState) return c
+    let p: PeddlerState = {
+      ...c.peddlerState,
+      cargo: { ...c.peddlerState.cargo, crops: { ...c.peddlerState.cargo.crops } },
+    }
     p.segT += p.speed * (SIM_TICK_MS / 1000)
-    if (p.segT < 1) return true
-    p.segT   -= 1
+    if (p.segT < 1) return { ...c, peddlerState: p }
+    p.segT    -= 1
     p.fromTile = { ...p.toTile }
     const tile = p.fromTile
-    // ── sell food to adjacent houses (outbound AND returning) ──────────────
+    // ── sell food to adjacent houses ────────────────────────────────────────
     for (const house of houses) {
       if (inventoryTotal(p.cargo.crops) < 0.1) break
       if (Math.abs(house.x - tile.x) + Math.abs(house.y - tile.y) > 1) continue
-      const hcNow     = { ...(houseCrops[house.id] ?? createEmptyInventory()) }
+      const rd      = getResidentData(buildings, house.id)
+      const hcNow   = { ...(rd.crops ?? createEmptyInventory()) }
       const foodTotal = inventoryTotal(hcNow)
       if (foodTotal >= PEDDLER_FOOD_THRESH) continue
-      const sav = houseSavings[house.id] ?? 0
-      // charity: give one unit free to starving households with no savings
+      const sav = rd.savings
       if (foodTotal < 2 && sav <= 0) {
         const give = Math.min(1, inventoryTotal(p.cargo.crops))
         if (give > 0.01) {
           transferInventory(p.cargo.crops, hcNow, give)
-          houseCrops = { ...houseCrops, [house.id]: hcNow }
-          houseFood  = { ...houseFood,  [house.id]: clampFood(inventoryTotal(hcNow)) }
+          buildings = updateResidentData(buildings, house.id, {
+            crops: hcNow, food: clampFood(inventoryTotal(hcNow)),
+          })
         }
         continue
       }
@@ -63,15 +62,16 @@ export const peddlerRoutine: TickRoutine = (ctx) => {
         moved += take; cost += take * cropPrice(k)
       }
       if (moved > 0) {
-        houseCrops   = { ...houseCrops,   [house.id]: hcNow }
-        houseFood    = { ...houseFood,    [house.id]: clampFood(inventoryTotal(hcNow)) }
-        houseSavings = { ...houseSavings, [house.id]: Math.max(0, sav - cost) }
+        buildings = updateResidentData(buildings, house.id, {
+          crops: hcNow, food: clampFood(inventoryTotal(hcNow)),
+          savings: Math.max(0, sav - cost),
+        })
         p.statsHousesServed++
         p.statsFoodSold  += moved
         p.statsRevenue   += cost
       }
     }
-    // ── sell iron tools to adjacent farmers (outbound AND returning) ───────
+    // ── sell iron tools to adjacent farmers ────────────────────────────────
     if (p.cargo.ironTools > 0) {
       for (const zone of farmZones) {
         if (p.cargo.ironTools <= 0) break
@@ -80,102 +80,99 @@ export const peddlerRoutine: TickRoutine = (ctx) => {
           for (let dy = 0; dy <= 1 && !near; dy++)
             if (Math.abs((zone.x + dx) - tile.x) + Math.abs((zone.y + dy) - tile.y) <= 1) near = true
         if (!near) continue
-        const farmer = citizens.find(c => c.farmZoneId === zone.id)
-        if (!farmer || (houseTools[farmer.houseId] ?? 0) >= TOOL_DURABILITY_LOW) continue
-        const sav = houseSavings[farmer.houseId] ?? 0
-        if (sav < FARM_TOOL_PRICE) continue
+        const farmer = citizens.find(c2 => c2.farmZoneId === zone.id)
+        if (!farmer) continue
+        const rd = getResidentData(buildings, farmer.houseId)
+        if ((rd.tools ?? 0) >= TOOL_DURABILITY_LOW) continue
+        if (rd.savings < FARM_TOOL_PRICE) continue
         p.cargo.ironTools--
         p.statsToolsSold++
-        houseTools   = { ...houseTools,   [farmer.houseId]: TOOL_DURABILITY_MAX }
-        houseSavings = { ...houseSavings, [farmer.houseId]: Math.max(0, sav - FARM_TOOL_PRICE) }
+        buildings = updateResidentData(buildings, farmer.houseId, {
+          tools: TOOL_DURABILITY_MAX,
+          savings: Math.max(0, rd.savings - FARM_TOOL_PRICE),
+        })
       }
     }
     // ── routing ────────────────────────────────────────────────────────────
-    // 行商生病：立即返回市集，把名额让给健康的坐商
-    if (p.phase === 'outbound' && p.citizenId) {
-      const boundCitizen = citizens.find(c => c.id === p.citizenId)
-      if (boundCitizen?.isSick) {
-        p.stepsLeft = 0   // 强制结束外出阶段
-      }
-    }
+    if (p.phase === 'outbound' && c.isSick) p.stepsLeft = 0
     if (p.phase === 'outbound') {
       p.stepsLeft--
-      // decide: keep walking or begin the return journey
       if (p.stepsLeft <= 0 || isPeddlerCargoEmpty(p.cargo)) {
-        const market = buildingMap.get(p.marketId); if (!market) return false
+        const market = buildingMap.get(p.marketId); if (!market) return { ...c, peddlerState: null }
         const mRoads = roadsAdjacent(s.roads, market.x, market.y)
         let best: { x: number; y: number }[] | null = null
         for (const mr of mRoads) {
           const path = findRoadPath(s.roads, p.fromTile, mr)
           if (path && (!best || path.length < best.length)) best = path
         }
-        if (!best) return false
-        p.phase = 'returning'; p.returnRoute = best; p.returnIdx = 0; p.toTile = best[0]
+        if (!best) return { ...c, peddlerState: null }
+        p = { ...p, phase: 'returning', returnRoute: best, returnIdx: 0, toTile: best[0] }
       } else {
         const next = pickNextPeddlerTile(p.fromTile, p.prevTile, s.roads)
         if (next) { p.prevTile = { ...p.fromTile }; p.toTile = next }
         else { p.stepsLeft = 0 }
       }
     } else {
-      // returning phase: follow pre-computed return route
       p.returnIdx++
-      if (p.returnIdx >= p.returnRoute.length) { arrived.push(p); return false }
-      p.toTile = p.returnRoute[p.returnIdx]
-    }
-    return true
-  })
-  // peddlers that arrived back at market deposit remaining stock
-  for (const p of arrived) {
-    const mktCap  = computeMarketCap(marketsList, s.marketConfig)
-    const canStock = Math.max(0, mktCap - inventoryTotal(marketInventory))
-    if (canStock > 0) {
-      const tmpCrops = { ...p.cargo.crops }
-      transferInventory(tmpCrops, marketInventory, Math.min(inventoryTotal(tmpCrops), canStock))
-    }
-    if (p.cargo.ironTools > 0)
-      smithInventory = Math.min(smithInventory + p.cargo.ironTools, smithBldgs.length * SMITH_CAPACITY_PER)
-    // record trip stat
-    const stat: PeddlerTripStat = {
-      peddlerId:    p.id,
-      citizenId:    p.citizenId,
-      dayCount:     p.statsDayCount,
-      cargoAtStart: p.statsCargoAtStart,
-      housesServed: p.statsHousesServed,
-      foodSold:     p.statsFoodSold,
-      revenue:      p.statsRevenue,
-      toolsSold:    p.statsToolsSold,
-    }
-    const prev = peddlerTripLog[p.marketId] ?? []
-    peddlerTripLog = { ...peddlerTripLog, [p.marketId]: [...prev, stat].slice(-6) }
-    // send the bound citizen home (spawns a real toHome walker)
-    if (p.citizenId) {
-      const citizen = citizens.find(c => c.id === p.citizenId)
-      const market  = buildingMap.get(p.marketId)
-      const house   = citizen ? houseMap.get(citizen.houseId) : undefined
-      if (citizen && market && house) {
-        const route = bestPath(s.roads, market, house)
-        if (route && route.length >= 2) {
-          walkers = [...walkers, {
-            id: `w-${nextTick}-${citizen.id}-home`,
-            citizenId: citizen.id,
-            route, routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toHome',
-          }]
-        } else {
-          // no path (edge case) – teleport home
-          citizens = citizens.map(c => c.id === p.citizenId ? { ...c, isAtHome: true } : c)
+      if (p.returnIdx >= p.returnRoute.length) {
+        // Arrived back at market — deposit remaining stock
+        const mktCap  = computeMarketCap(marketsList)
+        const mkInv   = getAggregateCrops(marketsList)
+        const canStock = Math.max(0, mktCap - inventoryTotal(mkInv))
+        if (canStock > 0) {
+          const tmpCrops = { ...p.cargo.crops }
+          const moveAmt  = Math.min(inventoryTotal(tmpCrops), canStock)
+          if (moveAmt > 0 && marketsList[0]) {
+            const mkt = buildingMap.get(p.marketId) ?? marketsList[0]
+            // distribute evenly per crop ratio
+            for (const k of CROP_KEYS) {
+              const take = clampCrop(tmpCrops[k] > 0 ? Math.min(tmpCrops[k], canStock * (tmpCrops[k] / inventoryTotal(tmpCrops) || 0)) : 0)
+              if (take > 0) buildings = addBldgCrop(buildings, mkt.id, k, take)
+            }
+          }
         }
+        if (p.cargo.ironTools > 0 && smithBldgs[0]) {
+          const cap = smithBldgs.length * SMITH_CAPACITY_PER
+          const cur = getAggregateBldgUnit(smithBldgs, 'ironTools')
+          const add = Math.min(p.cargo.ironTools, Math.max(0, cap - cur))
+          if (add > 0) buildings = addBldgUnit(buildings, smithBldgs[0].id, 'ironTools', add)
+        }
+        // Record trip stat on the market building's tripLog
+        const stat: PeddlerTripStat = {
+          peddlerId:    c.id,
+          citizenId:    c.id,
+          dayCount:     p.statsDayCount,
+          cargoAtStart: p.statsCargoAtStart,
+          housesServed: p.statsHousesServed,
+          foodSold:     p.statsFoodSold,
+          revenue:      p.statsRevenue,
+          toolsSold:    p.statsToolsSold,
+        }
+        buildings = buildings.map(b =>
+          b.id === p.marketId
+            ? { ...b, tripLog: [...(b.tripLog ?? []), stat].slice(-6) }
+            : b,
+        )
+        // Send citizen home with a motion
+        const market  = buildingMap.get(p.marketId)
+        const house   = houseMap.get(c.houseId)
+        if (market && house) {
+          const route = bestPath(s.roads, market, house)
+          if (route && route.length >= 2) {
+            const homeMotion: CitizenMotion = {
+              route, routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toHome',
+            }
+            return { ...c, peddlerState: null, motion: homeMotion }
+          }
+        }
+        return { ...c, peddlerState: null, isAtHome: true }
       }
+      p = { ...p, toTile: p.returnRoute[p.returnIdx] }
     }
-  }
-  ctx.peddlers        = peddlers
-  ctx.houseCrops      = houseCrops
-  ctx.houseFood       = houseFood
-  ctx.houseSavings    = houseSavings
-  ctx.houseTools      = houseTools
-  ctx.marketInventory = marketInventory
-  ctx.smithInventory  = smithInventory
-  ctx.citizens        = citizens
-  ctx.walkers         = walkers
-  ctx.peddlerTripLog  = peddlerTripLog
+    return { ...c, peddlerState: p }
+  })
+
+  ctx.citizens  = citizens
+  ctx.buildings = buildings
   return ctx
 }

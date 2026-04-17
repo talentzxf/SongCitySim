@@ -12,7 +12,6 @@ export const monthlyTaxRoutine: TickRoutine = (ctx) => {
   let nextMonthlyFarmOutput       = ctx.monthlyFarmOutput
   let nextMonthlyFarmValue        = ctx.monthlyFarmValue
   let nextMonthlyMarketSales      = ctx.monthlyMarketSales
-  let houseDead                   = ctx.houseDead
   const yangminCost = monthlyDue ? Math.floor(citizens.length * 2) : 0
   if (monthlyDue) {
     // three tax types: per-head (ding), farmland yield (tian), market sales (shang)
@@ -32,10 +31,11 @@ export const monthlyTaxRoutine: TickRoutine = (ctx) => {
     nextMonthlyFarmOutput  = 0
     nextMonthlyFarmValue   = 0
     nextMonthlyMarketSales = 0
-    // decay dead-count so disease spread probability decreases over time
-    houseDead = { ...houseDead }
-    for (const houseId of Object.keys(houseDead))
-      if ((houseDead[houseId] ?? 0) > 0) houseDead[houseId]--
+    // Decay dead count monthly so disease spread risk reduces over time
+    ctx.buildings = ctx.buildings.map(b => {
+      if (!b.residentData || b.residentData.dead <= 0) return b
+      return { ...b, residentData: { ...b.residentData, dead: b.residentData.dead - 1 } }
+    })
   }
   ctx.monthlyDue                 = monthlyDue
   ctx.lastTaxBreakdown           = lastTaxBreakdown
@@ -46,6 +46,5 @@ export const monthlyTaxRoutine: TickRoutine = (ctx) => {
   ctx.nextMonthlyFarmOutput      = nextMonthlyFarmOutput
   ctx.nextMonthlyFarmValue       = nextMonthlyFarmValue
   ctx.nextMonthlyMarketSales     = nextMonthlyMarketSales
-  ctx.houseDead                  = houseDead
   return ctx
 }

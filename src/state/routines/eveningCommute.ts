@@ -1,18 +1,25 @@
 ﻿/** Evening trigger (once per day at EVENING_START): workers and farmers walk home. */
+import type { CitizenMotion } from '../types'
 import type { TickRoutine } from './types'
 import { WALKER_SPEED } from '../../config/simulation'
-import { roadsAdjacent, findRoadPath, bestPath, isRoadAt, adjacentHasRoad, buildingHasRoadAccess, inventoryTotal } from '../helpers'
+import {
+  roadsAdjacent, findRoadPath, bestPath, isRoadAt, buildingHasRoadAccess,
+  inventoryTotal, getAggregateCrops, getResidentData,
+} from '../helpers'
+
 export const eveningCommuteRoutine: TickRoutine = (ctx) => {
   if (!ctx.crossedEvening) return ctx
   const { s, nextTick, houseMap, buildingMap, farmZones, marketsList } = ctx
-  let walkers    = ctx.walkers
-  const citizens = ctx.citizens
-  const activeIds = new Set(walkers.map(w => w.citizenId))
-  // citizens who are still out as peddlers must NOT get a duplicate toHome walker
-  const peddlingIds = new Set(ctx.peddlers.filter(p => p.citizenId).map(p => p.citizenId!))
+  let citizens = ctx.citizens
+  let buildings = ctx.buildings
+
+  // Active citizen IDs = those who already have motion
+  const activeIds = new Set(citizens.filter(c => c.motion !== null).map(c => c.id))
+  // Citizens still out as peddlers must NOT get a duplicate toHome motion
+  const peddlingIds = new Set(citizens.filter(c => c.peddlerState !== null).map(c => c.id))
 
   // 缺粮且有钱：顺路去市集买粮再回家
-  const mktFood       = inventoryTotal(ctx.marketInventory)
+  const mktFood       = inventoryTotal(getAggregateCrops(marketsList))
   const marketsOnRoad = marketsList.filter(m => buildingHasRoadAccess(s.roads, m))
 
   function nearestMarket(house: { x: number; y: number }) {
@@ -32,28 +39,26 @@ export const eveningCommuteRoutine: TickRoutine = (ctx) => {
     if (!house || !wp) continue
 
     // 缺粮且有储蓄 → 下班顺路买粮
-    const foodLevel = ctx.houseFood[c.houseId] ?? 0
-    const savings   = ctx.houseSavings[c.houseId] ?? 0
-    if (foodLevel < 12 && savings >= 5) {
+    const rd = getResidentData(buildings, c.houseId)
+    if (rd.food < 12 && rd.savings >= 5) {
       const mkt = nearestMarket(house)
       if (mkt) {
-        walkers = [...walkers, {
-          id: `w-${nextTick}-${c.id}-shop`, citizenId: c.id,
+        const motion: CitizenMotion = {
           route: [{ x: wp.x, y: wp.y }, { x: mkt.x, y: mkt.y }],
           routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toShop', targetId: mkt.id,
-        }]
+        }
+        citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
         activeIds.add(c.id)
         continue
       }
     }
 
     const route = bestPath(s.roads, wp, house); if (!route || route.length < 2) continue
-    walkers = [...walkers, {
-      id: `w-${nextTick}-${c.id}-home`, citizenId: c.id,
-      route, routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toHome',
-    }]
+    const motion: CitizenMotion = { route, routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toHome' }
+    citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
     activeIds.add(c.id)
   }
+
   // farmers return home
   for (const c of citizens) {
     if (!c.farmZoneId || c.isAtHome || activeIds.has(c.id)) continue
@@ -62,16 +67,15 @@ export const eveningCommuteRoutine: TickRoutine = (ctx) => {
     if (!zone || !house) continue
 
     // 缺粮且有储蓄 → 收工顺路买粮
-    const foodLevel = ctx.houseFood[c.houseId] ?? 0
-    const savings   = ctx.houseSavings[c.houseId] ?? 0
-    if (foodLevel < 12 && savings >= 5) {
+    const rd = getResidentData(buildings, c.houseId)
+    if (rd.food < 12 && rd.savings >= 5) {
       const mkt = nearestMarket(house)
       if (mkt) {
-        walkers = [...walkers, {
-          id: `w-${nextTick}-${c.id}-shop`, citizenId: c.id,
+        const motion: CitizenMotion = {
           route: [{ x: zone.x, y: zone.y }, { x: mkt.x, y: mkt.y }],
           routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toShop', targetId: mkt.id,
-        }]
+        }
+        citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
         activeIds.add(c.id)
         continue
       }
@@ -90,13 +94,15 @@ export const eveningCommuteRoutine: TickRoutine = (ctx) => {
         if (p && (!roadSeg || p.length < roadSeg.length)) roadSeg = p
       }
     if (!roadSeg) continue
-    walkers = [...walkers, {
-      id: `w-${nextTick}-${c.id}-home`, citizenId: c.id,
+    const motion: CitizenMotion = {
       route: [{ x: zone.x, y: zone.y }, ...roadSeg, { x: house.x, y: house.y }],
       routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toHome',
-    }]
+    }
+    citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
     activeIds.add(c.id)
   }
-  ctx.walkers = walkers
+
+  ctx.citizens  = citizens
+  ctx.buildings = buildings
   return ctx
 }

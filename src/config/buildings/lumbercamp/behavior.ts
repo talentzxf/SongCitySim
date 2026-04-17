@@ -4,10 +4,11 @@
  * 林地储量归零时，地图上的树木消失。
  */
 import type { BuildingLifecycle } from '../_lifecycle'
-import { LUMBER_CAPACITY_PER, TIMBER_PER_LOGGER_DAY } from '../../../state/helpers'
 import { FOREST_TILES, MOUNTAIN_FOREST_TILES } from '../../../state/worldgen'
 
-const HARVEST_RADIUS = 6   // Chebyshev 距离
+const LUMBER_CAPACITY_PER    = 80   // 每座采木场的木材库存上限
+const TIMBER_PER_LOGGER_DAY  = 2    // 每名伐木工每日产出木材量
+const HARVEST_RADIUS = 6   // Chebyshev 采伐半径距离
 
 export const behavior: BuildingLifecycle = {
   onDayStart(ctx) {
@@ -20,13 +21,13 @@ export const behavior: BuildingLifecycle = {
     const allForestTiles = [...FOREST_TILES, ...MOUNTAIN_FOREST_TILES]
     const nearby = allForestTiles.filter(t => {
       if (Math.max(Math.abs(t.x - bx), Math.abs(t.y - by)) > HARVEST_RADIUS) return false
-      return ctx.pool.get(`forest.health.${t.x},${t.y}`) > 0
+      return ctx.terrainHealth(`${t.x},${t.y}`, 'forest') > 0
     })
     if (!nearby.length) return   // 周边林木已耗尽
 
     const totalCamps = ctx.cityBuildings.filter(b => b.type === 'lumbercamp').length
     const cap        = totalCamps * LUMBER_CAPACITY_PER
-    const current    = ctx.pool.get('lumber.timber')
+    const current    = ctx.cityUnit('lumbercamp', 'timber')
     const room       = Math.max(0, cap - current)
     const produced   = Math.min(workers.length * TIMBER_PER_LOGGER_DAY, room)
     if (produced <= 0) return
@@ -34,8 +35,8 @@ export const behavior: BuildingLifecycle = {
     // 均匀分摊到周边各林地格
     const perTile = produced / nearby.length
     for (const t of nearby) {
-      ctx.pool.mutate(`forest.health.${t.x},${t.y}`, -perTile)
+      ctx.depleteTerrainHealth(`${t.x},${t.y}`, 'forest', perTile)
     }
-    ctx.pool.mutate('lumber.timber', produced)
+    ctx.produceUnit('timber', produced)
   },
 }

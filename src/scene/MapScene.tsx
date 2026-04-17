@@ -15,13 +15,13 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import {
   useSimulation,
-  logicalMigrantPos, logicalWalkerPos, logicalOxCartPos, logicalMarketBuyerPos, logicalPeddlerPos,
+  logicalMigrantPos, logicalMotionPos, logicalAgentPos, logicalPeddlerStatePos,
   RIVER_TILES, RIVER_CENTER_LINE,
   MOUNTAIN_TILES, ORE_VEIN_TILES, FOREST_TILES, GRASSLAND_TILES, MOUNTAIN_FOREST_TILES,
   isRiverAt, isNearRiverFive, isMountainAt, isForestAt, isGrasslandAt, isOreVeinAt, isMountainForestAt,
   MAP_SIZE_X, MAP_SIZE_Y,
-  ALL_BUILDING_TYPES, type BuildingType, type CityState,
-  FOREST_CLEAR_COST, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH,
+  ALL_BUILDING_TYPES, type BuildingType, type Building,
+  FOREST_CLEAR_COST, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, resourceInitialHealth,
 } from '../state/simulation'
 import type { ResourceOverlayTile } from './TerrainLayer'
 import { tileH } from '../config/characters/_shared'
@@ -36,6 +36,8 @@ import { RoadLayer } from './RoadLayer'
 import { FarmLayer, type FarmerItem } from './FarmLayer'
 import { OverlayLayer, type RingInfo, type SickHouseInfo } from './OverlayLayer'
 import { CharacterLayer, type ResidentRenderItem } from './CharacterLayer'
+// --- Level context ---------------------------------------------------------
+import { useLevelContext } from '../levels/LevelContext'
 // --- Pathfinding ------------------------------------------------------------
 import { astarRoad, rasterLine, expandToFourNeighborPath } from './pathfinding'
 
@@ -113,6 +115,150 @@ if (typeof window !== 'undefined') {
   ;(window as any).__MAP_DEBUG__         = (window as any).__MAP_DEBUG__ || {}
 }
 
+// ===========================================================================
+// BoundsOverlay — screen-space fragment shader that darkens everything outside
+// the playable area.  A full-screen quad is rendered in clip/NDC space so it
+// is completely independent of the camera orientation.  The frag shader
+// reconstructs the world XZ position for each pixel by ray-casting through the
+// inverse view-projection matrix and intersecting with the y=0 ground plane.
+// ===========================================================================
+interface FogBounds { minX: number; maxX: number; minY: number; maxY: number }
+
+const BOUNDS_VERT = /* glsl */`
+attribute vec3 position;
+void main() {
+  // Bypass all camera transforms — output NDC directly.
+  gl_Position = vec4(position.xy, 0.999, 1.0);
+}
+`
+
+const BOUNDS_FRAG = /* glsl */`
+precision mediump float;
+uniform mat4  uInvViewProj;
+uniform vec2  uResolution;
+uniform float uMinX;
+uniform float uMaxX;
+uniform float uMinZ;
+uniform float uMaxZ;
+
+void main() {
+  vec2 ndc = (gl_FragCoord.xy / uResolution) * 2.0 - 1.0;
+
+  vec4 nearH = uInvViewProj * vec4(ndc, -1.0, 1.0);
+  vec4 farH  = uInvViewProj * vec4(ndc,  1.0, 1.0);
+  vec3 nearW = nearH.xyz / nearH.w;
+  vec3 farW  = farH.xyz  / farH.w;
+  vec3 dir   = farW - nearW;
+
+  if (abs(dir.y) > 0.0001) {
+    float t = -nearW.y / dir.y;
+    if (t > 0.0) {
+      vec3 hit = nearW + dir * t;
+
+      // Signed distance to each edge (positive = inside)
+      float dx = min(hit.x - uMinX, uMaxX - hit.x);
+      float dz = min(hit.z - uMinZ, uMaxZ - hit.z);
+      float dist = min(dx, dz);  // positive inside, negative outside
+
+      // Fully inside → transparent
+      if (dist >= 0.0) discard;
+
+      // Soft edge: fade from 0 at boundary to full opacity at FADE units outside
+      const float FADE = 5.0;
+      float alpha = 0.75 * smoothstep(0.0, FADE, -dist);  // 0 at boundary, 0.75 far out
+      if (alpha < 0.01) discard;
+      gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+      return;
+    }
+  }
+
+  gl_FragColor = vec4(0.0, 0.0, 0.0, 0.75);
+}
+`
+
+function BoundsOverlay({ bounds }: { bounds: FogBounds }) {
+  const { camera, gl } = useThree()
+  const matRef = React.useRef<THREE.RawShaderMaterial | null>(null)
+
+  const uniforms = React.useMemo(() => ({
+    uInvViewProj: { value: new THREE.Matrix4() },
+    uResolution:  { value: new THREE.Vector2() },
+    uMinX: { value: bounds.minX - 0.5 },
+    uMaxX: { value: bounds.maxX + 0.5 },
+    uMinZ: { value: bounds.minY - 0.5 },
+    uMaxZ: { value: bounds.maxY + 0.5 },
+  }), [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY])
+
+  // Update bounds uniforms when they change
+  React.useEffect(() => {
+    uniforms.uMinX.value = bounds.minX - 0.5
+    uniforms.uMaxX.value = bounds.maxX + 0.5
+    uniforms.uMinZ.value = bounds.minY - 0.5
+    uniforms.uMaxZ.value = bounds.maxY + 0.5
+  }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, uniforms])
+
+  // Update matrix + resolution every frame
+  useFrame(() => {
+    const mat = matRef.current
+    if (!mat) return
+    const vp = new THREE.Matrix4().multiplyMatrices(
+      (camera as THREE.PerspectiveCamera).projectionMatrix,
+      camera.matrixWorldInverse,
+    )
+    mat.uniforms.uInvViewProj.value.copy(vp).invert()
+    const size = gl.getSize(new THREE.Vector2())
+    mat.uniforms.uResolution.value.set(size.x * gl.getPixelRatio(), size.y * gl.getPixelRatio())
+  })
+
+  return (
+    <mesh renderOrder={100} frustumCulled={false}>
+      <planeGeometry args={[2, 2]} />
+      <rawShaderMaterial
+        ref={matRef}
+        vertexShader={BOUNDS_VERT}
+        fragmentShader={BOUNDS_FRAG}
+        uniforms={uniforms}
+        transparent
+        depthTest={false}
+        depthWrite={false}
+      />
+    </mesh>
+  )
+}
+
+// ===========================================================================
+// PlayableBorder — thin gold outline at ground level showing the area boundary.
+// ===========================================================================
+
+function PlayableBorder({ bounds }: { bounds: FogBounds }) {
+  const { minX, maxX, minY, maxY } = bounds
+  const left  = minX - 0.5
+  const right = maxX + 0.5
+  const near  = minY - 0.5
+  const far   = maxY + 0.5
+  const Y = 0.15
+
+  const geo = React.useMemo(() => {
+    const pts = new Float32Array([
+      left,  Y, near,
+      right, Y, near,
+      right, Y, far,
+      left,  Y, far,
+      left,  Y, near,
+    ])
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pts, 3))
+    return g
+  }, [left, right, near, far])
+
+  const mat = React.useMemo(
+    () => new THREE.LineBasicMaterial({ color: '#c8a040', transparent: true, opacity: 0.85 }),
+    [],
+  )
+
+  return <primitive object={new THREE.Line(geo, mat)} />
+}
+
 // --- Module-level static set: tiles truly covered by the visual river ribbon ---
 // isRiverAt() includes edge tiles that the smooth curve doesn't visually reach;
 // this set restricts bridges to tiles within 1.4 tiles of any river centre-line point.
@@ -135,7 +281,9 @@ export default function MapScene() {
   const halfX = Math.floor(MAP_SIZE_X / 2)
   const halfY = Math.floor(MAP_SIZE_Y / 2)
 
-
+  // Level bounds (null = sandbox = full map)
+  const { level } = useLevelContext()
+  const levelBounds = level?.mapBounds ?? null
   // All tile coords (constant, depends only on map size)
   const tiles = React.useMemo<[number, number][]>(() => {
     const all: [number, number][] = []
@@ -248,29 +396,29 @@ export default function MapScene() {
   const visibleOreVeinTiles   = React.useMemo(() =>
     oreVeinTree.rangeQuery(cullRect).filter(t =>
       !buildingTileSet.has(`${t.x},${t.y}`) &&
-      (state.oreVeinHealth[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) > 0),
-    [oreVeinTree, cullRect, buildingTileSet, state.oreVeinHealth],
+      (state.terrainResources['ore']?.[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) > 0),
+    [oreVeinTree, cullRect, buildingTileSet, state.terrainResources],
   )
   const visibleForestTiles    = React.useMemo(() =>
     forestTree.rangeQuery(cullRect).filter(t =>
       !buildingTileSet.has(`${t.x},${t.y}`) &&
       !roadTileSet.has(`${t.x},${t.y}`) &&
-      (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
-    [forestTree, cullRect, buildingTileSet, roadTileSet, state.forestHealth],
+      (state.terrainResources['forest']?.[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
+    [forestTree, cullRect, buildingTileSet, roadTileSet, state.terrainResources],
   )
   const visibleGrasslandTiles = React.useMemo(() =>
     grassTree.rangeQuery(cullRect).filter(t =>
       !buildingTileSet.has(`${t.x},${t.y}`) &&
       !roadTileSet.has(`${t.x},${t.y}`) &&
-      (state.grasslandHealth[`${t.x},${t.y}`] ?? GRASSLAND_TILE_INITIAL_HEALTH) > 0),
-    [grassTree, cullRect, buildingTileSet, roadTileSet, state.grasslandHealth],
+      (state.terrainResources['grassland']?.[`${t.x},${t.y}`] ?? GRASSLAND_TILE_INITIAL_HEALTH) > 0),
+    [grassTree, cullRect, buildingTileSet, roadTileSet, state.terrainResources],
   )
   const visibleMountainForestTiles = React.useMemo(() =>
     mtnForestTree.rangeQuery(cullRect).filter(t =>
       !buildingTileSet.has(`${t.x},${t.y}`) &&
       !roadTileSet.has(`${t.x},${t.y}`) &&
-      (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
-    [mtnForestTree, cullRect, buildingTileSet, roadTileSet, state.forestHealth],
+      (state.terrainResources['forest']?.[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) > 0),
+    [mtnForestTree, cullRect, buildingTileSet, roadTileSet, state.terrainResources],
   )
 
   // Resource health overlay (shown when mine or lumbercamp is selected)
@@ -284,13 +432,13 @@ export default function MapScene() {
       if (selectedBuilding.type === 'mine') {
         return oreVeinTree.rangeQuery(cullRect).map(t => ({
           x: t.x, y: t.y,
-          pct: (state.oreVeinHealth[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) / ORE_VEIN_INITIAL_HEALTH,
+          pct: (state.terrainResources['ore']?.[`${t.x},${t.y}`] ?? ORE_VEIN_INITIAL_HEALTH) / ORE_VEIN_INITIAL_HEALTH,
         }))
       }
       if ((selectedBuilding.type as string) === 'lumbercamp') {
         return forestTree.rangeQuery(cullRect).map(t => ({
           x: t.x, y: t.y,
-          pct: (state.forestHealth[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) / FOREST_TILE_INITIAL_HEALTH,
+          pct: (state.terrainResources['forest']?.[`${t.x},${t.y}`] ?? FOREST_TILE_INITIAL_HEALTH) / FOREST_TILE_INITIAL_HEALTH,
         }))
       }
       return null
@@ -298,24 +446,18 @@ export default function MapScene() {
     // ── Terrain-tile-selected overlay — 只高亮选中的那一格 ─────────────────
     const tt = state.selectedTerrainTile
     if (tt) {
-      if (tt.kind === 'ore') {
-        return [{ x: tt.x, y: tt.y,
-          pct: (state.oreVeinHealth[`${tt.x},${tt.y}`] ?? ORE_VEIN_INITIAL_HEALTH) / ORE_VEIN_INITIAL_HEALTH,
-        }]
-      }
-      if (tt.kind === 'forest') {
-        return [{ x: tt.x, y: tt.y,
-          pct: (state.forestHealth[`${tt.x},${tt.y}`] ?? FOREST_TILE_INITIAL_HEALTH) / FOREST_TILE_INITIAL_HEALTH,
-        }]
-      }
-      if (tt.kind === 'grassland') {
-        return [{ x: tt.x, y: tt.y,
-          pct: (state.grasslandHealth[`${tt.x},${tt.y}`] ?? GRASSLAND_TILE_INITIAL_HEALTH) / GRASSLAND_TILE_INITIAL_HEALTH,
-        }]
-      }
+      const kind = tt.kind === 'mountainForest' ? 'forest' : tt.kind
+      const initialHealth = (state.terrainResources[kind] !== undefined)
+        ? Object.values(state.terrainResources[kind])[0] !== undefined
+          ? resourceInitialHealth(kind)
+          : resourceInitialHealth(kind)
+        : resourceInitialHealth(kind)
+      return [{ x: tt.x, y: tt.y,
+        pct: (state.terrainResources[kind]?.[`${tt.x},${tt.y}`] ?? initialHealth) / initialHealth,
+      }]
     }
     return null
-  }, [selectedBuilding, state.selectedTerrainTile, oreVeinTree, forestTree, cullRect, state.oreVeinHealth, state.forestHealth, state.grasslandHealth])
+  }, [selectedBuilding, state.selectedTerrainTile, oreVeinTree, forestTree, cullRect, state.terrainResources])
 
   // 粮田可开垦标记（河流三格内平地，去除道路、山地；仅粮田工具时显示）
   const visibleArableTiles = React.useMemo(() =>
@@ -339,32 +481,45 @@ export default function MapScene() {
       : [],
     [visibleMountainTiles, state.buildings, state.roads, state.selectedTool],
   )
-  const visibleWalkers = React.useMemo(() => state.walkers.filter(w => {
-    const p = logicalWalkerPos(w)
-    return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
-  }), [state.walkers, cullRect])
+  const visibleWalkers = React.useMemo(() => {
+    const walkers = state.citizens.filter(c => c.motion !== null) as { id: string; motion: NonNullable<typeof state.citizens[0]['motion']> }[]
+    return walkers.filter(w => {
+      const p = logicalMotionPos(w.motion)
+      return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
+    })
+  }, [state.citizens, cullRect])
   const visibleMigrants = React.useMemo(() => state.migrants.filter(m => {
     const p = logicalMigrantPos(m)
     return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
   }), [state.migrants, cullRect])
-  const visibleOxCarts = React.useMemo(() => state.oxCarts.filter(c => {
-    const p = logicalOxCartPos(c)
-    return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
-  }), [state.oxCarts, cullRect])
-  const visibleMarketBuyers = React.useMemo(() => state.marketBuyers.filter(mb => {
-    const p = logicalMarketBuyerPos(mb)
-    return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
-  }), [state.marketBuyers, cullRect])
-  const visiblePeddlers = React.useMemo(() => state.peddlers.filter(p => {
-    const pos = logicalPeddlerPos(p)
-    return pos.x >= cullRect.minX && pos.x <= cullRect.maxX && pos.y >= cullRect.minY && pos.y <= cullRect.maxY
-  }), [state.peddlers, cullRect])
-  const visibleFarmPiles = React.useMemo(() =>
-    state.farmPiles.filter(p =>
+  const visibleOxCarts = React.useMemo(() => {
+    const allCarts = state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'oxcart'))
+    return allCarts.filter(c => {
+      const p = logicalAgentPos(c)
+      return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
+    })
+  }, [state.buildings, cullRect])
+  const visibleMarketBuyers = React.useMemo(() => {
+    const allBuyers = state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'marketbuyer'))
+    return allBuyers.filter(mb => {
+      const p = logicalAgentPos(mb)
+      return p.x >= cullRect.minX && p.x <= cullRect.maxX && p.y >= cullRect.minY && p.y <= cullRect.maxY
+    })
+  }, [state.buildings, cullRect])
+  const visiblePeddlers = React.useMemo(() => {
+    const peddlerCitizens = state.citizens.filter(c => c.peddlerState !== null) as { id: string; peddlerState: NonNullable<typeof state.citizens[0]['peddlerState']> }[]
+    return peddlerCitizens.filter(p => {
+      const pos = logicalPeddlerStatePos(p.peddlerState)
+      return pos.x >= cullRect.minX && pos.x <= cullRect.maxX && pos.y >= cullRect.minY && pos.y <= cullRect.maxY
+    })
+  }, [state.citizens, cullRect])
+  const visibleFarmPiles = React.useMemo(() => {
+    const allPiles = state.farmZones.flatMap(z => z.piles)
+    return allPiles.filter(p =>
       p.x >= cullRect.minX - 1 && p.x <= cullRect.maxX + 1 &&
       p.y >= cullRect.minY - 1 && p.y <= cullRect.maxY + 1,
-    ), [state.farmPiles, cullRect],
-  )
+    )
+  }, [state.farmZones, cullRect])
 
   // --- Farm derived data -----------------------------------------------------
   const visibleFarmZones = React.useMemo(() =>
@@ -374,9 +529,9 @@ export default function MapScene() {
     ), [state.farmZones, cullRect],
   )
   const farmersAtFarm = React.useMemo<FarmerItem[]>(() => {
-    const walkerIds = new Set(state.walkers.map(w => w.citizenId))
+    const movingIds = new Set(state.citizens.filter(c => c.motion !== null).map(c => c.id))
     return state.citizens
-      .filter(c => c.farmZoneId && !c.isAtHome && !walkerIds.has(c.id))
+      .filter(c => c.farmZoneId && !c.isAtHome && !movingIds.has(c.id))
       .flatMap(c => {
         const zone = state.farmZones.find(z => z.id === c.farmZoneId)
         if (!zone) return []
@@ -386,7 +541,7 @@ export default function MapScene() {
         for (let i = 0; i < c.id.length; i++) hash = (hash * 31 + c.id.charCodeAt(i)) | 0
         return [{ id: c.id, x: zone.x + 0.5, y: zone.y + 0.5, seed: Math.abs(hash % 1000) + 1 }]
       })
-  }, [state.citizens, state.farmZones, state.walkers, cullRect])
+  }, [state.citizens, state.farmZones, cullRect])
 
   const selectedFarmZoneTiles = React.useMemo(() => {
     const zone = state.selectedFarmZoneId
@@ -401,8 +556,12 @@ export default function MapScene() {
   // --- Overlay derived data --------------------------------------------------
   const sickHouses = React.useMemo<SickHouseInfo[]>(() => {
     const sickHouseIds = new Set(state.citizens.filter(c => c.isSick).map(c => c.houseId))
-    const deadEntries  = state.houseDead ?? {}
-    const deadHouseIds = new Set(Object.entries(deadEntries).filter(([, v]) => v > 0).map(([k]) => k))
+    // derive dead counts from building.residentData.dead
+    const deadEntries: Record<string, number> = Object.fromEntries(
+      state.buildings.filter(b => b.residentData && (b.residentData.dead ?? 0) > 0)
+        .map(b => [b.id, b.residentData!.dead])
+    )
+    const deadHouseIds = new Set(Object.keys(deadEntries))
     const allAffected  = new Set([...sickHouseIds, ...deadHouseIds])
     return state.buildings
       .filter(b =>
@@ -411,7 +570,7 @@ export default function MapScene() {
         b.y + 1 >= cullRect.minY && b.y <= cullRect.maxY,
       )
       .map(b => ({ id: b.id, x: b.x, y: b.y, deadCount: deadEntries[b.id] ?? 0 }))
-  }, [state.citizens, state.buildings, state.houseDead, cullRect])
+  }, [state.citizens, state.buildings, cullRect])
 
   const selectedBuildingRing = React.useMemo<RingInfo | null>(() => {
     const b = state.selectedBuildingId
@@ -422,9 +581,9 @@ export default function MapScene() {
   const selectedCitizenRing = React.useMemo<RingInfo | null>(() => {
     const cid = state.selectedCitizenId
     if (!cid) return null
-    const walker = state.walkers.find(w => w.citizenId === cid)
-    if (walker) {
-      const p = logicalWalkerPos(walker)
+    const walkerCitizen = state.citizens.find(c => c.id === cid && c.motion !== null)
+    if (walkerCitizen && walkerCitizen.motion) {
+      const p = logicalMotionPos(walkerCitizen.motion)
       return { x: p.x, y: p.y, color: '#69c0ff', r: 0.34 }
     }
     const farmer = farmersAtFarm.find(f => f.id === cid)
@@ -442,7 +601,7 @@ export default function MapScene() {
       if (house) return { x: house.x, y: house.y, color: '#69c0ff', r: 0.34 }
     }
     return null
-  }, [state.selectedCitizenId, state.walkers, farmersAtFarm, visibleResidents, state.citizens, state.buildings])
+  }, [state.selectedCitizenId, state.citizens, farmersAtFarm, visibleResidents, state.buildings])
 
   // --- Effects: keep refs current --------------------------------------------
   React.useEffect(() => { stateRef.current = state }, [state])
@@ -602,6 +761,20 @@ export default function MapScene() {
     function applyTool(wx: number, wy: number) {
       const s    = stateRef.current
       const tool = s.selectedTool
+
+      // ── Level bounds check ──────────────────────────────────────────────────
+      const lb = (window as any).__LEVEL_BOUNDS__ as { minX: number; maxX: number; minY: number; maxY: number } | undefined
+      if (lb && (wx < lb.minX || wx > lb.maxX || wy < lb.minY || wy > lb.maxY)) {
+        if (tool !== 'pan') {
+          try { (window as any).__MESSAGE_API__?.warning({ content: '⛔ 此地尚未开辟，无法操作', duration: 1.5 }) } catch {}
+        }
+        // For pan, silently deselect
+        actionsRef.current.selectBuilding(null)
+        actionsRef.current.selectCitizen(null)
+        actionsRef.current.selectFarmZone(null)
+        actionsRef.current.selectTerrainTile(null)
+        return
+      }
       if (tool === 'pan') {
         const fz = s.farmZones.find(z => wx >= z.x && wx <= z.x + 1 && wy >= z.y && wy <= z.y + 1)
         if (fz) { actionsRef.current.selectFarmZone(fz.id); return }
@@ -761,7 +934,7 @@ export default function MapScene() {
   }, [gl, camera])
 
   // --- Building mesh dispatch ------------------------------------------------
-  function buildingMesh(b: CityState['buildings'][number]) {
+  function buildingMesh(b: Building) {
     const baseY = isMountainAt(b.x, b.y) ? tileH(b.x, b.y) : 0
     if (hasBuildingGLB(b.type))
       return <BuildingGLBRenderer key={b.id} type={b.type} x={b.x} y={b.y} baseY={baseY} />
@@ -857,6 +1030,10 @@ export default function MapScene() {
 
       {/* Ore-compass bouncing arrow */}
       {compassMarker && <CompassArrow key={`${compassMarker.x},${compassMarker.y}`} x={compassMarker.x} y={compassMarker.y} />}
+
+      {/* Playable area: screen-space dark overlay + ground border */}
+      {levelBounds && <BoundsOverlay bounds={levelBounds} />}
+      {levelBounds && <PlayableBorder bounds={levelBounds} />}
     </group>
   )
 }

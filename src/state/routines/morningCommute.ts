@@ -2,81 +2,77 @@
  * Morning trigger (once per day at MORNING_START):
  *  - Workers and farmers commute to their workplaces
  *  - Citizens with low food / savings head to the market
- *  - Market restock buyers are dispatched from each market
- *  - Peddlers are spawned from markets – one per assigned market worker (real citizens)
+ *  - Market restock buyers are dispatched from each market (as Building.agents)
+ *  - Peddlers are spawned from markets – set on Citizen.peddlerState
  */
+import type { CitizenMotion, BuildingAgent, PeddlerState } from '../types'
 import type { TickRoutine } from './types'
 import { WALKER_SPEED, MARKET_BUYER_SPEED, SHOP_INTERVAL_DAYS } from '../../config/simulation'
 import {
   CROP_KEYS, PEDDLER_MAX_STEPS, PEDDLER_SPEED,
   PEDDLER_CARRY_FOOD, PEDDLER_CARRY_TOOLS, FARM_TOOL_PRICE, TOOL_DURABILITY_LOW,
-  inventoryTotal, adjacentHasRoad, buildingHasRoadAccess, roadsAdjacent, findRoadPath, bestPath, isRoadAt,
+  inventoryTotal, buildingHasRoadAccess, roadsAdjacent, findRoadPath, bestPath, isRoadAt,
   getMarketCfg, transferInventory, createEmptyPeddlerCargo,
+  getAggregateCrops, getAggregateBldgUnit, addBldgUnit, createEmptyInventory,
+  getResidentData,
 } from '../helpers'
+
 export const morningCommuteRoutine: TickRoutine = (ctx) => {
   if (!ctx.crossedMorning) return ctx
   const { s, nextTick, isNewDay, dayCount, houseMap, buildingMap, farmZones, marketsList, granaries } = ctx
-  let citizens         = ctx.citizens
-  let walkers          = ctx.walkers
-  let marketBuyers     = ctx.marketBuyers
-  let peddlers         = ctx.peddlers
-  let marketInventory  = ctx.marketInventory
-  let smithInventory   = ctx.smithInventory
-  let houseCrops       = ctx.houseCrops
-  let houseFood        = ctx.houseFood
-  let houseSavings     = ctx.houseSavings
-  let houseTools       = ctx.houseTools
-  let granaryInventory = ctx.granaryInventory
-  const activeIds = new Set(walkers.map(w => w.citizenId))
+  let citizens  = ctx.citizens
+  let buildings = ctx.buildings
+
+  // Active citizen IDs = those who already have motion (don't dispatch again)
+  const activeIds = new Set(citizens.filter(c => c.motion !== null).map(c => c.id))
 
   // ── Pre-identify peddler workers BEFORE the commute loop ──────────────────
-  // Key: only real market workers can peddle; reserve their slot in activeIds so
-  // they don't also receive a plain toWork commute walker.
+  // peddlingIds = citizens currently on a peddler delivery (peddlerState ≠ null)
+  const peddlingIds = new Set(
+    citizens.filter(c => c.peddlerState !== null).map(c => c.id),
+  )
   // Map: marketId -> list of citizen ids chosen to peddle today
   const peddlerAssignments = new Map<string, string[]>()
   for (const market of marketsList) {
     if (!buildingHasRoadAccess(s.roads, market)) continue
-    const cfg          = getMarketCfg(market.id, s.marketConfig)
-    const alreadyOut   = peddlers.filter(p =>
-      p.marketId === market.id &&
-      // 生病的行商不占名额——让坐商顶替
-      !(p.citizenId && citizens.find(c => c.id === p.citizenId)?.isSick)
+    const cfg       = getMarketCfg(market)
+    const alreadyOut = citizens.filter(c =>
+      c.peddlerState?.marketId === market.id &&
+      !c.isSick
     ).length
-    const needed       = Math.max(0, cfg.peddlers - alreadyOut)
+    const needed = Math.max(0, cfg.peddlers - alreadyOut)
     if (!needed) continue
     const busyCitizenIds = new Set(
-      peddlers.filter(p =>
-        p.marketId === market.id && p.citizenId &&
-        // 同上：生病的行商不锁定名额
-        !citizens.find(c => c.id === p.citizenId)?.isSick
-      ).map(p => p.citizenId!)
+      citizens
+        .filter(c => c.peddlerState?.marketId === market.id && !c.isSick)
+        .map(c => c.id),
     )
     // find market workers who are home, healthy, and not already peddling.
-    // Sort by id so the selection is deterministic and matches the HUD designation:
-    // the LAST cfg.peddlers workers (by sorted order) are always the peddler candidates.
     const eligible = citizens
       .filter(c =>
         c.workplaceId === market.id &&
-        c.isAtHome && !c.isSick && !activeIds.has(c.id) && !busyCitizenIds.has(c.id)
+        c.isAtHome && !c.isSick && !activeIds.has(c.id) && !busyCitizenIds.has(c.id),
       )
       .sort((a, b) => a.id.localeCompare(b.id))
-    const candidates = eligible.slice(eligible.length - needed)  // tail = peddler slots
+    const candidates = eligible.slice(eligible.length - needed) // tail = peddler slots
     if (!candidates.length) continue
     const ids = candidates.map(c => c.id)
     peddlerAssignments.set(market.id, ids)
-    for (const id of ids) activeIds.add(id)   // block regular toWork walker
+    for (const id of ids) activeIds.add(id) // block regular toWork walker
   }
 
-  // workplace commute
+  // ── Workplace commute ─────────────────────────────────────────────────────
   for (const c of citizens) {
     if (!c.workplaceId || !c.isAtHome || c.isSick || activeIds.has(c.id)) continue
     const house = houseMap.get(c.houseId); const wp = buildingMap.get(c.workplaceId)
     if (!house || !wp) continue
     const route = bestPath(s.roads, house, wp); if (!route || route.length < 2) continue
-    walkers = [...walkers, { id: `w-${nextTick}-${c.id}-work`, citizenId: c.id, route, routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toWork' }]
+    const motion: CitizenMotion = { route, routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toWork' }
+    citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
     activeIds.add(c.id)
   }
-  // farm commute
+
+  // ── Farm commute ──────────────────────────────────────────────────────────
   for (const c of citizens) {
     if (!c.farmZoneId || !c.isAtHome || c.isSick || activeIds.has(c.id)) continue
     const zone  = farmZones.find(z => z.id === c.farmZoneId)
@@ -95,93 +91,111 @@ export const morningCommuteRoutine: TickRoutine = (ctx) => {
         if (p && (!roadSeg || p.length < roadSeg.length)) roadSeg = p
       }
     if (!roadSeg) continue
-    walkers = [...walkers, {
-      id: `w-${nextTick}-${c.id}-work`, citizenId: c.id,
+    const motion: CitizenMotion = {
       route: [{ x: house.x, y: house.y }, ...roadSeg, { x: zone.x, y: zone.y }],
       routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toWork',
-    }]
+    }
+    citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
     activeIds.add(c.id)
   }
-  // shopping trips
-  if (marketsList.length > 0 && inventoryTotal(marketInventory) > 0) {
-    const isShopDay = isNewDay && dayCount % SHOP_INTERVAL_DAYS === 0
+
+  // ── Shopping trips ────────────────────────────────────────────────────────
+  const mktAggInv = getAggregateCrops(marketsList)
+  if (marketsList.length > 0 && inventoryTotal(mktAggInv) > 0) {
+    const isShopDay     = isNewDay && dayCount % SHOP_INTERVAL_DAYS === 0
+    const smithTotal    = getAggregateBldgUnit(ctx.smithBldgs, 'ironTools')
     for (const c of citizens) {
       if (!c.isAtHome || c.isSick || activeIds.has(c.id)) continue
       const house = houseMap.get(c.houseId); if (!house) continue
-      const savings = houseSavings[c.houseId] ?? 0
-      const hcNow   = houseCrops[c.houseId]
-      const hcTotal = hcNow ? CROP_KEYS.reduce((s, k) => s + hcNow[k], 0) : (houseFood[c.houseId] ?? 0)
-      const mustGo       = hcTotal < 10 && savings > 0
-      const wantMore     = hcTotal < 22 && savings > 8
-      const randomWander = hcTotal < 25 && savings > 3 && Math.random() < 0.08
-      const needsTool    = Boolean(c.farmZoneId) && (houseTools[c.houseId] ?? 0) < TOOL_DURABILITY_LOW && smithInventory > 0 && savings >= FARM_TOOL_PRICE && Math.random() < 0.18
-      const trigger      = isShopDay ? hcTotal < 20 : (mustGo || wantMore || randomWander || needsTool)
+      const rd       = getResidentData(buildings, c.houseId)
+      const savings  = rd.savings
+      const hcTotal  = inventoryTotal(rd.crops ?? createEmptyInventory())
+      const mustGo      = hcTotal < 10 && savings > 0
+      const wantMore    = hcTotal < 22 && savings > 8
+      const randomWander= hcTotal < 25 && savings > 3 && Math.random() < 0.08
+      const needsTool   = Boolean(c.farmZoneId) && (rd.tools ?? 0) < TOOL_DURABILITY_LOW && smithTotal > 0 && savings >= FARM_TOOL_PRICE && Math.random() < 0.18
+      const trigger     = isShopDay ? hcTotal < 20 : (mustGo || wantMore || randomWander || needsTool)
       if (!trigger || (savings <= 0 && hcTotal >= 5)) continue
       const market = marketsList.reduce((best, m) =>
         (m.x - house.x) ** 2 + (m.y - house.y) ** 2 < (best.x - house.x) ** 2 + (best.y - house.y) ** 2 ? m : best)
-      walkers = [...walkers, {
-        id: `w-${nextTick}-${c.id}-shop`, citizenId: c.id,
+      const motion: CitizenMotion = {
         route: [{ x: house.x, y: house.y }, { x: market.x, y: market.y }],
         routeIndex: 0, routeT: 0, speed: WALKER_SPEED, purpose: 'toShop', targetId: market.id,
-      }]
+      }
+      citizens = citizens.map(x => x.id === c.id ? { ...x, motion, isAtHome: false } : x)
       activeIds.add(c.id)
     }
   }
-  // market restock buyers (one per market per morning)
+
+  // ── Market restock buyers (as Building.agents on market buildings) ─────────
   for (const market of marketsList) {
-    if (marketBuyers.some(mb => mb.marketId === market.id)) continue
-    if (!granaries.length || inventoryTotal(granaryInventory) < 2) continue
+    const mBldg = buildings.find(b => b.id === market.id)
+    if (mBldg?.agents.some(a => a.kind === 'marketbuyer')) continue
+    const granaryInv = getAggregateCrops(granaries)
+    if (!granaries.length || inventoryTotal(granaryInv) < 2) continue
     const g = granaries.reduce((b, gr) =>
       (gr.x - market.x) ** 2 + (gr.y - market.y) ** 2 < (b.x - market.x) ** 2 + (b.y - market.y) ** 2 ? gr : b)
-    marketBuyers = [...marketBuyers, {
+    const agent: BuildingAgent = {
       id: `mb-${nextTick}-${market.id.slice(-4)}`,
-      marketId: market.id, granaryId: g.id,
+      kind: 'marketbuyer',
       route: [{ x: market.x, y: market.y }, { x: g.x, y: g.y }, { x: market.x, y: market.y }],
-      routeIndex: 0, routeT: 0, speed: MARKET_BUYER_SPEED, pickedUp: false, cargoType: 'rice', cargoAmount: 0,
-    }]
+      routeIndex: 0, routeT: 0, speed: MARKET_BUYER_SPEED, pickedUp: false,
+      cargoType: 'rice', cargoAmount: 0,
+      srcGranaryId: g.id,
+    }
+    buildings = buildings.map(b => b.id === market.id ? { ...b, agents: [...b.agents, agent] } : b)
   }
+
   // ── Spawn peddlers from real market workers ────────────────────────────────
   for (const [marketId, citizenIds] of peddlerAssignments) {
     const market = buildingMap.get(marketId); if (!market) continue
     const startRoads = roadsAdjacent(s.roads, market.x, market.y)
     if (!startRoads.length) continue
     for (let i = 0; i < citizenIds.length; i++) {
-      const citizenId  = citizenIds[i]
-      const foodInMkt  = inventoryTotal(marketInventory)
-      const cargo      = createEmptyPeddlerCargo()
-      if (foodInMkt > 0.1)
-        transferInventory(marketInventory, cargo.crops,
-          Math.min(PEDDLER_CARRY_FOOD, foodInMkt / Math.max(1, citizenIds.length - i)))
-      if (smithInventory > 0) {
-        const carry = Math.min(PEDDLER_CARRY_TOOLS, smithInventory)
-        cargo.ironTools = carry; smithInventory -= carry
+      const citizenId = citizenIds[i]
+      // Read current market inventory (may have been reduced by earlier peddlers in this loop)
+      const mBldgNow = buildings.find(b => b.id === marketId)
+      const mktCrops = { ...(mBldgNow?.inventory?.crops ?? createEmptyInventory()) }
+      const foodInMkt = inventoryTotal(mktCrops)
+      const cargo = createEmptyPeddlerCargo()
+      if (foodInMkt > 0.1) {
+        const take = Math.min(PEDDLER_CARRY_FOOD, foodInMkt / Math.max(1, citizenIds.length - i))
+        transferInventory(mktCrops, cargo.crops, take)
+        // Save updated market inventory back to buildings
+        buildings = buildings.map(b =>
+          b.id === marketId && b.inventory
+            ? { ...b, inventory: { ...b.inventory, crops: mktCrops } }
+            : b,
+        )
+      }
+      // Tools
+      if (ctx.smithBldgs[0]) {
+        const smithBldgNow = buildings.find(b => b.id === ctx.smithBldgs[0].id)
+        const smithAvail = smithBldgNow?.inventory?.ironTools ?? 0
+        if (smithAvail > 0) {
+          const carry = Math.min(PEDDLER_CARRY_TOOLS, smithAvail)
+          cargo.ironTools = carry
+          buildings = addBldgUnit(buildings, ctx.smithBldgs[0].id, 'ironTools', -carry)
+        }
       }
       const cargoFood = inventoryTotal(cargo.crops)
-      peddlers = [...peddlers, {
-        id: `pd-${nextTick}-${marketId.slice(-4)}-${i}`,
-        citizenId,
+      const newPeddlerState: PeddlerState = {
         marketId, cargo, phase: 'outbound', stepsLeft: PEDDLER_MAX_STEPS,
         fromTile: { x: market.x, y: market.y },
         toTile:   { ...startRoads[i % startRoads.length] },
         segT: 0, speed: PEDDLER_SPEED, prevTile: null, returnRoute: [], returnIdx: 0,
-        // trip statistics
         statsCargoAtStart: cargoFood,
         statsHousesServed: 0,
         statsFoodSold:     0,
         statsRevenue:      0,
         statsToolsSold:    0,
         statsDayCount:     dayCount,
-      }]
-      // citizen leaves home to peddle
-      citizens = citizens.map(c => c.id === citizenId ? { ...c, isAtHome: false } : c)
+      }
+      citizens = citizens.map(c => c.id === citizenId ? { ...c, peddlerState: newPeddlerState, isAtHome: false } : c)
     }
   }
-  ctx.citizens         = citizens
-  ctx.walkers          = walkers
-  ctx.marketBuyers     = marketBuyers
-  ctx.peddlers         = peddlers
-  ctx.marketInventory  = marketInventory
-  ctx.smithInventory   = smithInventory
-  ctx.granaryInventory = granaryInventory
+
+  ctx.citizens  = citizens
+  ctx.buildings = buildings
   return ctx
 }

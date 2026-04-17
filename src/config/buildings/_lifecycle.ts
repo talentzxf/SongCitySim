@@ -12,37 +12,11 @@
  *   - Export `const behavior: BuildingLifecycle` from behavior.ts
  *   - Implement only the hooks it needs
  *   - Never import from simulation.tsx directly — use only the context API
- *
- * Pool key convention
- *   "<store>.<goodId>"  e.g.  "mine.ore"  "granary.rice"  "market.wheat"
- *   Supported stores:  mine | smith | granary | market | farm
- *   Supported goodIds: ore | tools | rice | millet | wheat | soybean | vegetable
  */
-import type { Building, Citizen, CityState } from '../../state/types'
+import type { Building, BuildingType, Citizen, CityState } from '../../state/types'
 
-// ── Pool ──────────────────────────────────────────────────────────────────────
-
-/**
- * City-wide shared numeric pools, addressed by "<store>.<goodId>".
- *
- * Currently mapped pools
- *   "mine.ore"          total iron ore across all mines
- *   "smith.tools"       total iron tools across all smiths
- *   "granary.{crop}"    grain in all granaries (rice/millet/wheat/soybean/vegetable)
- *   "market.{crop}"     goods available at all markets
- *   "farm.{crop}"       in-progress crop yield on farms
- */
-export interface BuildingPool {
-  /** Read current value (returns 0 for unknown keys). */
-  get(key: string): number
-  /** Overwrite value directly. */
-  set(key: string, value: number): void
-  /**
-   * Add delta to current value, floor at 0.
-   * Returns the resulting value.
-   */
-  mutate(key: string, delta: number): number
-}
+/** Unit inventory fields that buildings can produce or consume. */
+export type UnitField = 'ironOre' | 'ironTools' | 'timber'
 
 // ── Household ledger ──────────────────────────────────────────────────────────
 
@@ -87,8 +61,40 @@ export interface BuildingTickContext {
   readonly cityMoney: number
   readonly citizens: readonly Citizen[]
 
-  // ── Mutable state APIs ────────────────────────────────────────────────────
-  readonly pool: BuildingPool
+  // ── Unit inventory — THIS building ───────────────────────────────────────
+
+  /**
+   * Produce (add) a unit resource to THIS building's inventory.
+   * Negative amounts are silently ignored — use consumeUnit for that.
+   */
+  produceUnit(field: UnitField, amount: number): void
+
+  /**
+   * Consume (deduct) a unit resource from the FIRST building of sourceType.
+   * Clamped at 0 — will never go negative.
+   */
+  consumeUnit(sourceType: BuildingType, field: UnitField, amount: number): void
+
+  /**
+   * Sum of a unit resource across all city buildings of the given type.
+   */
+  cityUnit(type: BuildingType, field: UnitField): number
+
+  // ── Terrain health ────────────────────────────────────────────────────────
+
+  /**
+   * Current health of a terrain resource tile.
+   * tileKey format: "${x},${y}"
+   * kind: any NaturalResourceDef.kind ('ore', 'forest', 'grassland', …)
+   */
+  terrainHealth(tileKey: string, kind: string): number
+
+  /**
+   * Deplete a terrain tile by amount (floor at 0).
+   */
+  depleteTerrainHealth(tileKey: string, kind: string, amount: number): void
+
+  // ── Household ledger ──────────────────────────────────────────────────────
   readonly household: BuildingHousehold
 }
 

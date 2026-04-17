@@ -7,6 +7,7 @@
  */
 import type { CitizenStatus, NeedCheck, NeedId, NeedContext, CropInventory } from './types'
 import { DAY_TICKS } from '../config/simulation'
+import { CROP_KEYS } from './helpers'
 
 // ── 每 tick 的 satisfaction 基础变化量（0-100）──────────────────────────────
 export const SAT_DELTA: Record<CitizenStatus, number> = {
@@ -133,13 +134,12 @@ export function buildNeedContext(
   houseSavings: Record<string, number>,
   buildings: { type: string; x: number; y: number }[],
 ): NeedContext {
-  const CROP_K = ['rice', 'millet', 'wheat', 'soybean', 'vegetable'] as const
   const food    = houseFood[houseId] ?? 0
   const hasRoad = roads.some(r =>
     (Math.abs(r.x - house.x) === 1 && r.y === house.y) ||
     (Math.abs(r.y - house.y) === 1 && r.x === house.x))
   const hc           = houseCrops[houseId]
-  const dietVariety  = hc ? CROP_K.filter(k => hc[k] > 0.1).length : 0
+  const dietVariety  = hc ? CROP_KEYS.filter(k => hc[k] > 0.1).length : 0
   const hasTea       = hc ? (hc['tea' as keyof typeof hc] ?? 0) > 0.1 : false
   const savings      = houseSavings[houseId] ?? 0
   const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - house.x), Math.abs(by - house.y))

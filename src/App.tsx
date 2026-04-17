@@ -3,10 +3,16 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { ConfigProvider, App as AntdApp } from 'antd'
-import { SimulationProvider, useSimulation, MAP_SIZE_X, MAP_SIZE_Y, getMountainHeight } from './state/simulation'
-import worldGenConfig from './config/world-gen'
+import { SimulationProvider, useSimulation, MAP_SIZE_X, MAP_SIZE_Y } from './state/simulation'
 import HUD from './ui/HUD'
 import MapScene from './scene/MapScene'
+import LoadingScreen from './ui/LoadingScreen'
+import LevelSelect from './levels/LevelSelect'
+import LevelIntro from './levels/LevelIntro'
+import Tutorial from './levels/Tutorial'
+import LEVELS from './levels/levelsData'
+import { LevelProvider } from './levels/LevelContext'
+import type { MapBounds } from './levels/levelsData'
 import { palette } from './theme/palette'
 
 // Bridges the antd App.useApp() message API to window.__MESSAGE_API__ so that
@@ -22,7 +28,7 @@ function MessageBridge() {
 
 // Debug: marker that visualizes OrbitControls.target - removed
 
-function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<any> }) {
+function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRefObject<any>; bounds: MapBounds }) {
   const { state } = useSimulation()
   const controlsEnabled = state.selectedTool === 'pan'
   const mouseButtons = React.useMemo(() => ({ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }), [])
@@ -38,48 +44,51 @@ function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<a
     if (!ctrl || !ctrl.target) return
     const t = ctrl.target as THREE.Vector3
     const cam = (ctrl as any).object as THREE.Camera | undefined
-    const halfX = Math.floor(MAP_SIZE_X / 2)
-    const halfY = Math.floor(MAP_SIZE_Y / 2)
-    const MAP_MIN_X = -halfX, MAP_MAX_X = halfX - 1
-    const MAP_MIN_Z = -halfY, MAP_MAX_Z = halfY - 1
     const pad = 0.5
-    const nx = Math.max(MAP_MIN_X + pad, Math.min(MAP_MAX_X - pad, t.x))
-    const nz = Math.max(MAP_MIN_Z + pad, Math.min(MAP_MAX_Z - pad, t.z))
+    const nx = Math.max(bounds.minX + pad, Math.min(bounds.maxX - pad, t.x))
+    const nz = Math.max(bounds.minY + pad, Math.min(bounds.maxY - pad, t.z))
     if (nx !== t.x || nz !== t.z) {
-      const dx = nx - t.x
-      const dz = nz - t.z
+      const dx = nx - t.x, dz = nz - t.z
       t.set(nx, t.y, nz)
       if (cam && (cam as any).position) {
-        (cam as any).position.x += dx
-        (cam as any).position.z += dz
+        const pos = (cam as any).position as { x: number; z: number }
+        pos.x += dx; pos.z += dz
       }
       if (typeof ctrl.update === 'function') ctrl.update()
     }
-  }, [])
+  }, [bounds])
 
-  // clampTarget disabled temporarily for debugging zoom behavior
+  // Expose bounds to window so MapScene can read them
   React.useEffect(() => {
-    // no-op while debugging
-    return () => {}
-  }, [clampTarget])
+    try { (window as any).__LEVEL_BOUNDS__ = bounds } catch {}
+  }, [bounds])
 
   React.useEffect(() => { if (controlsEnabled) clampTarget() }, [controlsEnabled, clampTarget])
 
-  // When controls change (pan/rotate/zoom), keep controls.target snapped to ground
-  // NOTE: removed — with screenSpacePanning=false the target.y never drifts during pan,
-  // and calling ctrl.update() from inside 'change' was causing the camera to subtly rotate.
-
-  // Disable screen-space panning: pan moves camera in world XZ plane only.
-  // This prevents target.y from changing during left-drag, which was the root cause of
-  // the "camera rotates while panning" symptom.
   React.useEffect(() => {
     const ctrl = controlsRef.current
     if (ctrl) (ctrl as any).screenSpacePanning = false
-    // Expose to window so HUD / MapScene can drive camera fly-to
     try { if (ctrl) (window as any).__THREE_CONTROLS__ = ctrl } catch {}
-  }) // no deps — re-apply every render to be safe (controls may remount)
+  })
 
-  const maxDist = Math.max(MAP_SIZE_X, MAP_SIZE_Y) * 2
+  // On bounds change, immediately fly camera target to centre of bounds
+  React.useEffect(() => {
+    const ctrl = controlsRef.current
+    if (!ctrl) return
+    const cx = (bounds.minX + bounds.maxX) / 2
+    const cz = (bounds.minY + bounds.maxY) / 2
+    // Camera height: lower for small areas, higher for large ones
+    const span  = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
+    const camH  = Math.max(6, span * 0.22)
+    const camOff = camH * 2.2   // wide horizontal offset → low oblique angle
+    ctrl.target.set(cx, 0, cz)
+    if (ctrl.object) {
+      ctrl.object.position.set(cx + camOff, camH, cz + camOff)
+    }
+    if (typeof ctrl.update === 'function') ctrl.update()
+  }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY]) // eslint-disable-line
+
+  const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
   return (
     <OrbitControls
       ref={controlsRef}
@@ -87,29 +96,102 @@ function ControlsBridge({ controlsRef }: { controlsRef: React.MutableRefObject<a
       enablePan={controlsEnabled}
       enableRotate={true}
       enableZoom={true}
-      maxDistance={maxDist}
+      maxDistance={span * 2}
       mouseButtons={mouseButtons}
     />
   )
 }
 
+// ─── App-level screen state ───────────────────────────────────────────────────
+type Screen = 'loading' | 'level-select' | 'level-intro' | 'game'
+
+const FULL_BOUNDS: MapBounds = {
+  minX: -Math.floor(MAP_SIZE_X / 2),
+  maxX:  Math.floor(MAP_SIZE_X / 2) - 1,
+  minY: -Math.floor(MAP_SIZE_Y / 2),
+  maxY:  Math.floor(MAP_SIZE_Y / 2) - 1,
+}
+
 export default function App() {
   const controlsRef = React.useRef<any>(null)
+  const [ready, setReady] = React.useState(false)
+  const [screen, setScreen] = React.useState<Screen>('loading')
+  const [activeLevelId, setActiveLevelId] = React.useState<string | null>(null)
+  const [cityName, setCityName] = React.useState<string>('定朔城')
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const [tutorialDone, setTutorialDone] = React.useState(false)
+  const showTutorial = screen === 'game' && activeLevelId === 'l01' && !tutorialDone
+
+  const activeLevel = React.useMemo(
+    () => activeLevelId ? (LEVELS.find(l => l.id === activeLevelId) ?? null) : null,
+    [activeLevelId],
+  )
+
+  React.useEffect(() => {
+    const id = setTimeout(() => setReady(true), 600)
+    return () => clearTimeout(id)
+  }, [])
+
+  const handleMode = (mode: 'campaign' | 'sandbox' | 'load') => {
+    if (mode === 'campaign') {
+      setScreen('level-select')
+    } else if (mode === 'load') {
+      fileInputRef.current?.click()
+      setActiveLevelId(null)
+      setScreen('game')
+    } else {
+      setActiveLevelId(null)
+      setScreen('game')
+    }
+  }
+
+  const handleStartLevel = (levelId: string) => {
+    setActiveLevelId(levelId)
+    const lvl = LEVELS.find(l => l.id === levelId)
+    if (lvl?.hasIntro) {
+      setScreen('level-intro')
+    } else {
+      setScreen('game')
+    }
+  }
+
+  const handleIntroConfirm = (name: string) => {
+    setCityName(name)
+    setScreen('game')
+  }
+
+  const bounds = activeLevel?.mapBounds ?? FULL_BOUNDS
+
   return (
     <ConfigProvider
       theme={{ token: { colorPrimary: palette.ui.primary, borderRadius: 10, colorBgContainer: palette.ui.surface } }}
     >
       <AntdApp>
         <MessageBridge />
-        <SimulationProvider>
-          <div className="app-root">
-            <HUD />
-            <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
-              <MapScene />
-              <ControlsBridge controlsRef={controlsRef} />
-            </Canvas>
-          </div>
-        </SimulationProvider>
+        <LoadingScreen visible={ready && screen === 'loading'} onEnter={handleMode} />
+        {screen === 'level-select' && (
+          <LevelSelect
+            onStartLevel={handleStartLevel}
+            onBack={() => setScreen('loading')}
+          />
+        )}
+        {screen === 'level-intro' && (
+          <LevelIntro onConfirm={handleIntroConfirm} />
+        )}
+        <input ref={fileInputRef} type="file" accept=".citysave,.json" style={{ display: 'none' }} />
+        <LevelProvider level={activeLevel} cityName={cityName}>
+          <SimulationProvider>
+              <div className="app-root" style={{ opacity: screen === 'game' ? 1 : 0, transition: 'opacity 0.6s ease 0.1s', pointerEvents: screen === 'game' ? 'auto' : 'none' }}>
+                <HUD />
+                {showTutorial && <Tutorial onDismiss={() => setTutorialDone(true)} />}
+                <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
+                <MapScene />
+                <ControlsBridge controlsRef={controlsRef} bounds={bounds} />
+              </Canvas>
+            </div>
+          </SimulationProvider>
+        </LevelProvider>
       </AntdApp>
     </ConfigProvider>
   )

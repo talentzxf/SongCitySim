@@ -6,6 +6,10 @@ export * from './types'
 export * from './needs'
 export * from './worldgen'
 export * from './helpers'
+// --- Save / load ----------------------------------------------------------
+export * from './save'
+import { consumePendingSave } from './save'
+import type { SaveFile } from './save'
 // --- Local imports (to use internally) -----------------------------------
 import type { BuildingType, CropType, CropInventory, MarketConfig, Tool, CityState } from './types'
 import { ALL_BUILDING_TYPES } from './types'
@@ -17,8 +21,8 @@ import {
   isNearRiver, cropForTile,
   ENTRY_TILE, HIGHWAY_MAIN_PATH, createHighwayRoads,
   getBuildingSize,
-  ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH,
 } from './helpers'
+import { NATURAL_RESOURCES, resourceInitialHealth } from '../config/naturalResources'
 // --- IoC: Chain of Responsibility tick engine -----------------------------
 import { buildTickContext, runTickChain, applyTickResult } from './routines'
 
@@ -33,32 +37,30 @@ const initial: CityState = {
   selectedRoadMode: 'around',
   lastAction: null, lastBuildAttempt: null,
   citizens: [],
-  houseFood: {}, houseCrops: {}, houseSavings: {},
+  migrants: [],
   taxRates: { ding: 5, tian: 0.10, shang: 0.05 },
   monthlyFarmOutput: 0, monthlyFarmValue: 0, monthlyMarketSales: 0,
   lastMonthlyFarmValue: 0, lastMonthlyMarketSales: 0,
   lastTaxBreakdown: { ding: 0, tian: 0, shang: 0 },
   lastMonthlyExpenseBreakdown: { yangmin: 0, jianshe: 0, total: 0 },
   monthlyConstructionCost: 0,
-  mineInventory: 0, smithInventory: 0, timberInventory: 0, houseTools: {},
-  oreVeinHealth:   Object.fromEntries(ORE_VEIN_TILES.map(t => [`${t.x},${t.y}`, ORE_VEIN_INITIAL_HEALTH])),
-  forestHealth:    Object.fromEntries(
-    [...FOREST_TILES, ...MOUNTAIN_FOREST_TILES].map(t => [`${t.x},${t.y}`, FOREST_TILE_INITIAL_HEALTH])
-  ),
-  grasslandHealth: Object.fromEntries(GRASSLAND_TILES.map(t => [`${t.x},${t.y}`, GRASSLAND_TILE_INITIAL_HEALTH])),
-  farmInventory: createEmptyInventory(),
-  granaryInventory: createEmptyInventory(),
-  marketInventory: { rice: 10, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 },
-  migrants: [], walkers: [], peddlers: [],
-  farmPiles: [], oxCarts: [], marketBuyers: [],
-  marketConfig: {},
-  peddlerTripLog: {},
+  terrainResources: (() => {
+    const tileSets: Record<string, { x: number; y: number }[]> = {
+      ore:       ORE_VEIN_TILES,
+      forest:    [...FOREST_TILES, ...MOUNTAIN_FOREST_TILES],
+      grassland: GRASSLAND_TILES,
+    }
+    return Object.fromEntries(
+      NATURAL_RESOURCES.map(r => [
+        r.kind,
+        Object.fromEntries((tileSets[r.kind] ?? []).map(t => [`${t.x},${t.y}`, r.initialHealth])),
+      ])
+    )
+  })(),
   month: 1, dayTime: 0.5, dayCount: 1,
   lastHouseholdBuyDay: 0,
   lastMonthlyTax: 0, avgSatisfaction: 71, needPressure: { food: 32, safety: 28, culture: 44 },
-  houseDead: {},
   simSpeed: 1,
-  houseSafety: {},
   cityWenmai: 0,
   cityShangmai: 0,
 }
@@ -92,10 +94,11 @@ try {
     }
     const { x: bx, y: by } = chosen ?? preferred
     const bid = 'b-house-1'
-    initial.buildings = [{ id: bid, type: 'house', x: bx, y: by, w: 1, h: 1, level: 1, capacity: 6, occupants: 0, workerSlots: 0, cost: 100 }]
-    initial.houseFood    = { [bid]: 15 }
-    initial.houseCrops   = { [bid]: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } }
-    initial.houseSavings = { [bid]: 50 }
+    initial.buildings = [{
+      id: bid, type: 'house', x: bx, y: by, w: 1, h: 1, level: 1, capacity: 6, occupants: 0, workerSlots: 0, cost: 100,
+      agents: [],
+      residentData: { food: 15, crops: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 }, savings: 50, tools: 0, safety: 0, dead: 0 },
+    }]
   }
 } catch { /* ignore � best-effort for tests */ }
 
@@ -116,6 +119,7 @@ const SimulationContext = createContext<{
   selectRoadMode: (mode: 'around' | 'over') => void
   upgradeBuilding: (id: string) => void
   selectTerrainTile: (t: { x: number; y: number; kind: 'forest' | 'grassland' | 'ore' | 'mountainForest' } | null) => void
+  loadSave: (save: SaveFile) => void
 }>({
   state: initial, start: () => {}, stop: () => {}, setSimSpeed: () => {}, setMoney: () => {}, setPopulation: () => {},
   placeBuilding: () => {}, removeBuilding: () => {}, selectBuildingType: () => {},
@@ -124,12 +128,26 @@ const SimulationContext = createContext<{
   selectTool: () => {}, selectBuilding: () => {}, selectCitizen: () => {},
   setMarketConfig: () => {}, selectRoadMode: () => {}, upgradeBuilding: () => {},
   selectTerrainTile: () => {},
+  loadSave: () => {},
 })
 
 // --- Provider -------------------------------------------------------------
 export function SimulationProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<CityState>(initial)
   const interval = useRef<number | null>(null)
+
+  // ── Restore any cross-seed save that was stashed during a redirect ────────
+  useEffect(() => {
+    const pending = consumePendingSave()
+    if (pending) {
+      setState(_s => ({
+        ...initial,
+        ...pending.state,
+        running: false,
+      }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (state.running && interval.current == null) {
@@ -187,24 +205,32 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
           }
         }
         const id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`
-        const newB = { id, type: bt, x, y, w: bw, h: bh, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: effectiveCost }
         const isResidential = bt === 'house' || bt === 'manor'
-        const houseFood    = isResidential ? { ...s.houseFood,    [id]: bt === 'manor' ? 30 : 15 }  : s.houseFood
-        const houseCrops   = isResidential ? { ...s.houseCrops,   [id]: { rice: bt === 'manor' ? 30 : 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 } } : s.houseCrops
-        const houseSavings = isResidential ? { ...s.houseSavings, [id]: bt === 'manor' ? 200 : 50 } : s.houseSavings
-        const houseTools   = isResidential ? { ...s.houseTools,   [id]: 0 }                          : s.houseTools
-        const houseDead    = isResidential ? { ...s.houseDead,    [id]: 0 }                          : s.houseDead
-        const marketConfig = bt === 'market' ? { ...s.marketConfig, [id]: { ...DEFAULT_MARKET_CFG } } : s.marketConfig
-        // 新建集市时，注入启动库存（米 30 担），让集市开业即有货
-        const marketInventory = bt === 'market'
-          ? { ...s.marketInventory, rice: clampCrop(s.marketInventory.rice + 30) }
-          : s.marketInventory
-        // 新建粮仓时，注入启动库存，避免粮仓一开始空空如也
-        const granaryInventory = bt === 'granary'
-          ? { ...s.granaryInventory, rice: clampCrop(s.granaryInventory.rice + 50), wheat: clampCrop(s.granaryInventory.wheat + 20) }
-          : s.granaryInventory
+        // Build residentData / inventory / marketConfig on the building itself
+        const residentData = isResidential ? {
+          food: bt === 'manor' ? 30 : 15,
+          crops: { rice: bt === 'manor' ? 30 : 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 },
+          savings: bt === 'manor' ? 200 : 50,
+          tools: 0, safety: 0, dead: 0,
+        } : undefined
+        const marketCfg = bt === 'market' ? { ...DEFAULT_MARKET_CFG } : undefined
+        const inventory = (() => {
+          const base = { crops: createEmptyInventory(), ironOre: 0, ironTools: 0, timber: 0 }
+          if (bt === 'market')  return { ...base, crops: { ...base.crops, rice: 30 } }
+          if (bt === 'granary') return { ...base, crops: { ...base.crops, rice: 50, wheat: 20 } }
+          if (bt === 'mine' || bt === 'blacksmith' || (bt as string) === 'lumbercamp') return base
+          return undefined
+        })()
+        const newB = {
+          id, type: bt, x, y, w: bw, h: bh, level: 1,
+          capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: effectiveCost,
+          agents: [] as typeof s.buildings[0]['agents'],
+          ...(residentData !== undefined ? { residentData } : {}),
+          ...(inventory    !== undefined ? { inventory }    : {}),
+          ...(marketCfg    !== undefined ? { marketConfig: marketCfg } : {}),
+        }
         action.success = true
-        return { ...s, buildings: [...s.buildings, newB], houseFood, houseCrops, houseSavings, houseTools, houseDead, marketConfig, marketInventory, granaryInventory, money: s.money - effectiveCost, monthlyConstructionCost: s.monthlyConstructionCost + effectiveCost, lastBuildAttempt: { ...ba, success: true } }
+        return { ...s, buildings: [...s.buildings, newB], money: s.money - effectiveCost, monthlyConstructionCost: s.monthlyConstructionCost + effectiveCost, lastBuildAttempt: { ...ba, success: true } }
       })
     } finally { try { (window as any).__LAST_ACTION__ = action } catch { /* */ } }
     return action
@@ -214,50 +240,52 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
     setState(s => {
       const bldg = s.buildings.find(b => b.id === id); if (!bldg) return s
       const isHouse = bldg.type === 'house' || bldg.type === 'manor'
-      const houseFood:    Record<string, number>        = { ...s.houseFood }
-      const houseCrops:   Record<string, CropInventory> = Object.fromEntries(Object.entries(s.houseCrops).map(([k, v]) => [k, { ...v }]))
-      const houseSavings: Record<string, number>        = { ...s.houseSavings }
-      const houseTools:   Record<string, number>        = { ...s.houseTools }
-      const houseDead:    Record<string, number>        = { ...s.houseDead }
-      const { [id]: _mc, ...marketConfig } = s.marketConfig
+      // Filter out migrants targeting this house / peddlers returning to this market
       const migrants = s.migrants.filter(m => m.targetHouseId !== id)
-      const peddlers = s.peddlers.filter(p => p.marketId !== id)
-      let citizens = s.citizens.map(c => ({ ...c }))
-      let walkers  = s.walkers
+      let citizens   = s.citizens.map(c => ({ ...c }))
+      let buildings  = s.buildings
       const evictedIds = new Set<string>()
       if (isHouse) {
-        const displaced = s.citizens.filter(c => c.houseId === id)
-        const otherHouses = s.buildings.filter(h => h.type === 'house' && h.id !== id)
-        const occByHouse = new Map<string, number>()
+        const displaced   = s.citizens.filter(c => c.houseId === id)
+        const otherHouses = s.buildings.filter(h => (h.type === 'house' || h.type === 'manor') && h.id !== id)
+        const occByHouse  = new Map<string, number>()
         for (const c of s.citizens) { if (c.houseId !== id) occByHouse.set(c.houseId, (occByHouse.get(c.houseId) ?? 0) + 1) }
-        const n = displaced.length || 1
-        const foodShare = (houseFood[id] ?? 0) / n, savingsShare = (houseSavings[id] ?? 0) / n
-        const cropsSource = houseCrops[id]; let toolsToGive = houseTools[id] ?? 0
+        const n           = displaced.length || 1
+        const srcRd       = bldg.residentData
+        const foodShare   = (srcRd?.food    ?? 0) / n
+        const savingsShare= (srcRd?.savings ?? 0) / n
+        const cropsSource = srcRd?.crops
+        let toolsToGive   = srcRd?.tools ?? 0
         for (const c of displaced) {
           const found = otherHouses.filter(h => (occByHouse.get(h.id) ?? 0) < h.capacity).sort((a, z) => (z.capacity-(occByHouse.get(z.id)??0)) - (a.capacity-(occByHouse.get(a.id)??0)))[0] ?? null
           if (found) {
             const idx = citizens.findIndex(x => x.id === c.id)
             if (idx >= 0) citizens[idx] = { ...citizens[idx], houseId: found.id }
             occByHouse.set(found.id, (occByHouse.get(found.id) ?? 0) + 1)
-            houseFood[found.id]    = clampFood((houseFood[found.id] ?? 0) + foodShare)
-            houseSavings[found.id] = (houseSavings[found.id] ?? 0) + savingsShare
-            if (cropsSource) {
-              const hc = houseCrops[found.id] ?? createEmptyInventory()
-              for (const k of CROP_KEYS) hc[k] = clampCrop(hc[k] + (cropsSource[k] / n))
-              houseCrops[found.id] = hc
-            }
-            if (toolsToGive > 0) { houseTools[found.id] = (houseTools[found.id] ?? 0) + toolsToGive; toolsToGive = 0 }
+            const destRd = buildings.find(b => b.id === found.id)?.residentData
+            const newFood = clampFood((destRd?.food ?? 0) + foodShare)
+            const newSav  = (destRd?.savings ?? 0) + savingsShare
+            const newCrops = { ...(destRd?.crops ?? createEmptyInventory()) }
+            if (cropsSource) { for (const k of CROP_KEYS) newCrops[k] = clampCrop(newCrops[k] + (cropsSource[k] / n)) }
+            const newTools = toolsToGive > 0 ? (destRd?.tools ?? 0) + toolsToGive : (destRd?.tools ?? 0)
+            if (toolsToGive > 0) toolsToGive = 0
+            buildings = buildings.map(b => b.id === found.id && b.residentData
+              ? { ...b, residentData: { ...b.residentData, food: newFood, savings: newSav, crops: newCrops, tools: newTools } }
+              : b,
+            )
           } else { evictedIds.add(c.id) }
         }
         citizens = citizens.filter(c => !evictedIds.has(c.id))
-        walkers  = walkers.filter(w => !evictedIds.has(w.citizenId))
+        // Cancel any active motion for evicted citizens
+        citizens = citizens.map(c => evictedIds.has(c.id) ? { ...c, motion: null } : c)
       } else {
-        citizens = citizens.map(c => c.workplaceId === id ? { ...c, workplaceId: null, profession: null, isAtHome: true } : c)
-        const workerIds = new Set(s.citizens.filter(c => c.workplaceId === id).map(c => c.id))
-        walkers = walkers.filter(w => !(workerIds.has(w.citizenId) && w.purpose === 'toWork'))
+        // Workers of the demolished building: clear workplace & cancel toWork motion
+        citizens = citizens.map(c => c.workplaceId === id ? { ...c, workplaceId: null, profession: null, isAtHome: true, motion: c.motion?.purpose === 'toWork' ? null : c.motion } : c)
+        // Peddlers returning to this market: clear peddlerState
+        citizens = citizens.map(c => c.peddlerState?.marketId === id ? { ...c, peddlerState: null, isAtHome: true } : c)
       }
-      delete houseFood[id]; delete houseCrops[id]; delete houseSavings[id]; delete houseTools[id]; delete houseDead[id]
-      return { ...s, buildings: s.buildings.filter(b => b.id !== id), citizens, migrants, walkers, peddlers, houseFood, houseCrops, houseSavings, houseTools, houseDead, marketConfig, population: citizens.length, selectedBuildingId: null, selectedCitizenId: s.selectedCitizenId && !citizens.some(c => c.id === s.selectedCitizenId) ? null : s.selectedCitizenId }
+      buildings = buildings.filter(b => b.id !== id)
+      return { ...s, buildings, citizens, migrants, population: citizens.length, selectedBuildingId: null, selectedCitizenId: s.selectedCitizenId && !citizens.some(c => c.id === s.selectedCitizenId) ? null : s.selectedCitizenId }
     })
   }
 
@@ -269,7 +297,9 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
     setState(s => ({ ...s, selectedTerrainTile: t, selectedBuildingId: null, selectedCitizenId: null, selectedFarmZoneId: null }))
   }
   function setTaxRates(rates: { ding: number; tian: number; shang: number }) { setState(s => ({ ...s, taxRates: rates })) }
-  function setMarketConfig(id: string, cfg: MarketConfig) { setState(s => ({ ...s, marketConfig: { ...s.marketConfig, [id]: cfg } })) }
+  function setMarketConfig(id: string, cfg: MarketConfig) {
+    setState(s => ({ ...s, buildings: s.buildings.map(b => b.id === id ? { ...b, marketConfig: cfg } : b) }))
+  }
   function setFarmCrop(id: string, crop: CropType) {
     setState(s => ({ ...s, farmZones: s.farmZones.map(z => {
       if (z.id !== id) return z
@@ -320,7 +350,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         // ── 茶园：2×2 必须全为山地 ────────────────────────────────────────
         if (!footprint.every(t => isMountainAt(t.x, t.y))) return s
         const id = `fz-${Date.now()}-${Math.floor(Math.random() * 10000)}`
-        return { ...s, farmZones: [...s.farmZones, { id, x, y, zoneType: 'tea' as const, cropType: 'tea' as const, growthProgress: 0 }] }
+        return { ...s, farmZones: [...s.farmZones, { id, x, y, zoneType: 'tea' as const, cropType: 'tea' as const, growthProgress: 0, piles: [] }] }
       } else {
         // ── 粮田：不能有山地，必须在河流三格之内 ─────────────────────────
         if (footprint.some(t => isMountainAt(t.x, t.y))) return s
@@ -328,7 +358,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         const nearRiverAdj = footprint.some(t => isNearRiver(t.x, t.y))
         const cropType: CropType = nearRiverAdj ? 'rice' : cropForTile(x, y)
         const id = `fz-${Date.now()}-${Math.floor(Math.random() * 10000)}`
-        return { ...s, farmZones: [...s.farmZones, { id, x, y, zoneType: 'grain' as const, cropType, growthProgress: 0 }] }
+        return { ...s, farmZones: [...s.farmZones, { id, x, y, zoneType: 'grain' as const, cropType, growthProgress: 0, piles: [] }] }
       }
     })
   }
@@ -339,8 +369,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       return {
         ...s,
         farmZones: s.farmZones.filter(z => z.id !== zone.id),
-        citizens: s.citizens.map(c => c.farmZoneId === zone.id ? { ...c, farmZoneId: null, profession: null, isAtHome: true } : c),
-        walkers: s.walkers.filter(w => !(farmerIds.has(w.citizenId) && w.purpose === 'toWork')),
+        citizens: s.citizens.map(c => c.farmZoneId === zone.id ? { ...c, farmZoneId: null, profession: null, isAtHome: true, motion: c.motion?.purpose === 'toWork' ? null : c.motion } : c),
         selectedFarmZoneId: s.selectedFarmZoneId === zone.id ? null : s.selectedFarmZoneId,
       }
     })
@@ -351,6 +380,17 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
     setState(s => ({ ...s, selectedTool: t, selectedBuildingType: isBT ? (t as BuildingType) : null, selectedBuildingId: keepSelection ? s.selectedBuildingId : null, selectedCitizenId: keepSelection ? s.selectedCitizenId : null, selectedFarmZoneId: keepSelection ? s.selectedFarmZoneId : null, selectedTerrainTile: keepSelection ? s.selectedTerrainTile : null }))
   }
   function selectRoadMode(mode: 'around' | 'over') { setState(s => ({ ...s, selectedRoadMode: mode })) }
+
+  // ── 读档 ──────────────────────────────────────────────────────────────────
+  function loadSave(save: SaveFile) {
+    // Start from the clean initial defaults (covers all UI fields),
+    // then overlay the saved game state.  Always start paused.
+    setState(_s => ({
+      ...initial,
+      ...save.state,
+      running: false,
+    }))
+  }
 
   // ── 升级建筑 ──────────────────────────────────────────────────────────────
   const UPGRADE_TABLE: Partial<Record<string, { maxLevel: number; costs: number[]; workerSlots: number[] }>> = {
@@ -399,7 +439,10 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         selectTool:    (t: Tool) => { selectTool(t); return true },
         setMoney:      (v: number) => { setMoney(v); return true },
         setDayTime:    (v: number) => { setState(s => ({ ...s, dayTime: Math.max(0, Math.min(0.999, v)) })); return true },
-        setHouseFood:  (houseId: string, v: number) => { setState(s => ({ ...s, houseFood: { ...s.houseFood, [houseId]: v } })); return true },
+        setHouseFood:  (houseId: string, v: number) => {
+          setState(s => ({ ...s, buildings: s.buildings.map(b => b.id === houseId && b.residentData ? { ...b, residentData: { ...b.residentData, food: v } } : b) }))
+          return true
+        },
         selectBuilding:(id: string | null) => { selectBuilding(id); return true },
         selectCitizen: (id: string | null) => { selectCitizen(id); return true },
         applyToolAt:   (x: number, y: number, tool?: Tool) => {
@@ -413,9 +456,9 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
               const id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`
               const { w: bw2, h: bh2 } = getBuildingSize(bt)
               const isRes = bt === 'house' || bt === 'manor'
-              const houseFood = isRes ? { ...s.houseFood, [id]: bt === 'manor' ? 30 : 15 } : s.houseFood
+              const residentData = isRes ? { food: bt === 'manor' ? 30 : 15, crops: createEmptyInventory(), savings: bt === 'manor' ? 200 : 50, tools: 0, safety: 0, dead: 0 } : undefined
               action.success = true
-              return { ...s, buildings: [...s.buildings, { id, type: bt, x, y, w: bw2, h: bh2, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: def.cost }], houseFood, money: s.money - def.cost, monthlyConstructionCost: s.monthlyConstructionCost + def.cost }
+              return { ...s, buildings: [...s.buildings, { id, type: bt, x, y, w: bw2, h: bh2, level: 1, capacity: def.capacity, occupants: 0, workerSlots: def.workerSlots, cost: def.cost, agents: [], ...(residentData ? { residentData } : {}) }], money: s.money - def.cost, monthlyConstructionCost: s.monthlyConstructionCost + def.cost }
             })
             try { (window as any).__LAST_ACTION__ = action } catch { /* */ }
             return action
@@ -438,7 +481,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   }, [state])
 
   return (
-    <SimulationContext.Provider value={{ state, start, stop, setSimSpeed, setMoney, setPopulation, placeBuilding, removeBuilding, selectBuildingType, placeRoad, removeRoad, placeFarmZone, removeFarmZone, selectFarmZone, setFarmCrop, setTaxRates, setMarketConfig, selectTool, selectBuilding, selectCitizen, selectRoadMode, upgradeBuilding, selectTerrainTile }}>
+    <SimulationContext.Provider value={{ state, start, stop, setSimSpeed, setMoney, setPopulation, placeBuilding, removeBuilding, selectBuildingType, placeRoad, removeRoad, placeFarmZone, removeFarmZone, selectFarmZone, setFarmCrop, setTaxRates, setMarketConfig, selectTool, selectBuilding, selectCitizen, selectRoadMode, upgradeBuilding, selectTerrainTile, loadSave }}>
       {children}
     </SimulationContext.Provider>
   )

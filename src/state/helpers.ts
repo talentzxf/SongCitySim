@@ -13,9 +13,11 @@ import {
 } from './worldgen'
 import type {
   BuildingType, Profession, CropType, CropInventory,
-  Building, MarketConfig, FarmZone, Peddler, Migrant, Walker, OxCart, MarketBuyer,
+  Building, MarketConfig, FarmZone, Migrant,
   CitizenNeeds, Gender,
+  CitizenMotion, PeddlerState, BuildingAgent, ResidentData, Citizen,
 } from './types'
+import { MARKET_CAP_PER_SHOP } from '../config/buildings/market/behavior'
 
 // ─── Re-exported terrain helpers ─────────────────────────────────────────
 export { isRiverAt, isMountainAt, isOreVeinAt, isForestAt, getMountainHeight, MAP_SIZE_X, MAP_SIZE_Y } from './worldgen'
@@ -25,6 +27,7 @@ export { isAnyForestAt, isMountainForestAt } from './worldgen'
 export function clamp01(v: number) { return Math.max(0, Math.min(1, v)) }
 export function clampFood(v: number) { return Math.max(0, Math.min(30, Math.round(v * 10) / 10)) }
 export function clampCrop(v: number) { return Math.max(0, Math.round(v * 100) / 100) }
+/** Canonical `"x,y"` tile key. Use this everywhere — roadKey was a duplicate alias. */
 export function tileKey(x: number, y: number) { return `${x},${y}` }
 
 // ─── Building definitions ─────────────────────────────────────────────────
@@ -73,35 +76,26 @@ export const ECONOMY = {
   householdDailyBuyPerResident: configData.economy?.householdDailyBuyPerResident ?? 0.34,
 }
 
-export const BRIDGE_BASE_COST       = 80
-export const FOREST_CLEAR_COST         = 25   // 伐木清路每格额外费用
+export const BRIDGE_BASE_COST  = 80
+export const FOREST_CLEAR_COST = 25   // 伐木清路每格额外费用
 // ─── Resource tile initial health ─────────────────────────────────────────
-export const ORE_VEIN_INITIAL_HEALTH   = 600  // 铁矿脉初始储量（单位：矿石）
-export const FOREST_TILE_INITIAL_HEALTH = 400 // 林地初始储量（单位：木材）
-export const GRASSLAND_TILE_INITIAL_HEALTH = 300 // 草地初始储量（单位：牧草）
-export const GRANARY_CAPACITY_PER   = 200
-export const MARKET_TOTAL_SLOTS     = 6
-export const MARKET_CAP_PER_SHOP    = 25
+// Re-exported from naturalResources registry for backward compatibility.
+export { ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, resourceInitialHealth } from '../config/naturalResources'
+
+// ─── Building capacity constants (re-exported from each building's own config) ─
+export { GRANARY_CAPACITY_PER } from '../config/buildings/granary/behavior'
+export { SMITH_CAPACITY_PER }   from '../config/buildings/blacksmith/behavior'
+export { MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP,
+         PEDDLER_MAX_STEPS, PEDDLER_SPEED,
+         PEDDLER_CARRY_FOOD, PEDDLER_CARRY_TOOLS,
+         PEDDLER_SELL_FOOD, PEDDLER_FOOD_THRESH } from '../config/buildings/market/behavior'
+
+// ─── Tool economic chain (re-exported from config/economy/tools) ───────────
+export { FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS,
+         TOOL_DURABILITY_MAX, TOOL_WEAR_PER_DAY,
+         TOOL_DURABILITY_LOW } from '../config/economy/tools'
+
 export const DEFAULT_MARKET_CFG: MarketConfig = { shopkeepers: 4, peddlers: 2 }
-export const MINE_CAPACITY_PER      = 60
-export const SMITH_CAPACITY_PER     = 20
-export const ORE_PER_MINER_DAY      = 3
-export const ORE_PER_TOOL           = 2
-export const FARM_TOOL_PRICE        = 40
-export const TOOL_EFFICIENCY_BONUS  = 1.5
-export const TOOL_DURABILITY_MAX    = 100
-export const TOOL_WEAR_PER_DAY      = 4
-export const TOOL_DURABILITY_LOW    = 20
-export const PEDDLER_MAX_STEPS      = 30
-export const PEDDLER_SPEED          = 3.5
-export const PEDDLER_CARRY_FOOD     = 10
-export const PEDDLER_CARRY_TOOLS    = 2
-export const PEDDLER_SELL_FOOD      = 5
-export const PEDDLER_FOOD_THRESH    = 10
-// 采木场 / 造纸坊
-export const LUMBER_CAPACITY_PER    = 80   // 每座采木场的木材上限
-export const TIMBER_PER_LOGGER_DAY  = 2    // 每名伐木工人每日产出木材
-export const PAPERMILL_CONSUME_PER_DAY = 1 // 造纸坊每日消耗木材
 
 // ─── Disease constants ────────────────────────────────────────────────────
 export const SICK_DEATH_TICKS      = MONTH_TICKS * 3   // 连续患病超过 3 个月 → 死亡
@@ -111,7 +105,7 @@ export const DEAD_SPREAD_CHANCE    = 0.0006
 
 // ─── Inventory helpers ─────────────────────────────────────────────────────
 export function createEmptyInventory(): CropInventory {
-  return { rice: 0, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 }
+  return Object.fromEntries(CROP_KEYS.map(k => [k, 0])) as CropInventory
 }
 export function inventoryTotal(inv: CropInventory) {
   return CROP_KEYS.reduce((s, k) => s + inv[k], 0)
@@ -163,7 +157,7 @@ export function cropForTile(x: number, y: number): CropType {
 export function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
 }
-export function roadKey(x: number, y: number) { return `${x},${y}` }
+// roadKey was a duplicate of tileKey — removed.  Use tileKey() for all "${x},${y}" keys.
 export function parseKey(k: string) { const [x, y] = k.split(',').map(Number); return { x, y } }
 export function isRoadAt(roads: { x: number; y: number }[], x: number, y: number) {
   return roads.some(r => r.x === x && r.y === y)
@@ -218,8 +212,8 @@ export function roadsAdjacent(roads: { x: number; y: number }[], bx: number, by:
   return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(d => ({ x: bx + d[0], y: by + d[1] })).filter(c => isRoadAt(roads, c.x, c.y))
 }
 export function findRoadPath(roads: { x: number; y: number }[], start: { x: number; y: number }, end: { x: number; y: number }) {
-  const set = new Set(roads.map(r => roadKey(r.x, r.y)))
-  const sk = roadKey(start.x, start.y), ek = roadKey(end.x, end.y)
+  const set = new Set(roads.map(r => tileKey(r.x, r.y)))
+  const sk = tileKey(start.x, start.y), ek = tileKey(end.x, end.y)
   if (!set.has(sk) || !set.has(ek)) return null
   const q = [sk], parent = new Map<string, string | null>()
   parent.set(sk, null)
@@ -227,7 +221,7 @@ export function findRoadPath(roads: { x: number; y: number }[], start: { x: numb
     const cur = q.shift()!; if (cur === ek) break
     const { x, y } = parseKey(cur)
     for (const d of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
-      const nk = roadKey(x + d.x, y + d.y)
+      const nk = tileKey(x + d.x, y + d.y)
       if (!set.has(nk) || parent.has(nk)) continue
       parent.set(nk, cur); q.push(nk)
     }
@@ -271,11 +265,11 @@ export function buildOxCartRoute(
 }
 
 // ─── Market helpers ───────────────────────────────────────────────────────
-export function getMarketCfg(id: string, cfg: Record<string, MarketConfig>): MarketConfig {
-  return cfg[id] ?? DEFAULT_MARKET_CFG
+export function getMarketCfg(building: Building): MarketConfig {
+  return building.marketConfig ?? DEFAULT_MARKET_CFG
 }
-export function computeMarketCap(markets: Building[], cfg: Record<string, MarketConfig>): number {
-  return markets.reduce((s, m) => s + getMarketCfg(m.id, cfg).shopkeepers * MARKET_CAP_PER_SHOP, 0)
+export function computeMarketCap(markets: Building[]): number {
+  return markets.reduce((s, m) => s + getMarketCfg(m).shopkeepers * MARKET_CAP_PER_SHOP, 0)
 }
 
 // ─── Peddler helpers ──────────────────────────────────────────────────────
@@ -475,25 +469,114 @@ export function logicalMigrantPos(m: Migrant) {
   const b = m.route[m.routeIndex + 1] ?? a
   return { x: a.x + (b.x - a.x) * m.routeT, y: a.y + (b.y - a.y) * m.routeT }
 }
-export function logicalWalkerPos(w: Walker) {
-  const a = w.route[w.routeIndex] ?? w.route[w.route.length - 1] ?? { x: 0, y: 0 }
-  const b = w.route[w.routeIndex + 1] ?? a
-  return { x: a.x + (b.x - a.x) * w.routeT, y: a.y + (b.y - a.y) * w.routeT }
+/** Interpolated position for a citizen in motion (was logicalWalkerPos). */
+export function logicalMotionPos(motion: CitizenMotion) {
+  const a = motion.route[motion.routeIndex] ?? motion.route[motion.route.length - 1] ?? { x: 0, y: 0 }
+  const b = motion.route[motion.routeIndex + 1] ?? a
+  return { x: a.x + (b.x - a.x) * motion.routeT, y: a.y + (b.y - a.y) * motion.routeT }
 }
-export function logicalOxCartPos(c: OxCart) {
-  const a = c.route[c.routeIndex] ?? c.route[c.route.length - 1] ?? { x: 0, y: 0 }
-  const b = c.route[c.routeIndex + 1] ?? a
-  return { x: a.x + (b.x - a.x) * c.routeT, y: a.y + (b.y - a.y) * c.routeT }
+/** Interpolated position for a building logistics agent (ox-cart or market buyer). */
+export function logicalAgentPos(agent: BuildingAgent) {
+  const a = agent.route[agent.routeIndex] ?? agent.route[agent.route.length - 1] ?? { x: 0, y: 0 }
+  const b = agent.route[agent.routeIndex + 1] ?? a
+  return { x: a.x + (b.x - a.x) * agent.routeT, y: a.y + (b.y - a.y) * agent.routeT }
 }
-export function logicalMarketBuyerPos(mb: MarketBuyer) {
-  const a = mb.route[mb.routeIndex] ?? mb.route[mb.route.length - 1] ?? { x: 0, y: 0 }
-  const b = mb.route[mb.routeIndex + 1] ?? a
-  return { x: a.x + (b.x - a.x) * mb.routeT, y: a.y + (b.y - a.y) * mb.routeT }
-}
-export function logicalPeddlerPos(p: Peddler) {
+/** Interpolated position for a peddler state (merchant delivery). */
+export function logicalPeddlerStatePos(p: PeddlerState) {
   return {
     x: p.fromTile.x + (p.toTile.x - p.fromTile.x) * p.segT,
     y: p.fromTile.y + (p.toTile.y - p.fromTile.y) * p.segT,
   }
 }
+
+// ─── Entity-state accessors ───────────────────────────────────────────────
+/** Empty resident data (default for newly built residential buildings). */
+export const EMPTY_RESIDENT_DATA: ResidentData = {
+  food: 0, crops: {} as CropInventory, savings: 0, tools: 0, safety: 0, dead: 0,
+}
+
+/** Get a house/manor building's resident data (safe, returns zeros if missing). */
+export function getResidentData(buildings: Building[], houseId: string): ResidentData {
+  return buildings.find(b => b.id === houseId)?.residentData
+    ?? { ...EMPTY_RESIDENT_DATA, crops: createEmptyInventory() }
+}
+
+/** Immutably update a house/manor building's resident data fields. */
+export function updateResidentData(
+  buildings: Building[], houseId: string, patch: Partial<ResidentData>,
+): Building[] {
+  return buildings.map(b =>
+    b.id === houseId && b.residentData
+      ? { ...b, residentData: { ...b.residentData, ...patch } }
+      : b,
+  )
+}
+
+/** Get aggregate CropInventory for a set of buildings (e.g. all granaries or all markets). */
+export function getAggregateCrops(bldgs: Building[]): CropInventory {
+  const result = createEmptyInventory()
+  for (const b of bldgs) if (b.inventory) for (const k of CROP_KEYS) result[k] = clampCrop(result[k] + b.inventory.crops[k])
+  return result
+}
+
+/** Mutate a specific building's inventory crop by delta; returns updated buildings array. */
+export function addBldgCrop(buildings: Building[], bldgId: string, crop: CropType, delta: number): Building[] {
+  return buildings.map(b =>
+    b.id === bldgId && b.inventory
+      ? { ...b, inventory: { ...b.inventory, crops: { ...b.inventory.crops, [crop]: clampCrop(b.inventory.crops[crop] + delta) } } }
+      : b,
+  )
+}
+
+/** Mutate a specific building's ironOre/ironTools/timber inventory. */
+export function addBldgUnit(
+  buildings: Building[], bldgId: string, field: 'ironOre' | 'ironTools' | 'timber', delta: number,
+): Building[] {
+  return buildings.map(b =>
+    b.id === bldgId && b.inventory
+      ? { ...b, inventory: { ...b.inventory, [field]: Math.max(0, b.inventory[field] + delta) } }
+      : b,
+  )
+}
+
+/** Sum of a specific unit field across all buildings (mine ore, smith tools, timber). */
+export function getAggregateBldgUnit(bldgs: Building[], field: 'ironOre' | 'ironTools' | 'timber'): number {
+  return bldgs.reduce((s, b) => s + (b.inventory?.[field] ?? 0), 0)
+}
+
+/** Spawn a citizen motion (was: push to walkers[]). */
+export function startCitizenMotion(citizens: Citizen[], citizenId: string, motion: CitizenMotion): Citizen[] {
+  return citizens.map(c => c.id === citizenId ? { ...c, motion } : c)
+}
+
+/** Clear a citizen's motion (they arrived). */
+export function clearCitizenMotion(citizens: Citizen[], citizenId: string): Citizen[] {
+  return citizens.map(c => c.id === citizenId ? { ...c, motion: null } : c)
+}
+
+/** Collect all active building agents of a given kind from all buildings. */
+export function getAllAgents(buildings: Building[], kind: 'oxcart' | 'marketbuyer'): BuildingAgent[] {
+  return buildings.flatMap(b => b.agents.filter(a => a.kind === kind))
+}
+
+/** Add an agent to a specific building. */
+export function addBuildingAgent(buildings: Building[], bldgId: string, agent: BuildingAgent): Building[] {
+  return buildings.map(b => b.id === bldgId ? { ...b, agents: [...b.agents, agent] } : b)
+}
+
+/** Remove an agent by id from all buildings. */
+export function removeBuildingAgent(buildings: Building[], agentId: string): Building[] {
+  return buildings.map(b => ({ ...b, agents: b.agents.filter(a => a.id !== agentId) }))
+}
+
+/** Update an agent's fields (in-place mutation helper). */
+export function updateBuildingAgent(
+  buildings: Building[], agentId: string, patch: Partial<BuildingAgent>,
+): Building[] {
+  return buildings.map(b => ({
+    ...b,
+    agents: b.agents.map(a => a.id === agentId ? { ...a, ...patch } : a),
+  }))
+}
+
 

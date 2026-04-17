@@ -1,15 +1,18 @@
 import React from 'react'
-import { Alert, Badge, Button, Card, Col, Collapse, Divider, Modal, Progress, Row, Slider, Space, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Col, Collapse, Divider, Modal, Progress, Row, Slider, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import {
   CloseOutlined, DeleteOutlined, ExclamationCircleOutlined,
   ExperimentOutlined, HomeOutlined, MedicineBoxOutlined,
   PauseCircleOutlined, PlayCircleOutlined, TeamOutlined, UserOutlined,
+  DownloadOutlined, UploadOutlined,
 } from '@ant-design/icons'
-import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, ORE_VEIN_TILES } from '../state/simulation'
+import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, ORE_VEIN_TILES, getAggregateCrops, getAggregateBldgUnit, inventoryTotal, createEmptyInventory, DEFAULT_MARKET_CFG } from '../state/simulation'
+import { downloadSave, applySaveFile } from '../state/save'
 import configData from '../config/buildings-and-citizens.json'
 import { BUILDING_REGISTRY } from '../config/buildings/_loader'
 import { JOB_REGISTRY } from '../config/jobs/_loader'
 import type { BuildingCategory } from '../config/buildings/_schema'
+import { useLevelContext } from '../levels/LevelContext'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -86,18 +89,82 @@ function dayPhaseTag(t: number) {
 // ─── Left HUD (controls) ─────────────────────────────────────────────────────
 
 export default function HUD() {
-  const { state, start, stop, selectTool, selectTerrainTile, setTaxRates, setSimSpeed } = useSimulation()
+  const { state, start, stop, selectTool, selectTerrainTile, setTaxRates, setSimSpeed, loadSave } = useSimulation()
+  const { level } = useLevelContext()
+
+  // ── ESC key → return to pan tool ─────────────────────────────────────────
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && state.selectedTool !== 'pan') {
+        selectTool('pan')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [state.selectedTool, selectTool])
+
+  // Filter building palette to only level-allowed buildings (null = sandbox = show all)
+  const paletteGroups = React.useMemo(() => {
+    const lvlAny = level as any
+    if (!lvlAny?.allowedBuildings) return PALETTE_GROUPS
+    const allowed = new Set<string>(lvlAny.allowedBuildings as string[])
+    return PALETTE_GROUPS
+      .map(g => ({ ...g, buildings: g.buildings.filter(b => allowed.has(b.id)) }))
+      .filter(g => g.buildings.length > 0)
+  }, [level])
   const [taxModalOpen, setTaxModalOpen] = React.useState(false)
   // ── 找矿罗盘 state ────────────────────────────────────────────────────────
   const [compassIdx, setCompassIdx] = React.useState(0)
+  // ── 存档/读档 ─────────────────────────────────────────────────────────────
+  const [messageApi, messageCtx] = message.useMessage()
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  function handleSave() {
+    stop()   // pause the world before saving
+    downloadSave(state)
+      .then(() => messageApi.success(`存档已下载：第 ${state.dayCount} 天`))
+      .catch((e: any) => messageApi.error(`存档失败：${e?.message ?? '未知错误'}`))
+  }
+
+  function handleLoadClick() {
+    fileInputRef.current?.click()
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async ev => {
+      try {
+        const buf = ev.target?.result as ArrayBuffer
+        const result = await applySaveFile(buf)
+        if (result === 'redirecting') {
+          messageApi.loading('地图种子不同，正在重新生成地图……')
+          return
+        }
+        loadSave(result)
+        messageApi.success(`读档成功：第 ${result.state.dayCount} 天（月 ${result.state.month}）`)
+      } catch (err: any) {
+        messageApi.error(`读档失败：${err?.message ?? '未知错误'}`)
+      }
+    }
+    reader.readAsArrayBuffer(file)   // binary read for both .citysave and .json
+    e.target.value = ''              // allow re-selecting the same file
+  }
   // Deduplicate ore veins into cluster representatives (one per 8-tile neighbourhood)
+  // In campaign mode, restrict to tiles within the level's playable bounds.
   const oreClusterPoints = React.useMemo(() => {
+    const lvlAny = level as any
+    const lb = lvlAny?.mapBounds as { minX: number; maxX: number; minY: number; maxY: number } | undefined
+    const tiles = lb
+      ? ORE_VEIN_TILES.filter(t => t.x >= lb.minX && t.x <= lb.maxX && t.y >= lb.minY && t.y <= lb.maxY)
+      : ORE_VEIN_TILES
     const result: { x: number; y: number }[] = []
-    for (const t of ORE_VEIN_TILES) {
+    for (const t of tiles) {
       if (result.every(r => Math.hypot(r.x - t.x, r.y - t.y) > 8)) result.push(t)
     }
     return result.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y))
-  }, [])
+  }, [level])
 
   function focusOreVein() {
     if (oreClusterPoints.length === 0) return
@@ -132,18 +199,29 @@ export default function HUD() {
 
   const hour = Math.floor(state.dayTime * 24)
   const isNight = state.dayTime < 0.25 || state.dayTime > 0.75
-  const farmTotal   = Object.values(state.farmInventory).reduce((s, v) => s + v, 0)
-  const granaryTotal = Object.values(state.granaryInventory).reduce((s, v) => s + v, 0)
-  const marketTotal  = Object.values(state.marketInventory).reduce((s, v) => s + v, 0)
+  const _granariesGlobal = state.buildings.filter(b => b.type === 'granary')
+  const _marketsGlobal   = state.buildings.filter(b => b.type === 'market')
+  const farmTotal    = state.farmZones.flatMap(z => z.piles).reduce((s, p) => s + p.amount, 0)
+  const granaryTotal = inventoryTotal(getAggregateCrops(_granariesGlobal))
+  const marketTotal  = inventoryTotal(getAggregateCrops(_marketsGlobal))
 
   const isShopDay = state.dayCount % 10 === 0
   const nextShopIn = 10 - (state.dayCount % 10)
 
   return (
     <>
+      {messageCtx}
+      {/* Hidden file input for save loading */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".citysave,.json"
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+      />
       {/* ── Left control panel ────────────────────── */}
       <div className="hud">
-        <Card className="hud-card" size="small" variant="plain">
+        <Card className="hud-card" size="small" bordered={false}>
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             {/* Title */}
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -205,7 +283,7 @@ export default function HUD() {
                 </Tooltip>
               </Col>
               <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>民心</Typography.Text><div>{state.avgSatisfaction}%</div></Card></Col>
-              <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>通勤</Typography.Text><div><Badge count={state.walkers.length} showZero color="blue" size="small" /> <TeamOutlined /></div></Card></Col>
+              <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>通勤</Typography.Text><div><Badge count={state.citizens.filter(c => c.motion !== null).length} showZero color="blue" size="small" /> <TeamOutlined /></div></Card></Col>
             </Row>
             {/* 城市文脉 & 商脉 */}
             <Row gutter={6}>
@@ -239,13 +317,13 @@ export default function HUD() {
               <Tag color="green">🌾 田间 {farmTotal.toFixed(1)}</Tag>
               <Tag color="gold">🏚 粮仓 {granaryTotal.toFixed(1)}</Tag>
               <Tag color="blue">🛍 集市 {marketTotal.toFixed(1)}</Tag>
-              {state.farmPiles.length > 0 && <Tag color="lime">📦 堆积 {state.farmPiles.length}</Tag>}
-              {state.oxCarts.length > 0 && <Tag color="orange">🐂 牛车 {state.oxCarts.length}</Tag>}
-              {state.marketBuyers.length > 0 && <Tag color="purple">🧺 行商 {state.marketBuyers.length}</Tag>}
+              {state.farmZones.flatMap(z => z.piles).length > 0 && <Tag color="lime">📦 堆积 {state.farmZones.flatMap(z => z.piles).length}</Tag>}
+              {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'oxcart')).length > 0 && <Tag color="orange">🐂 牛车 {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'oxcart')).length}</Tag>}
+              {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'marketbuyer')).length > 0 && <Tag color="purple">🧺 行商 {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'marketbuyer')).length}</Tag>}
               {state.migrants.length > 0 && <Tag color="processing">🐴 入城 {state.migrants.length}</Tag>}
-              {state.timberInventory > 0 && <Tag color="green">🪵 木料 {state.timberInventory}</Tag>}
+              {getAggregateBldgUnit(state.buildings.filter(b => b.type === 'lumbercamp'), 'timber') > 0 && <Tag color="green">🪵 木料 {getAggregateBldgUnit(state.buildings.filter(b => (b.type as string) === 'lumbercamp'), 'timber').toFixed(0)}</Tag>}
               {(() => {
-                const patrolCount = state.walkers.filter(w => w.purpose === 'patrol').length
+                const patrolCount = state.citizens.filter(c => c.motion?.purpose === 'patrol').length
                 return patrolCount > 0 ? <Tag color="blue">🏮 巡逻 {patrolCount}</Tag> : null
               })()}
             </Space>
@@ -254,7 +332,7 @@ export default function HUD() {
             <Space.Compact block>
               {state.running
                 ? <Button icon={<PauseCircleOutlined />} onClick={stop} style={{ flex: 2 }}>停止</Button>
-                : <Button type="primary" icon={<PlayCircleOutlined />} onClick={start} style={{ flex: 2 }}>开始</Button>}
+                : <Button data-tutorial="start-btn" type="primary" icon={<PlayCircleOutlined />} onClick={start} style={{ flex: 2 }}>开始</Button>}
               {([0.25, 1, 2] as const).map(s => (
                 <Button key={s} size="middle"
                   type={state.simSpeed === s ? 'primary' : 'default'}
@@ -266,12 +344,32 @@ export default function HUD() {
               ))}
             </Space.Compact>
 
+            {/* Save / Load */}
+            <Space.Compact block>
+              <Tooltip title="将当前城市存档下载为 JSON 文件">
+                <Button icon={<DownloadOutlined />} onClick={handleSave} style={{ flex: 1 }}>
+                  💾 存档
+                </Button>
+              </Tooltip>
+              <Tooltip title="从本地 JSON 文件读取存档（若地图种子不同将自动刷新页面重建地形）">
+                <Button icon={<UploadOutlined />} onClick={handleLoadClick} style={{ flex: 1 }}>
+                  📂 读档
+                </Button>
+              </Tooltip>
+            </Space.Compact>
+
+
             <Divider style={{ margin: '4px 0' }}>工具</Divider>
 
             {/* Core tools */}
             <Space.Compact block>
               {(['pan', 'road', 'farmZone', 'teaZone', 'bulldoze'] as Tool[]).map(t => (
                 <Button key={t} type={state.selectedTool === t ? 'primary' : 'default'}
+                  data-tutorial={
+                    t === 'pan'      ? 'pan-tool'      :
+                    t === 'road'     ? 'road-tool'     :
+                    t === 'farmZone' ? 'farmzone-tool' : undefined
+                  }
                   icon={t === 'bulldoze' ? <DeleteOutlined /> : undefined}
                   onClick={() => selectTool(t)} style={{ flex: 1 }}>
                   {t === 'pan' ? '浏览' : t === 'road' ? '道路' : t === 'farmZone' ? '🌾粮田' : t === 'teaZone' ? '🍵茶园' : '拆除'}
@@ -325,9 +423,17 @@ export default function HUD() {
                   size="small"
                   defaultActiveKey={PALETTE_GROUPS[0]?.category}
                   style={{ marginTop: -4 }}
-                  items={PALETTE_GROUPS.map(group => ({
+                  items={paletteGroups.map(group => ({
                     key: group.category,
-                    label: group.label,
+                    label: (
+                      <span data-tutorial={
+                        group.category === 'storage'    ? 'storage-tab'    :
+                        group.category === 'commercial' ? 'commercial-tab' :
+                        group.category === 'residential'? 'residential-tab': undefined
+                      }>
+                        {group.label}
+                      </span>
+                    ),
                     children: (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                         {group.buildings.map(b => {
@@ -341,6 +447,11 @@ export default function HUD() {
                               <Button
                                 size="small"
                                 type={state.selectedTool === b.id ? 'primary' : 'default'}
+                                data-tutorial={
+                                  b.id === 'house'   ? 'house-tool'   :
+                                  b.id === 'granary' ? 'granary-tool' :
+                                  b.id === 'market'  ? 'market-tool'  : undefined
+                                }
                                 onClick={() => { if (active) selectTool(b.id as BuildingType) }}
                                 style={{
                                   textAlign: 'left', width: '100%',
@@ -396,7 +507,7 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
   const pop = state.citizens.length
 
   // 1. 饥荒 ──────────────────────────────────────────────────────────────────
-  const starvingCount = state.citizens.filter(c => (state.houseFood[c.houseId] ?? 0) < 2).length
+  const starvingCount = state.citizens.filter(c => (state.buildings.find(b => b.id === c.houseId)?.residentData?.food ?? 0) < 2).length
   if (starvingCount > 0) {
     items.push({
       severity: starvingCount > pop * 0.3 ? 'error' : 'warning',
@@ -439,7 +550,7 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
   // 4. 疫病 ──────────────────────────────────────────────────────────────────
   const sickCount = state.citizens.filter(c => c.isSick).length
   if (sickCount > 0) {
-    const deadHouses = Object.values(state.houseDead ?? {}).filter(v => v > 0).length
+    const deadHouses = state.buildings.filter(b => (b.residentData?.dead ?? 0) > 0).length
     items.push({
       severity: sickCount > pop * 0.2 ? 'error' : 'warning',
       icon: '🏥',
@@ -462,8 +573,8 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
   }
 
   // 6. 粮仓空虚 ──────────────────────────────────────────────────────────────
-  const mktTotal = Object.values(state.marketInventory).reduce((a, v) => a + v, 0)
-  const granaryTotal = Object.values(state.granaryInventory).reduce((a, v) => a + v, 0)
+  const mktTotal = inventoryTotal(getAggregateCrops(state.buildings.filter(b => b.type === 'market')))
+  const granaryTotal = inventoryTotal(getAggregateCrops(state.buildings.filter(b => b.type === 'granary')))
   if (mktTotal < 2 && granaryTotal < 2 && pop > 0) {
     items.push({
       severity: 'error',
@@ -515,14 +626,14 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
 function AdvicePanel() {
   const { state } = useSimulation()
   const advice = React.useMemo(() => computeAdvice(state), [
-    state.citizens, state.houseFood, state.buildings, state.roads,
-    state.marketInventory, state.granaryInventory, state.taxRates, state.houseDead,
+    state.citizens, state.buildings, state.roads,
+    state.taxRates,
   ])
 
   if (advice.length === 0) return null
   const top = advice[0]
 
-  return (
+    return (
     <Collapse size="small" items={[{
       key: 'advice',
       label: (
@@ -966,7 +1077,7 @@ function TerrainTilePanel() {
 
   // ── 松柏山林：now harvestable by lumbercamp ───────────────────────────────
   if (kind === 'mountainForest') {
-    const health    = state.forestHealth[`${x},${y}`] ?? FOREST_TILE_INITIAL_HEALTH
+    const health    = state.terrainResources['forest']?.[`${x},${y}`] ?? FOREST_TILE_INITIAL_HEALTH
     const pct       = Math.max(0, Math.round(health / FOREST_TILE_INITIAL_HEALTH * 100))
     const barColor  = pct > 60 ? '#52c41a' : pct > 20 ? '#faad14' : pct > 0 ? '#ff4d4f' : '#d9d9d9'
     return (
@@ -998,7 +1109,7 @@ function TerrainTilePanel() {
       icon: '🪨', title: '铁矿脉', color: '#8c8c8c',
       initialHealth: ORE_VEIN_INITIAL_HEALTH,
       healthKey: `${x},${y}`,
-      healthMap: state.oreVeinHealth,
+      healthMap: state.terrainResources['ore'] ?? {},
       hint: '在矿脉格上建造【矿山】，矿工每日开采铁矿石，供铁匠铺打制农具。',
       unit: '担',
     },
@@ -1006,7 +1117,7 @@ function TerrainTilePanel() {
       icon: '🌲', title: '林地', color: '#52c41a',
       initialHealth: FOREST_TILE_INITIAL_HEALTH,
       healthKey: `${x},${y}`,
-      healthMap: state.forestHealth,
+      healthMap: state.terrainResources['forest'] ?? {},
       hint: '在林地格上建造【采木场】，伐木工每日采伐周边林木，产出木料。',
       unit: '担',
     },
@@ -1014,22 +1125,23 @@ function TerrainTilePanel() {
       icon: '🌿', title: '草地', color: '#73d13d',
       initialHealth: GRASSLAND_TILE_INITIAL_HEALTH,
       healthKey: `${x},${y}`,
-      healthMap: state.grasslandHealth,
+      healthMap: state.terrainResources['grassland'] ?? {},
       hint: '草地可供将来放牧。牧草储量耗尽后草地将消失，需休养生息方可复原。',
       unit: '束',
     },
   } as const
 
-  const cfg = CONFIGS[kind]
+  const cfg = CONFIGS[kind as keyof typeof CONFIGS]
+  if (!cfg) return null
   const health = cfg.healthMap[cfg.healthKey] ?? cfg.initialHealth
   const pct    = Math.max(0, Math.round(health / cfg.initialHealth * 100))
   const barColor = pct > 60 ? '#52c41a' : pct > 20 ? '#faad14' : pct > 0 ? '#ff4d4f' : '#d9d9d9'
 
   // Count all tiles of this kind with remaining health (for overview)
-  const allHealthMap = cfg.healthMap
+  const allHealthMap = cfg.healthMap as Record<string, number>
   const totalTiles   = Object.keys(allHealthMap).length
-  const aliveTiles   = Object.values(allHealthMap).filter(v => v > 0).length
-  const totalRemain  = Object.values(allHealthMap).reduce((s, v) => s + v, 0)
+  const aliveTiles   = Object.values(allHealthMap).filter((v: number) => v > 0).length
+  const totalRemain  = Object.values(allHealthMap).reduce((s: number, v: number) => s + v, 0)
 
   return (
     <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
@@ -1134,7 +1246,7 @@ function FarmZonePanel() {
   })()
 
   // 检查是否有堆积待运（生产停滞）
-  const pendingPile = state.farmPiles.find(p => p.zoneId === zone.id)
+  const pendingPile = zone.piles.find(p => p.zoneId === zone.id)
   const isBlocked = Boolean(pendingPile)
   const blockReason = isBlocked ? (() => {
     if (!hasRoadAccess)
@@ -1324,9 +1436,9 @@ function FarmZonePanel() {
       {(() => {
         const hasMine       = state.buildings.some(b => b.type === 'mine')
         const hasSmith      = state.buildings.some(b => b.type === 'blacksmith')
-        const cityToolStock = state.smithInventory
+        const cityToolStock = getAggregateBldgUnit(state.buildings.filter(b => b.type === 'blacksmith'), 'ironTools')
         // 判断此田的农夫是否持有铁器（durability > 0）
-        const farmerHasTools = assignedFarmers.some(c => (state.houseTools[c.houseId] ?? 0) > 0)
+        const farmerHasTools = assignedFarmers.some(c => (state.buildings.find(hb => hb.id === c.houseId)?.residentData?.tools ?? 0) > 0)
         const bonusPct = Math.round((TOOL_EFFICIENCY_BONUS - 1) * 100)
 
         return (
@@ -1355,7 +1467,7 @@ function FarmZonePanel() {
               {assignedFarmers.length > 0 && (
                 <div style={{ background: '#fafafa', borderRadius: 6, padding: '4px 8px' }}>
                   {assignedFarmers.map(c => {
-                    const dur = state.houseTools[c.houseId] ?? 0
+                    const dur = state.buildings.find(hb => hb.id === c.houseId)?.residentData?.tools ?? 0
                     const durPct = Math.round((dur / TOOL_DURABILITY_MAX) * 100)
                     const isLow = dur > 0 && dur < TOOL_DURABILITY_LOW
                     const isBroken = dur === 0
@@ -1432,13 +1544,13 @@ function FarmZonePanel() {
       <Card size="small" title="📦 田间库存" style={{ borderRadius: 8 }}>
         <Space direction="vertical" size={4} style={{ width: '100%' }}>
           {(Object.keys(CROP_BTN) as CropType[]).map(crop => {
-            const amt = state.farmInventory[crop]
+            const farmInvForZone = zone.piles.reduce((s, p) => p.cropType === crop ? s + p.amount : s, 0)
             const isActive = zone.cropType === crop
             return (
               <div key={crop} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isActive ? 1 : 0.38 }}>
                 <Typography.Text style={{ fontSize: 12 }}>{CROP_BTN[crop]}</Typography.Text>
                 <Space size={2}>
-                  <Typography.Text strong style={{ fontSize: 12, color: isActive ? '#52c41a' : undefined }}>{amt.toFixed(1)}</Typography.Text>
+                  <Typography.Text strong style={{ fontSize: 12, color: isActive ? '#52c41a' : undefined }}>{farmInvForZone.toFixed(1)}</Typography.Text>
                   <Typography.Text type="secondary" style={{ fontSize: 11 }}>担</Typography.Text>
                   {isActive && <Tag color="green" style={{ fontSize: 10, padding: '0 3px', marginLeft: 2 }}>当前</Tag>}
                 </Space>
@@ -1535,34 +1647,40 @@ function BuildingPanel() {
   const isLumbercamp = (b.type as string) === 'lumbercamp'
   const residents  = isHouse ? state.citizens.filter(c => c.houseId === b.id) : []
   const workers    = !isHouse ? state.citizens.filter(c => c.workplaceId === b.id) : []
-  const houseFood  = state.houseFood[b.id] ?? 0
-  const houseSavings = state.houseSavings[b.id] ?? 0
-  const houseCrops   = state.houseCrops[b.id]
+  const houseFood    = b.residentData?.food ?? 0
+  const houseSavings = b.residentData?.savings ?? 0
+  const houseCrops   = b.residentData?.crops
   const dietVarietyCount = houseCrops ? Object.values(houseCrops).filter(v => v > 0.1).length : 0
 
   const mines            = state.buildings.filter(b2 => b2.type === 'mine')
   const smithBuildings   = state.buildings.filter(b2 => b2.type === 'blacksmith')
   const mineCapacity     = mines.length * 60
   const smithCapacity    = smithBuildings.length * 20
-  const mineOreFillPct   = mineCapacity   > 0 ? Math.min(100, (state.mineInventory  / mineCapacity)  * 100) : 0
-  const smithToolFillPct = smithCapacity  > 0 ? Math.min(100, (state.smithInventory / smithCapacity) * 100) : 0
+  const smithInventory   = getAggregateBldgUnit(smithBuildings, 'ironTools')
+  const mineInventory    = getAggregateBldgUnit(mines, 'ironOre')
+  const mineOreFillPct   = mineCapacity   > 0 ? Math.min(100, (mineInventory  / mineCapacity)  * 100) : 0
+  const smithToolFillPct = smithCapacity  > 0 ? Math.min(100, (smithInventory / smithCapacity) * 100) : 0
   const granaries       = state.buildings.filter(b2 => b2.type === 'granary')
   const granaryCapacity = granaries.reduce((sum, g) => sum + GRANARY_CAPACITY_PER * (g.level ?? 1), 0)
-  const granaryTotal    = Object.values(state.granaryInventory).reduce((s, v) => s + v, 0)
-  const granaryFillPct  = granaryCapacity > 0 ? Math.min(100, (granaryTotal / granaryCapacity) * 100) : 0
-  const myOxCarts       = state.oxCarts.filter(c => c.granaryId === b.id)
+  const granaryInventory= getAggregateCrops(granaries)
+  const granaryTotalB   = inventoryTotal(granaryInventory)
+  const granaryFillPct  = granaryCapacity > 0 ? Math.min(100, (granaryTotalB / granaryCapacity) * 100) : 0
+  const myOxCarts       = b.agents.filter(a => a.kind === 'oxcart')
 
   // 集市容量 = 坐贾数 × MARKET_CAP_PER_SHOP
   const markets          = state.buildings.filter(b2 => b2.type === 'market')
-  const marketCfg: MarketConfig = state.marketConfig[b.id] ?? { shopkeepers: 4, peddlers: 2 }
+  const marketCfg: MarketConfig = b.marketConfig ?? DEFAULT_MARKET_CFG
   const marketCapacity   = markets.reduce((sum, m) => {
-    const cfg = state.marketConfig[m.id] ?? { shopkeepers: 4, peddlers: 2 }
+    const cfg = m.marketConfig ?? DEFAULT_MARKET_CFG
     return sum + cfg.shopkeepers * MARKET_CAP_PER_SHOP
   }, 0)
-  const marketTotal      = Object.values(state.marketInventory).reduce((s, v) => s + v, 0)
+  const marketInvAgg     = getAggregateCrops(markets)
+  const marketTotal      = inventoryTotal(marketInvAgg)
   const marketFillPct    = marketCapacity > 0 ? Math.min(100, (marketTotal / marketCapacity) * 100) : 0
-  const myMarketBuyers   = state.marketBuyers.filter(mb => mb.marketId === b.id)
-  const myPeddlers       = state.peddlers.filter(p => p.marketId === b.id)
+  const myMarketBuyers   = b.agents.filter(a => a.kind === 'marketbuyer')
+  const myPeddlers       = state.citizens
+    .filter(c => c.peddlerState?.marketId === b.id)
+    .map(c => ({ id: c.id, citizenId: c.id, ...c.peddlerState! }))
 
   // Deterministic role designation: sort workers by id, last cfg.peddlers = 行商, rest = 坐贾
   // This matches the morningCommute selection (.slice from tail) so display = behaviour.
@@ -1669,7 +1787,7 @@ function BuildingPanel() {
       {/* ── 疫病警示 ── */}
       {isHouse && (() => {
         const sickCount = residents.filter(c => c.isSick).length
-        const deadCount = state.houseDead?.[b.id] ?? 0
+        const deadCount = b.residentData?.dead ?? 0
         if (sickCount === 0 && deadCount === 0) return null
         return (
           <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -1713,7 +1831,7 @@ function BuildingPanel() {
             {/* 总存量 / 容量 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography.Text style={{ fontSize: 12 }}>
-                全城合计：<b>{granaryTotal.toFixed(1)}</b> / {granaryCapacity} 担
+                全城合计：<b>{granaryTotalB.toFixed(1)}</b> / {granaryCapacity} 担
               </Typography.Text>
               <Tag color={granaryFillPct >= 90 ? 'error' : granaryFillPct >= 60 ? 'warning' : 'success'}>
                 {granaryFillPct.toFixed(0)}% 满
@@ -1727,7 +1845,7 @@ function BuildingPanel() {
             <Divider style={{ margin: '4px 0', borderColor: '#f0f0f0' }} />
             {/* 各类粮食 */}
             {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
-              const amt = state.granaryInventory[crop]
+              const amt = granaryInventory[crop]
               const pct = granaryCapacity > 0 ? (amt / granaryCapacity) * 100 : 0
               return (
                 <div key={crop}>
@@ -1788,14 +1906,14 @@ function BuildingPanel() {
       {/* ── 矿山：铁矿石库存 + 矿脉储量 ── */}
       {isMine && (() => {
         const tileKey = `${b.x},${b.y}`
-        const oreHealth = state.oreVeinHealth?.[tileKey] ?? 600
-        const oreHealthPct = Math.round(oreHealth / 600 * 100)
+        const oreHealth = state.terrainResources['ore']?.[tileKey] ?? ORE_VEIN_INITIAL_HEALTH
+        const oreHealthPct = Math.round(oreHealth / ORE_VEIN_INITIAL_HEALTH * 100)
         return (
           <Card size="small" title="⛏ 铁矿石存量" style={{ borderRadius: 8 }}>
             <Space direction="vertical" size={6} style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography.Text style={{ fontSize: 12 }}>
-                  全城存矿：<b>{state.mineInventory.toFixed(1)}</b> / {mineCapacity} 担
+                  全城存矿：<b>{mineInventory.toFixed(1)}</b> / {mineCapacity} 担
                 </Typography.Text>
                 <Tag color={mineOreFillPct >= 90 ? 'error' : mineOreFillPct >= 60 ? 'warning' : 'success'}>
                   {mineOreFillPct.toFixed(0)}% 满
@@ -1829,10 +1947,10 @@ function BuildingPanel() {
 
       {/* ── 采木场：周边林木储量 ── */}
       {isLumbercamp && (() => {
-        const FOREST_MAX = 400
+        const FOREST_MAX = FOREST_TILE_INITIAL_HEALTH
         const HARVEST_R  = 6
-        // 导入 FOREST_TILES 需通过 state，此处直接从 state.forestHealth 统计在岗半径内的格子
-        const nearbyKeys = Object.entries(state.forestHealth ?? {}).filter(([key]) => {
+        // 从 state.terrainResources['forest'] 统计在岗半径内的格子
+        const nearbyKeys = Object.entries(state.terrainResources['forest'] ?? {}).filter(([key]) => {
           const [fx, fy] = key.split(',').map(Number)
           return Math.max(Math.abs(fx - b.x), Math.abs(fy - b.y)) <= HARVEST_R
         })
@@ -1844,7 +1962,7 @@ function BuildingPanel() {
             <Space direction="vertical" size={6} style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography.Text style={{ fontSize: 12 }}>
-                  全城木料库存：<b>{state.timberInventory?.toFixed(0) ?? 0}</b> 担
+                  全城木料库存：<b>{getAggregateBldgUnit(state.buildings.filter(b2 => (b2.type as string) === 'lumbercamp'), 'timber').toFixed(0)}</b> 担
                 </Typography.Text>
                 <Tag color={forestPct > 60 ? 'green' : forestPct > 20 ? 'orange' : forestPct > 0 ? 'red' : 'default'}>
                   {forestPct > 0 ? `${forestPct}% 剩余` : '周边已伐尽'}
@@ -1872,14 +1990,14 @@ function BuildingPanel() {
           <Space direction="vertical" size={6} style={{ width: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography.Text style={{ fontSize: 12 }}>
-                全城存货：<b>{state.smithInventory}</b> / {smithCapacity} 件
+                全城存货：<b>{smithInventory}</b> / {smithCapacity} 件
               </Typography.Text>
-              <Tag color={smithToolFillPct >= 90 ? 'error' : state.smithInventory > 0 ? 'success' : 'default'}>
-                {state.smithInventory > 0 ? `${smithToolFillPct.toFixed(0)}% 充盈` : '无存货'}
+              <Tag color={smithToolFillPct >= 90 ? 'error' : smithInventory > 0 ? 'success' : 'default'}>
+                {smithInventory > 0 ? `${smithToolFillPct.toFixed(0)}% 充盈` : '无存货'}
               </Tag>
             </div>
             <Progress percent={smithToolFillPct} size="small" showInfo={false}
-              strokeColor={state.smithInventory > 0 ? '#52c41a' : '#d9d9d9'} />
+              strokeColor={smithInventory > 0 ? '#52c41a' : '#d9d9d9'} />
             {/* 宋代农具清单 */}
             <div style={{ background: '#fafafa', borderRadius: 6, padding: '6px 8px' }}>
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>宋代铁制农具（轮流打制）：</Typography.Text>
@@ -1899,8 +2017,8 @@ function BuildingPanel() {
             </div>
             <Space direction="vertical" size={2} style={{ fontSize: 11, color: '#888', width: '100%' }}>
               <div>🔨 每铁匠每日打制：1件农具（消耗矿石2担）</div>
-              <div>⛏ 当前矿石库存：{state.mineInventory.toFixed(1)}担
-                {state.mineInventory < 2 && <Tag color="error" style={{ marginLeft: 6, fontSize: 10 }}>矿石不足</Tag>}
+              <div>⛏ 当前矿石库存：{mineInventory.toFixed(1)}担
+                {mineInventory < 2 && <Tag color="error" style={{ marginLeft: 6, fontSize: 10 }}>矿石不足</Tag>}
               </div>
               <div>💰 农具售价：{FARM_TOOL_PRICE}文/套 · 农夫持有后产量 +{Math.round((TOOL_EFFICIENCY_BONUS - 1) * 100)}%</div>
             </Space>
@@ -1959,7 +2077,7 @@ function BuildingPanel() {
                     strokeColor={marketFillPct < 20 ? '#ff4d4f' : marketFillPct < 50 ? '#faad14' : '#52c41a'} />
                   <Divider style={{ margin: '4px 0', borderColor: '#f0f0f0' }} />
                   {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
-                    const amt = state.marketInventory[crop]
+                    const amt = marketInvAgg[crop]
                     return (
                       <div key={crop} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: amt > 0 ? 1 : 0.38 }}>
                         <Typography.Text style={{ fontSize: 12 }}>{CROP_LABEL[crop]}</Typography.Text>
@@ -1978,7 +2096,7 @@ function BuildingPanel() {
             },
             {
               key: 'tools',
-              label: <span>🔧 农具 <Tag color={state.smithInventory > 0 ? 'green' : 'default'} style={{ fontSize: 10 }}>{state.smithInventory}件</Tag></span>,
+              label: <span>🔧 农具 <Tag color={smithInventory > 0 ? 'green' : 'default'} style={{ fontSize: 10 }}>{smithInventory}件</Tag></span>,
               children: (() => {
                 const smithWorkerCount = smithBuildings.reduce((n, sb) =>
                   n + state.citizens.filter(c => c.workplaceId === sb.id && !c.isSick).length, 0)
@@ -1986,14 +2104,14 @@ function BuildingPanel() {
                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Typography.Text style={{ fontSize: 12 }}>
-                        货架：<b>{state.smithInventory}</b> / {smithCapacity} 件
+                        货架：<b>{smithInventory}</b> / {smithCapacity} 件
                       </Typography.Text>
-                      <Tag color={smithToolFillPct >= 90 ? 'error' : state.smithInventory > 0 ? 'success' : 'default'}>
-                        {state.smithInventory > 0 ? `${smithToolFillPct.toFixed(0)}% 充盈` : '无存货'}
+                      <Tag color={smithToolFillPct >= 90 ? 'error' : smithInventory > 0 ? 'success' : 'default'}>
+                        {smithInventory > 0 ? `${smithToolFillPct.toFixed(0)}% 充盈` : '无存货'}
                       </Tag>
                     </div>
                     <Progress percent={smithToolFillPct} size="small" showInfo={false}
-                      strokeColor={state.smithInventory > 0 ? '#52c41a' : '#d9d9d9'} />
+                        strokeColor={smithInventory > 0 ? '#52c41a' : '#d9d9d9'} />
                     <div style={{ background: '#fafafa', borderRadius: 6, padding: '6px 8px' }}>
                       <Typography.Text type="secondary" style={{ fontSize: 11 }}>宋代铁制农具（轮流打制）：</Typography.Text>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
@@ -2011,8 +2129,8 @@ function BuildingPanel() {
                       </div>
                     </div>
                     <Space direction="vertical" size={2} style={{ fontSize: 11, color: '#888', width: '100%' }}>
-                      <div>🔨 铁匠铺在岗：{smithWorkerCount} 人 · ⛏ 矿石：{state.mineInventory.toFixed(1)} 担
-                        {state.mineInventory < 2 && <Tag color="error" style={{ marginLeft: 6, fontSize: 10 }}>矿石不足</Tag>}
+                      <div>🔨 铁匠铺在岗：{smithWorkerCount} 人 · ⛏ 矿石：{mineInventory.toFixed(1)} 担
+                        {mineInventory < 2 && <Tag color="error" style={{ marginLeft: 6, fontSize: 10 }}>矿石不足</Tag>}
                       </div>
                       <div>💰 售价：{FARM_TOOL_PRICE} 文/套 · 行商沿途或居民来集市均可购</div>
                     </Space>
@@ -2041,7 +2159,7 @@ function BuildingPanel() {
                   </div>
                   {myMarketBuyers.map(mb => {
                     const isReturn = mb.pickedUp
-                    const granaryB = state.buildings.find(g => g.id === mb.granaryId)
+                    const granaryB = state.buildings.find(g => g.id === mb.srcGranaryId)
                     return (
                       <div key={mb.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0' }}>
                         <Space size={4}>
@@ -2094,7 +2212,7 @@ function BuildingPanel() {
               key: 'peddler_stats',
               label: <span>📊 行商统计</span>,
               children: (() => {
-                const tripLog   = (state.peddlerTripLog ?? {})[b.id] ?? []
+                const tripLog   = b.tripLog ?? []
                 const activePeddlers = myPeddlers
                 return (
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -2262,11 +2380,13 @@ function BuildingPanel() {
                   : c.workplaceId
                     ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
                     : '待业'
-                const tierTag = tier === 'gentry'
+                const cTier = c.residentTier
+                const tierTag = cTier === 'gentry'
                   ? <Tag color="gold" style={{ fontSize: 10, padding: '0 4px' }}>贵族</Tag>
-                  : tier === 'servant'
+                  : cTier === 'servant'
                     ? <Tag color="blue" style={{ fontSize: 10, padding: '0 4px' }}>仆役</Tag>
                     : null
+                const cSatColor = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
                 return (
                   <div key={c.id} className="info-panel-citizen-row"
                     onClick={() => selectCitizen(c.id)}>
@@ -2283,7 +2403,7 @@ function BuildingPanel() {
                       <Tag color={c.isAtHome ? 'default' : 'processing'} style={{ fontSize: 10, padding: '0 4px' }}>
                         {c.isAtHome ? '在家' : '通勤'}
                       </Tag>
-                      <Tag style={{ fontSize: 10, padding: '0 4px', color: satColor, borderColor: satColor }}>
+                      <Tag style={{ fontSize: 10, padding: '0 4px', color: cSatColor, borderColor: cSatColor }}>
                         ★{c.satisfaction}
                       </Tag>
                     </Space>
@@ -2356,7 +2476,7 @@ function BuildingPanel() {
                 : '待业'
             const satColor    = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
             const isPeddlerRole   = peddlerWorkerIds.has(c.id)
-            const isOutPeddling   = isPeddlerRole && state.peddlers.some(p => p.citizenId === c.id)
+            const isOutPeddling   = isPeddlerRole && state.citizens.some(c2 => c2.id === c.id && c2.peddlerState !== null)
             return (
               <div key={c.id} className="info-panel-citizen-row" onClick={() => selectCitizen(c.id)}>
                 <Space size={4}>
@@ -2418,7 +2538,8 @@ function CitizenPanel() {
 
   const house = state.buildings.find(x => x.id === c.houseId)
   const workplace = c.workplaceId ? state.buildings.find(x => x.id === c.workplaceId) : null
-  const houseFood = state.houseFood[c.houseId] ?? 0
+  const houseRd   = house?.residentData
+  const houseFood = houseRd?.food ?? 0
   const foodPct = Math.min(100, (houseFood / 30) * 100)
   const barColor = houseFood <= 1 ? '#ff4d4f' : houseFood < 5 ? '#faad14' : '#52c41a'
 
@@ -2430,7 +2551,8 @@ function CitizenPanel() {
     if (c.status === 'returning')  return (configData.citizensThoughts as any).returning  ?? '货买好了，挑着担子赶紧回家，今晚不会断炊了。'
     // 农夫：田里有积压粮食
     if (c.farmZoneId) {
-      const pile = state.farmPiles.find(p => p.zoneId === c.farmZoneId)
+      const farmZone = state.farmZones.find(z => z.id === c.farmZoneId)
+      const pile = farmZone?.piles.find(p => p.zoneId === c.farmZoneId)
       if (pile && pile.age > 20) return '粮食堆在田里，运不出去，白忙活了！盼着粮仓赶紧来人收粮。'
     }
     // 宅邸贵族专属
@@ -2512,7 +2634,8 @@ function CitizenPanel() {
 
       {/* Farmer complaint: pile stuck */}
       {c.farmZoneId && (() => {
-        const pile = state.farmPiles.find(p => p.zoneId === c.farmZoneId)
+        const farmZone = state.farmZones.find(z => z.id === c.farmZoneId)
+        const pile = farmZone?.piles.find(p => p.zoneId === c.farmZoneId)
         if (!pile || pile.age <= 20) return null
         return (
           <Alert
@@ -2526,8 +2649,8 @@ function CitizenPanel() {
 
       {/* Shopping activity card: shows when heading to / returning from market */}
       {(c.status === 'shopping' || c.status === 'returning') && (() => {
-        const activeWalker = state.walkers.find(w => w.citizenId === c.id)
-        const targetMarket = activeWalker?.targetId ? state.buildings.find(b => b.id === activeWalker.targetId) : null
+        const motion = c.motion
+        const targetMarket = motion?.targetId ? state.buildings.find(b => b.id === motion.targetId) : null
         return (
           <Alert
             type={c.status === 'returning' ? 'success' : 'info'}
@@ -2553,9 +2676,9 @@ function CitizenPanel() {
       <Card size="small" title="需求层次" style={{ borderRadius: 8 }}>
         <Space direction="vertical" size={3} style={{ width: '100%' }}>
           {(() => {
-            const hc = state.houseCrops[c.houseId]
-            const food = state.houseFood[c.houseId] ?? 0
-            const savings = state.houseSavings[c.houseId] ?? 0
+            const hc = house?.residentData?.crops
+            const food = houseRd?.food ?? 0
+            const savings = houseRd?.savings ?? 0
             const dietVarietyHere = hc ? Object.values(hc).filter(v => v > 0.1).length : 0
             const hasTea = hc ? (hc.tea ?? 0) > 0.1 : false
             const house2 = state.buildings.find(b => b.id === c.houseId)
@@ -2639,7 +2762,7 @@ function CitizenPanel() {
         <Progress type="circle" percent={c.satisfaction} size={60}
           strokeColor={c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'} />
         {(() => {
-          const hc = state.houseCrops[c.houseId]
+          const hc = house?.residentData?.crops
           const dietCount = hc ? Object.values(hc).filter(v => v > 0.1).length : 0
           const info = dietVarietyInfo(dietCount)
           return (

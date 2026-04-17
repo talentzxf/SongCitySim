@@ -381,7 +381,8 @@ function ForestInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }) 
       const mesh = trunkRef.current; mesh.count = trunks.length
       for (let i = 0; i < trunks.length; i++) {
         const r = trunks[i]
-        tmp.position.set(r.wx, r.sy, r.wz); tmp.rotation.set(0, r.ry, 0)
+        // CylinderGeometry height=1 scaled by sy → half-height = sy/2; place centre at sy/2 so bottom sits at y=0
+        tmp.position.set(r.wx, r.sy * 0.5, r.wz); tmp.rotation.set(0, r.ry, 0)
         tmp.scale.set(r.sx, r.sy, r.sz); tmp.updateMatrix(); mesh.setMatrixAt(i, tmp.matrix)
       }
       mesh.instanceMatrix.needsUpdate = true
@@ -390,7 +391,8 @@ function ForestInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }) 
       const mesh = crownRef.current; mesh.count = crowns.length
       for (let i = 0; i < crowns.length; i++) {
         const r = crowns[i]; const trk = trunks[i]
-        tmp.position.set(r.wx, (trk?.sy ?? 0.2) * 2 + r.sy * 0.5, r.wz)
+        // Crown (cone) base at trunk top (trk.sy), centre at trk.sy + r.sy*0.5
+        tmp.position.set(r.wx, (trk?.sy ?? 0.2) + r.sy * 0.5, r.wz)
         tmp.rotation.set(0, r.ry, 0); tmp.scale.set(r.sx, r.sy, r.sz)
         tmp.updateMatrix(); mesh.setMatrixAt(i, tmp.matrix)
       }

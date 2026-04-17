@@ -1,19 +1,13 @@
 ﻿/**
  * Daily household consumption and wages.
- *
- * NOTE: Mine ore production and blacksmith tool production have been moved to
- * src/config/buildings/mine/behavior.ts and blacksmith/behavior.ts respectively.
- * They are dispatched by buildingBehaviorRoutine (runs before this routine in TICK_CHAIN).
+ * All per-house state now lives in Building.residentData.
  */
 import type { TickRoutine } from './types'
 import {
-  CROP_KEYS,
-  TOOL_WEAR_PER_DAY,
-  clampCrop, clampFood, createEmptyInventory,
+  CROP_KEYS, TOOL_WEAR_PER_DAY, clampCrop, clampFood, createEmptyInventory, getResidentData, updateResidentData,
 } from '../helpers'
 import { JOB_REGISTRY } from '../../config/jobs/_loader'
 
-/** 按职业查询日收入；无职业或配置中没有记录时取默认 8 文/天 */
 function dailyWage(profession: string | null): number {
   if (!profession) return 8
   return JOB_REGISTRY[profession]?.attributes?.dailyIncome ?? 8
@@ -22,38 +16,33 @@ function dailyWage(profession: string | null): number {
 export const dailyProductionRoutine: TickRoutine = (ctx) => {
   if (!ctx.isNewDay) return ctx
   const { citizens, houses } = ctx
-  let houseCrops   = ctx.houseCrops
-  let houseFood    = ctx.houseFood
-  let houseSavings = ctx.houseSavings
-  let houseTools   = ctx.houseTools
+  let buildings = ctx.buildings
 
-  // households consume food; working residents earn daily wages; farmers wear tools
   for (const h of houses) {
     const residents = citizens.filter(c => c.houseId === h.id)
     if (!residents.length) continue
-    const hc      = { ...(houseCrops[h.id] ?? createEmptyInventory()) }
+    const rd = getResidentData(buildings, h.id)
+    const hc = { ...(rd.crops ?? createEmptyInventory()) }
     const totalHc = CROP_KEYS.reduce((s, k) => s + hc[k], 0)
+    let newFood = rd.food
     if (totalHc > 0) {
       const consume = Math.min(0.5 * residents.length, totalHc)
       for (const k of CROP_KEYS)
         hc[k] = clampCrop(hc[k] - Math.min(hc[k], consume * (hc[k] / totalHc)))
-      houseCrops = { ...houseCrops, [h.id]: hc }
-      houseFood  = { ...houseFood,  [h.id]: clampFood(CROP_KEYS.reduce((s, k) => s + hc[k], 0)) }
+      newFood = clampFood(CROP_KEYS.reduce((s, k) => s + hc[k], 0))
     }
-    const working = residents.filter(c => (c.workplaceId || c.farmZoneId) && !c.isSick)
+    const working   = residents.filter(c => (c.workplaceId || c.farmZoneId) && !c.isSick)
     const totalWage = working.reduce((sum, c) => sum + dailyWage(c.profession), 0)
-    houseSavings  = { ...houseSavings, [h.id]: (houseSavings[h.id] ?? 0) + totalWage }
-
-    // tool wear: active farmers degrade their iron tool each day
     const activeFarmers = residents.filter(c => c.farmZoneId && !c.isSick)
-    if (activeFarmers.length > 0) {
-      const dur = houseTools[h.id] ?? 0
-      if (dur > 0) houseTools = { ...houseTools, [h.id]: Math.max(0, dur - TOOL_WEAR_PER_DAY) }
-    }
+    const newTools  = activeFarmers.length > 0 && rd.tools > 0
+      ? Math.max(0, rd.tools - TOOL_WEAR_PER_DAY)
+      : rd.tools
+    buildings = updateResidentData(buildings, h.id, {
+      crops: hc, food: newFood,
+      savings: rd.savings + totalWage,
+      tools: newTools,
+    })
   }
-  ctx.houseCrops   = houseCrops
-  ctx.houseFood    = houseFood
-  ctx.houseSavings = houseSavings
-  ctx.houseTools   = houseTools
+  ctx.buildings = buildings
   return ctx
 }

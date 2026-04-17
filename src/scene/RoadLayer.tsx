@@ -203,6 +203,10 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
     const tx = Math.round(hit.current.x), ty = Math.round(hit.current.z)
     const s = stateRef.current; if (!s) return
 
+    // Level bounds check — marks ghost red if tile is outside the playable area
+    const lb = (window as any).__LEVEL_BOUNDS__ as { minX: number; maxX: number; minY: number; maxY: number } | undefined
+    const outOfBounds = lb ? (tx < lb.minX || tx > lb.maxX || ty < lb.minY || ty > lb.maxY) : false
+
     if (isBuildingTool) {
       const mesh = buildingRef.current; if (!mesh) return
       const bt = tool as BuildingType
@@ -213,10 +217,11 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
       const mountainMultiplier = worldGenConfig.building?.mountainMultiplier || 1
       const effectiveCost = Math.ceil(BUILDING_COST[bt] * (isMtnPenalized ? mountainMultiplier : 1))
       // check all footprint tiles
-      let valid = s.money >= effectiveCost && !isRiverAt(tx, ty)
+      let valid = !outOfBounds && s.money >= effectiveCost && !isRiverAt(tx, ty)
       for (let dx = 0; dx < bw && valid; dx++) {
         for (let dy = 0; dy < bh && valid; dy++) {
           const tx2 = tx + dx, ty2 = ty + dy
+          if (lb && (tx2 < lb.minX || tx2 > lb.maxX || ty2 < lb.minY || ty2 > lb.maxY)) { valid = false; break }
           if (isRiverAt(tx2, ty2)) valid = false
           if (s.buildings.some(b => { const bw2 = b.w??1, bh2 = b.h??1; return tx2>=b.x&&tx2<b.x+bw2&&ty2>=b.y&&ty2<b.y+bh2 })) valid = false
           if (s.roads.some(r => r.x === tx2 && r.y === ty2)) valid = false
@@ -234,7 +239,7 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
       mesh.position.set(tx + (bw - 1) * 0.5, (isMtn ? tileH(tx, ty) : 0) + 0.32, ty + (bh - 1) * 0.5)
       mesh.scale.set(bw, 1, bh)
       mesh.visible = true
-      // green = valid, yellow = valid but mountain penalty (costs 3×), red = invalid
+      // green = valid, yellow = valid but mountain penalty (costs 3×), red = invalid / out of bounds
       ;(mesh.material as THREE.MeshBasicMaterial).color.set(
         !valid ? '#ff4d4f' : isMtnPenalized ? '#faad14' : '#52c41a'
       )
@@ -242,11 +247,14 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
     if (isFarmTool) {
       const mesh = farmRef.current; if (!mesh) return
       const fp = [{ x: tx, y: ty }, { x: tx+1, y: ty }, { x: tx, y: ty+1 }, { x: tx+1, y: ty+1 }]
-      const valid = fp.every(t => !isRiverAt(t.x, t.y) && !isMountainAt(t.x, t.y) &&
-        !s.buildings.some(b => b.x === t.x && b.y === t.y) &&
-        !s.roads.some(r => r.x === t.x && r.y === t.y) &&
-        !s.farmZones.some(z => t.x >= z.x && t.x <= z.x+1 && t.y >= z.y && t.y <= z.y+1)
-      ) && fp.some(t => isNearRiverFive(t.x, t.y))
+      const valid = !outOfBounds &&
+        fp.every(t =>
+          (!lb || (t.x >= lb.minX && t.x <= lb.maxX && t.y >= lb.minY && t.y <= lb.maxY)) &&
+          !isRiverAt(t.x, t.y) && !isMountainAt(t.x, t.y) &&
+          !s.buildings.some(b => b.x === t.x && b.y === t.y) &&
+          !s.roads.some(r => r.x === t.x && r.y === t.y) &&
+          !s.farmZones.some(z => t.x >= z.x && t.x <= z.x+1 && t.y >= z.y && t.y <= z.y+1)
+        ) && fp.some(t => isNearRiverFive(t.x, t.y))
       mesh.position.set(tx + 0.5, 0.016, ty + 0.5); mesh.visible = true
       ;(mesh.material as THREE.MeshBasicMaterial).color.set(valid ? '#52c41a' : '#ff4d4f')
     }

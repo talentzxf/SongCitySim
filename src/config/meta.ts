@@ -12,7 +12,7 @@ export type { BuildingConfig, AddonConfig, BuildingCategory, Footprint, JobSlot,
 export { BUILDING_REGISTRY, ADDON_REGISTRY, getBuildingAddons, getBuilding, ALL_BUILDING_IDS } from './buildings/_loader'
 
 // ── Building lifecycle (SDK + behavior registry) ──────────────────────────────
-export type { BuildingLifecycle, BuildingTickContext, BuildingPool, BuildingHousehold } from './buildings/_lifecycle'
+export type { BuildingLifecycle, BuildingTickContext, BuildingHousehold, UnitField } from './buildings/_lifecycle'
 export { BEHAVIOR_REGISTRY, getBehavior, BUILDINGS_WITH_BEHAVIOR } from './buildings/_behavior_loader'
 
 // ── Goods ─────────────────────────────────────────────────────────────────────

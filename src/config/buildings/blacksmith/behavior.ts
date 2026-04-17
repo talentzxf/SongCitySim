@@ -7,7 +7,10 @@
  *   If the ore pool runs dry, production halts — no ore, no tools.
  */
 import type { BuildingLifecycle } from '../_lifecycle'
-import { SMITH_CAPACITY_PER, ORE_PER_TOOL } from '../../../state/helpers'
+
+/** Exported so peddler routine can cap unsold-tool returns. */
+export const SMITH_CAPACITY_PER = 20   // 每座铁匠铺的农具库存上限
+const ORE_PER_TOOL          = 2    // 每件农具消耗的矿石量
 
 export const behavior: BuildingLifecycle = {
   onDayStart(ctx) {
@@ -16,11 +19,11 @@ export const behavior: BuildingLifecycle = {
 
     const totalSmiths = ctx.cityBuildings.filter(b => b.type === 'blacksmith').length
     const totalCap    = totalSmiths * SMITH_CAPACITY_PER
-    const toolsCurrent = ctx.pool.get('smith.tools')
+    const toolsCurrent = ctx.cityUnit('blacksmith', 'ironTools')
     const toolHeadroom = Math.max(0, totalCap - toolsCurrent)
     if (toolHeadroom <= 0) return  // smith inventory full
 
-    const oreAvailable = ctx.pool.get('mine.ore')
+    const oreAvailable = ctx.cityUnit('mine', 'ironOre')
     if (oreAvailable <= 0) return  // no raw material
 
     // Each smith can process ORE_PER_TOOL ore per day
@@ -29,8 +32,8 @@ export const behavior: BuildingLifecycle = {
     const toolsMade  = Math.min(Math.floor(oreToUse / ORE_PER_TOOL), toolHeadroom)
 
     if (toolsMade > 0) {
-      ctx.pool.mutate('mine.ore',    -(toolsMade * ORE_PER_TOOL))
-      ctx.pool.mutate('smith.tools',   toolsMade)
+      ctx.consumeUnit('mine', 'ironOre', toolsMade * ORE_PER_TOOL)
+      ctx.produceUnit('ironTools', toolsMade)
     }
   },
 }

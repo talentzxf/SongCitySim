@@ -28,7 +28,7 @@ import { daytimeMarketRestockRoutine }  from './daytimeMarketRestock'
 import { migrantRoutine }               from './migrant'
 import { statsRoutine }                 from './stats'
 import { monthlyTaxRoutine }            from './monthlyTax'
-import { patrolRoutine }               from './patrol'
+import { jobDispatchRoutine }          from './jobDispatch'
 /** Ordered chain - routines execute left to right every tick. */
 export const TICK_CHAIN: TickRoutine[] = [
   farmAssignmentRoutine,        //  1. Assign idle workers to unfarmed zones
@@ -40,7 +40,7 @@ export const TICK_CHAIN: TickRoutine[] = [
   dailyProductionRoutine,       //  7. Household food consumption, wages, tool wear
   citizenStatusRoutine,         //  8. State machine + needs hierarchy -> satisfaction
   diseaseRoutine,               //  9. Sickness death + neighbourhood spread
-  patrolRoutine,                // 10. 巡检司巡逻：治安覆盖衰减、派出巡逻兵
+  jobDispatchRoutine,           // 10. Per-job behaviors: safety patrol, …future jobs
   walkerRoutine,                // 11. Advance walkers, handle arrivals
   morningCommuteRoutine,        // 12. Morning: commute + shopping + restock + peddler spawn
   eveningCommuteRoutine,        // 13. Evening: workers & farmers return home
@@ -63,47 +63,31 @@ export function buildTickContext(s: CityState): TickContext {
   const isDaytime      = s.dayTime >= MORNING_START && s.dayTime <= EVENING_START
   const crossedMorning = prevDay < MORNING_START && nextDay >= MORNING_START
   const crossedEvening = prevDay < EVENING_START  && nextDay >= EVENING_START
-  const houses       = s.buildings.filter(b => b.type === 'house')
-  const houseMap     = new Map(houses.map(h => [h.id, h]))
-  const buildingMap  = new Map(s.buildings.map(b => [b.id, b]))
-  const workplacePos = s.buildings.filter(b => b.type !== 'house').map(b => ({ x: b.x, y: b.y }))
-  const granaries    = s.buildings.filter(b => b.type === 'granary')
-  const marketsList  = s.buildings.filter(b => b.type === 'market')
-  const smithBldgs   = s.buildings.filter(b => b.type === 'blacksmith')
+  // Pre-built lookups — read-only, computed once per tick
+  const houses      = s.buildings.filter(b => b.type === 'house' || b.type === 'manor')
+  const houseMap    = new Map(houses.map(h => [h.id, h]))
+  const buildingMap = new Map(s.buildings.map(b => [b.id, b]))
+  const workplacePos = s.buildings.filter(b => b.type !== 'house' && b.type !== 'manor').map(b => ({ x: b.x, y: b.y }))
+  const granaries   = s.buildings.filter(b => b.type === 'granary')
+  const marketsList = s.buildings.filter(b => b.type === 'market')
+  const smithBldgs  = s.buildings.filter(b => b.type === 'blacksmith')
   return {
     s,
     nextTick, prevDay, nextDay, isNewDay, dayCount,
     isDaytime, crossedMorning, crossedEvening,
-    houses, houseMap, buildingMap, workplacePos,
-    granaries, marketsList, smithBldgs,
-    citizens:     s.citizens.map(c => ({ ...c })),
-    walkers:      s.walkers,
-    migrants:     s.migrants,
-    oxCarts:      s.oxCarts,
-    marketBuyers: s.marketBuyers,
-    peddlers:     s.peddlers,
-    farmPiles:    s.farmPiles,
-    farmZones:    s.farmZones,
-    peddlerTripLog: s.peddlerTripLog ?? {},
-    houseFood:    { ...s.houseFood },
-    houseCrops:   Object.fromEntries(Object.entries(s.houseCrops).map(([k, v]) => [k, { ...v }])),
-    houseSavings: { ...s.houseSavings },
-    houseDead:    { ...s.houseDead },
-    houseTools:   { ...s.houseTools },
-    farmInventory:    { ...s.farmInventory },
-    granaryInventory: { ...s.granaryInventory },
-    marketInventory:  { ...s.marketInventory },
-    mineInventory:    s.mineInventory,
-    smithInventory:   s.smithInventory,
-    timberInventory:  s.timberInventory,
-    oreVeinHealth:   { ...s.oreVeinHealth },
-    forestHealth:    { ...s.forestHealth },
-    grasslandHealth: { ...s.grasslandHealth },
-    houseSafety:     { ...s.houseSafety },
+    houses, houseMap, buildingMap, workplacePos, granaries, marketsList, smithBldgs,
+    // Entity arrays — routines replace these wholesale
+    citizens:  s.citizens.map(c => ({ ...c, motion: c.motion ? { ...c.motion } : null, peddlerState: c.peddlerState ? { ...c.peddlerState, cargo: { ...c.peddlerState.cargo, crops: { ...c.peddlerState.cargo.crops } } } : null })),
+    buildings: s.buildings.map(b => ({ ...b, agents: b.agents.map(a => ({ ...a })) })),
+    farmZones: s.farmZones.map(z => ({ ...z, piles: z.piles.map(p => ({ ...p })) })),
+    migrants:  s.migrants,
+    terrainResources: Object.fromEntries(
+      Object.entries(s.terrainResources).map(([k, v]) => [k, { ...v }])
+    ),
     monthlyFarmOutput:  s.monthlyFarmOutput,
     monthlyFarmValue:   s.monthlyFarmValue,
     monthlyMarketSales: s.monthlyMarketSales,
-    // outputs - filled by dedicated routines
+    // outputs
     population:      s.citizens.length,
     avgSatisfaction: s.avgSatisfaction,
     needPressure:    { ...s.needPressure },
@@ -120,50 +104,30 @@ export function buildTickContext(s: CityState): TickContext {
     monthlyDue:                  false,
   }
 }
+
 /** Merge tick results back into a new CityState. */
 export function applyTickResult(ctx: TickContext): CityState {
   const { s, monthlyDue, totalMonthlyTax } = ctx
   const yangminCost = monthlyDue ? Math.floor(ctx.population * 2) : 0
+  // Sync occupant counts from citizens into building residentData
   const occByHouse = new Map<string, number>()
   for (const c of ctx.citizens) occByHouse.set(c.houseId, (occByHouse.get(c.houseId) ?? 0) + 1)
-
-  // Only rebuild buildings array when house occupants actually changed —
-  // keeps the reference stable across ticks so downstream useMemo stays cached.
-  const occupantsChanged = s.buildings.some(
-    b => b.type === 'house' && (occByHouse.get(b.id) ?? 0) !== b.occupants)
-  const buildings = occupantsChanged
-    ? s.buildings.map(b => b.type === 'house' ? { ...b, occupants: occByHouse.get(b.id) ?? 0 } : b)
-    : s.buildings
+  const buildings = ctx.buildings.map(b =>
+    (b.type === 'house' || b.type === 'manor')
+      ? { ...b, occupants: occByHouse.get(b.id) ?? 0 }
+      : b,
+  )
   return {
     ...s,
-    tick:    ctx.nextTick,
-    dayTime: ctx.nextDay,
+    tick:     ctx.nextTick,
+    dayTime:  ctx.nextDay,
     dayCount: ctx.dayCount,
-    month: monthlyDue ? s.month + 1 : s.month,
+    month:    monthlyDue ? s.month + 1 : s.month,
     buildings,
-    citizens:     ctx.citizens,
-    walkers:      ctx.walkers,
-    migrants:     ctx.migrants,
-    oxCarts:      ctx.oxCarts,
-    marketBuyers: ctx.marketBuyers,
-    peddlers:     ctx.peddlers,
-    farmPiles:    ctx.farmPiles,
-    farmZones:    ctx.farmZones,
-    houseFood:    ctx.houseFood,
-    houseCrops:   ctx.houseCrops,
-    houseSavings: ctx.houseSavings,
-    houseDead:    ctx.houseDead,
-    houseTools:   ctx.houseTools,
-    farmInventory:    ctx.farmInventory,
-    granaryInventory: ctx.granaryInventory,
-    marketInventory:  ctx.marketInventory,
-    mineInventory:    ctx.mineInventory,
-    smithInventory:   ctx.smithInventory,
-    timberInventory:  ctx.timberInventory,
-    oreVeinHealth:    ctx.oreVeinHealth,
-    forestHealth:     ctx.forestHealth,
-    grasslandHealth:  ctx.grasslandHealth,
-    houseSafety:      ctx.houseSafety,
+    citizens:  ctx.citizens,
+    farmZones: ctx.farmZones,
+    migrants:  ctx.migrants,
+    terrainResources: ctx.terrainResources,
     monthlyFarmOutput:  ctx.nextMonthlyFarmOutput,
     monthlyFarmValue:   ctx.nextMonthlyFarmValue,
     monthlyMarketSales: ctx.nextMonthlyMarketSales,
@@ -172,15 +136,13 @@ export function applyTickResult(ctx: TickContext): CityState {
     lastTaxBreakdown:            ctx.lastTaxBreakdown,
     lastMonthlyExpenseBreakdown: ctx.lastMonthlyExpenseBreakdown,
     monthlyConstructionCost: monthlyDue ? 0 : s.monthlyConstructionCost,
-    lastMonthlyTax: monthlyDue ? totalMonthlyTax : s.lastMonthlyTax,
-    money: s.money + (monthlyDue ? totalMonthlyTax - yangminCost : 0),
+    lastMonthlyTax:  monthlyDue ? totalMonthlyTax : s.lastMonthlyTax,
+    money:           s.money + (monthlyDue ? totalMonthlyTax - yangminCost : 0),
     population:      ctx.population,
     avgSatisfaction: ctx.avgSatisfaction,
     needPressure:    ctx.needPressure,
     cityWenmai:      ctx.cityWenmai,
     cityShangmai:    ctx.cityShangmai,
     lastHouseholdBuyDay: s.lastHouseholdBuyDay,
-    marketConfig:        s.marketConfig,
-    peddlerTripLog:      ctx.peddlerTripLog,
   }
 }
