@@ -32,9 +32,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
-        env:
-          NODE_ENV: production
+        run: npm run build -- --mode production
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -51,4 +49,5 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
 

@@ -49,7 +49,7 @@ export default function LoadingScreen({ visible, onEnter }: Props) {
       {/* Cover image */}
       <div style={{
         position: 'absolute', inset: 0,
-        backgroundImage: 'url(/resource/image/cover.png)',
+        backgroundImage: `url(${import.meta.env.BASE_URL}resource/image/cover.png)`,
         backgroundSize: 'cover',
         backgroundPosition: 'center top',
         filter: 'brightness(0.68)',
