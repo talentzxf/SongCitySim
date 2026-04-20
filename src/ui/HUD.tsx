@@ -108,9 +108,9 @@ function TopBar({
       {/* Left: title + time */}
       <div className="top-bar-left">
         <span className="top-bar-title">🏯 永宋 · {cityName}</span>
-        <div className="tb-divider" />
-        <span style={{ fontSize: 16 }}>{timeIcon}</span>
-        <div style={{ lineHeight: 1.25 }}>
+        <div className="tb-divider tb-hide-mobile" />
+        <span className="tb-hide-mobile" style={{ fontSize: 16 }}>{timeIcon}</span>
+        <div className="tb-time-detail tb-hide-mobile" style={{ lineHeight: 1.25 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#f0d890', letterSpacing: '0.04em' }}>
             第 {state.dayCount} 天
           </div>
@@ -118,9 +118,9 @@ function TopBar({
             月 {state.month} · {dayTimeLabel(state.dayTime).split('（')[0]}
           </div>
         </div>
-        <div className="tb-divider" style={{ marginLeft: 2 }} />
+        <div className="tb-divider tb-hide-mobile" style={{ marginLeft: 2 }} />
         {/* Running status */}
-        <span style={{
+        <span className="tb-running-badge tb-hide-mobile" style={{
           fontSize: 10, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.1em',
           background: state.running ? 'rgba(82,196,26,0.2)' : 'rgba(180,140,50,0.12)',
           border: `1px solid ${state.running ? 'rgba(82,196,26,0.4)' : 'rgba(180,140,50,0.25)'}`,
@@ -157,24 +157,24 @@ function TopBar({
           <span className="tb-stat-label">👤 户口</span>
           <span className="tb-stat-value">{state.population}</span>
         </div>
-        <div className="tb-stat">
+        <div className="tb-stat tb-hide-mobile">
           <span className="tb-stat-label">😊 民心</span>
           <span className="tb-stat-value" style={{ color: state.avgSatisfaction >= 70 ? '#95de64' : state.avgSatisfaction >= 40 ? '#ffd666' : '#ff7875' }}>
             {state.avgSatisfaction}%
           </span>
         </div>
         <Tooltip title={`上月净 ${net >= 0 ? '+' : ''}${net}`}>
-          <div className="tb-stat">
+          <div className="tb-stat tb-hide-mobile">
             <span className="tb-stat-label">📊 月收益</span>
             <span className="tb-stat-value" style={{ color: netColor }}>{net >= 0 ? '+' : ''}{net}</span>
           </div>
         </Tooltip>
-        <div className="tb-divider" />
+        <div className="tb-divider tb-hide-mobile" />
         <Tooltip title="存档（下载）">
-          <button className="tb-icon-btn" onClick={onSave} title="存档">💾</button>
+          <button className="tb-icon-btn tb-hide-mobile" onClick={onSave} title="存档">💾</button>
         </Tooltip>
         <Tooltip title="读档（加载）">
-          <button className="tb-icon-btn" onClick={onLoadClick} title="读档">📂</button>
+          <button className="tb-icon-btn tb-hide-mobile" onClick={onLoadClick} title="读档">📂</button>
         </Tooltip>
       </div>
     </div>
