@@ -3,7 +3,7 @@
  */
 import React from 'react'
 import * as THREE from 'three'
-import { useSimulation, ENTRY_TILE } from '../state/simulation'
+import { useSimulation, ENTRY_TILE, logicalMigrantPos } from '../state/simulation'
 
 // ─── Connectivity helper ──────────────────────────────────────────────────────
 
@@ -349,6 +349,113 @@ function HouseBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
   )
 }
 
+// ─── Migrant beacon: follows first migrant in real-time ──────────────────────
+
+interface MigrantBeaconProps { migrantX: number; migrantY: number }
+
+function MigrantBeacon({ migrantX, migrantY }: MigrantBeaconProps) {
+  const [pos, setPos] = React.useState<BeaconScreenPos | null>(null)
+
+  React.useEffect(() => {
+    let raf: number
+    const tick = () => {
+      setPos(projectTileToScreen(migrantX, migrantY))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [migrantX, migrantY])
+
+  if (!pos) return null
+
+  if (pos.onScreen) {
+    return (
+      <>
+        {/* Glow ring */}
+        {[0, 0.35, 0.7].map((delay, i) => (
+          <div key={i} style={{
+            position: 'fixed',
+            left: pos.x - 30, top: pos.y - 30,
+            width: 60, height: 60,
+            borderRadius: '50%',
+            border: '2px solid rgba(100,220,255,0.85)',
+            pointerEvents: 'none', zIndex: 9492,
+            animation: `tut-beacon-ring 1.4s ease-out ${delay}s infinite`,
+          }} />
+        ))}
+        {/* Center dot */}
+        <div style={{
+          position: 'fixed',
+          left: pos.x - 7, top: pos.y - 7,
+          width: 14, height: 14, borderRadius: '50%',
+          background: 'rgba(100,220,255,0.95)',
+          boxShadow: '0 0 14px 5px rgba(80,200,255,0.65)',
+          pointerEvents: 'none', zIndex: 9493,
+        }} />
+        {/* Label */}
+        <div style={{
+          position: 'fixed',
+          left: pos.x, top: pos.y - 62,
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,20,40,0.92)',
+          border: '1px solid rgba(100,220,255,0.7)',
+          borderRadius: 6, padding: '4px 12px',
+          fontSize: 12, fontWeight: 700,
+          fontFamily: '"Noto Serif SC", serif',
+          color: '#6adcff', whiteSpace: 'nowrap',
+          pointerEvents: 'none', zIndex: 9494,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.7)',
+          animation: 'tut-beacon-float 1.0s ease-in-out infinite',
+        }}>
+          🚶 移民入城！
+          <span style={{
+            position: 'absolute', bottom: -7, left: '50%',
+            transform: 'translateX(-50%)',
+            width: 0, height: 0,
+            borderLeft: '6px solid transparent',
+            borderRight: '6px solid transparent',
+            borderTop: '7px solid rgba(100,220,255,0.7)',
+          }} />
+        </div>
+      </>
+    )
+  }
+
+  // Off-screen arrow
+  const sw = window.innerWidth, sh = window.innerHeight
+  const EDGE = 48
+  const clampedX = Math.max(EDGE, Math.min(sw - EDGE,
+    sw / 2 + (pos.x - sw / 2) * Math.min(
+      Math.abs((sh / 2 - EDGE) / (pos.y - sh / 2 + 0.001)),
+      Math.abs((sw / 2 - EDGE) / (pos.x - sw / 2 + 0.001)),
+      1,
+    )
+  ))
+  const clampedY = Math.max(EDGE, Math.min(sh - EDGE,
+    sh / 2 + (pos.y - sh / 2) * Math.min(
+      Math.abs((sh / 2 - EDGE) / (pos.y - sh / 2 + 0.001)),
+      Math.abs((sw / 2 - EDGE) / (pos.x - sw / 2 + 0.001)),
+      1,
+    )
+  ))
+  return (
+    <div style={{
+      position: 'fixed',
+      left: clampedX, top: clampedY,
+      transform: `translate(-50%, -50%) rotate(${pos.angle}rad)`,
+      width: 44, height: 44,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,20,40,0.88)',
+      border: '2px solid rgba(100,220,255,0.8)',
+      borderRadius: '50%',
+      color: '#6adcff', fontSize: 22,
+      pointerEvents: 'none', zIndex: 9494,
+      boxShadow: '0 0 16px rgba(100,220,255,0.5)',
+      animation: 'tut-beacon-float 1.0s ease-in-out infinite',
+    }}>➤</div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props { onDismiss: () => void }
@@ -574,6 +681,10 @@ export default function Tutorial({ onDismiss }: Props) {
   React.useEffect(() => {
     if (step.id === 'resident-settle') {
       selectTool('pan')
+      // Fly camera to the newly settled house
+      if (beaconHouse) {
+        ;(window as any).__ORE_COMPASS_TARGET__ = { id: Date.now(), x: beaconHouse.x, y: beaconHouse.y }
+      }
     }
   }, [step.id]) // eslint-disable-line
 
@@ -584,6 +695,31 @@ export default function Tutorial({ onDismiss }: Props) {
     }
     if (step.id !== 'resident-settle' && step.id !== 'resident-inspect') return
   }, [step.id])
+
+  // ── Tutorial camera follow: track first migrant during waiting steps ──────
+  const MIGRANT_FOLLOW_STEPS = new Set<StepId>(['waiting-resident', 'house-entry-road', 'waiting-resident-2'])
+  const isMigrantFollowStep = MIGRANT_FOLLOW_STEPS.has(step.id)
+  // Compute current migrant position (tile-space) from simulation state
+  const firstMigrant = isMigrantFollowStep ? (state.migrants[0] ?? null) : null
+  const migrantPos = firstMigrant ? logicalMigrantPos(firstMigrant) : null
+
+  // Drive camera follow via window global (picked up by MapScene useFrame)
+  React.useEffect(() => {
+    if (migrantPos) {
+      ;(window as any).__TUTORIAL_CAM_FOLLOW__ = { x: migrantPos.x, y: migrantPos.y }
+    } else {
+      ;(window as any).__TUTORIAL_CAM_FOLLOW__ = null
+    }
+  })  // runs every render when migrantPos changes
+
+  // Clear camera follow on unmount or when step leaves
+  React.useEffect(() => {
+    if (!isMigrantFollowStep) {
+      ;(window as any).__TUTORIAL_CAM_FOLLOW__ = null
+    }
+  }, [isMigrantFollowStep])
+
+  React.useEffect(() => () => { ;(window as any).__TUTORIAL_CAM_FOLLOW__ = null }, [])
 
   React.useEffect(() => { scheduledForStepRef.current = -1; setUsingFallback(false) }, [stepIdx])
   React.useEffect(() => () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current) }, [])
@@ -653,7 +789,7 @@ export default function Tutorial({ onDismiss }: Props) {
   const isDone   = step.id === 'done'
   const isManual = step.manual === true
   const PAD = 8
-  const panelAtBottomLeft = step.id === 'resident-settle' || step.id === 'resident-inspect'
+  const panelAtBottomLeft = step.id === 'resident-settle' || step.id === 'resident-inspect' || isMigrantFollowStep
 
   const stepBody  = (isTouch && step.bodyTouch) ? step.bodyTouch : step.body
   const stepTitle = isTouch ? (
@@ -665,6 +801,7 @@ export default function Tutorial({ onDismiss }: Props) {
 
   const showSpotlight = beaconRect && !(step.hideSpotlight?.(state, usingFallback) ?? false)
   const showHouseBeacon = step.id === 'resident-settle' && beaconHouse !== null
+  const showMigrantBeacon = isMigrantFollowStep && migrantPos !== null
 
   // ── Mobile compact bar for resident-inspect (bottom sheet takes 55vh) ───
   const mobileCompact = isTouch && step.id === 'resident-inspect'
@@ -673,6 +810,9 @@ export default function Tutorial({ onDismiss }: Props) {
     <>
       {/* ── 3D House Beacon ── */}
       {showHouseBeacon && <HouseBeacon tileX={beaconHouse!.x} tileY={beaconHouse!.y} />}
+
+      {/* ── 3D Migrant Beacon ── */}
+      {showMigrantBeacon && <MigrantBeacon migrantX={migrantPos!.x} migrantY={migrantPos!.y} />}
 
       {/* ── DOM SPOTLIGHT ── */}
       {showSpotlight && (

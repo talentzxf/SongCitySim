@@ -664,6 +664,20 @@ export default function MapScene() {
       setCompassMarker({ x: newCompassTarget.x, y: newCompassTarget.y })
       flyToRef.current = { x: newCompassTarget.x, y: newCompassTarget.y }
     }
+    // --- Tutorial camera follow (continuous smooth follow for migrant/house) --
+    const tutFollow = (window as any).__TUTORIAL_CAM_FOLLOW__ as { x: number; y: number } | null | undefined
+    if (tutFollow) {
+      const ctrl = (window as any).__THREE_CONTROLS__
+      if (ctrl?.target) {
+        const tx = tutFollow.x + 0.5, tz = tutFollow.y + 0.5
+        const dt = Math.min(1, delta * 4)
+        const dx = (tx - ctrl.target.x) * dt
+        const dz = (tz - ctrl.target.z) * dt
+        ctrl.target.x += dx; ctrl.target.z += dz
+        if (ctrl.object) { ctrl.object.position.x += dx; ctrl.object.position.z += dz }
+        if (typeof ctrl.update === 'function') ctrl.update()
+      }
+    }
     if (flyToRef.current) {
       const ctrl = (window as any).__THREE_CONTROLS__
       if (ctrl?.target) {

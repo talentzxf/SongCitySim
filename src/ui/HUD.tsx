@@ -1715,6 +1715,226 @@ function MineNoWorkerHint() {
   )
 }
 
+// ─── House info panel (dark parchment theme) ─────────────────────────────────
+
+function HouseInfoPanel() {
+  const { state, selectBuilding, selectCitizen } = useSimulation()
+  const b = state.buildings.find(x => x.id === state.selectedBuildingId)
+  if (!b) return null
+
+  const isManor = b.type === 'manor'
+  const buildingName = isManor ? '宅邸' : '民居'
+  const residents = state.citizens.filter(c => c.houseId === b.id)
+  const houseFood    = b.residentData?.food ?? 0
+  const houseSavings = b.residentData?.savings ?? 0
+  const houseCrops   = b.residentData?.crops
+  const dietVarietyCount = houseCrops ? Object.values(houseCrops).filter(v => v > 0.1).length : 0
+  const dietInfo = DIET_VARIETY_LABELS[Math.min(dietVarietyCount, 5)] ?? DIET_VARIETY_LABELS[1]
+
+  const hasRoadAccess = (() => {
+    const bw = b.w ?? 1, bh = b.h ?? 1
+    for (let dx = 0; dx < bw; dx++) for (let dy = 0; dy < bh; dy++) {
+      const tx = b.x + dx, ty = b.y + dy
+      for (const [ddx, ddy] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+        const nx = tx + ddx, ny = ty + ddy
+        if (nx >= b.x && nx < b.x + bw && ny >= b.y && ny < b.y + bh) continue
+        if (state.roads.some(r => r.x === nx && r.y === ny)) return true
+      }
+    }
+    return false
+  })()
+
+  const sickCount = residents.filter(c => c.isSick).length
+  const deadCount = b.residentData?.dead ?? 0
+  const avgSat = residents.length > 0
+    ? Math.round(residents.reduce((s, c) => s + c.satisfaction, 0) / residents.length)
+    : null
+  const satColor = avgSat == null ? '#888' : avgSat >= 70 ? '#6dde7a' : avgSat >= 40 ? '#e8c44a' : '#f07070'
+
+  // Dark parchment palette — high contrast
+  const C = {
+    bg:      'rgba(22,13,4,0.0)',
+    section: 'rgba(255,210,50,0.07)',
+    border:  'rgba(200,155,50,0.40)',
+    title:   '#f0d878',
+    text:    '#e8d0a0',
+    dim:     '#c4a46e',
+    gold:    '#f8e888',
+    warn:    '#f5aa48',
+    danger:  '#f08080',
+    good:    '#80ee90',
+  }
+
+  const CROP_ICON: Record<string, string> = {
+    rice: '🌾', millet: '🌻', wheat: '🌿', soybean: '🫘', vegetable: '🥬', tea: '🍵',
+  }
+
+  return (
+    <div style={{ padding: '10px 12px 14px', color: C.text, fontFamily: '"Noto Serif SC","SimSun",serif' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>{isManor ? '🏯' : '🏠'}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: C.gold, letterSpacing: '0.08em' }}>{buildingName}</span>
+          <span style={{ fontSize: 11, color: C.text }}>({b.x}, {b.y})</span>
+        </div>
+        <button onClick={() => selectBuilding(null)} style={{
+          background: 'transparent', border: '1px solid rgba(200,155,50,0.3)',
+          borderRadius: 4, color: C.dim, fontSize: 13, padding: '2px 8px', cursor: 'pointer',
+        }}>✕</button>
+      </div>
+
+      {/* ── Key stats row ── */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10,
+      }}>
+        {[
+          { label: '住户', value: `${residents.length} / ${b.capacity}`, icon: '👥', accent: residents.length >= b.capacity ? C.warn : C.gold },
+          { label: '积蓄', value: `¥${houseSavings.toFixed(0)}`, icon: '💰', accent: houseSavings < 5 ? C.danger : C.gold },
+          { label: '饮食', value: dietInfo.label, icon: '🍽', accent: dietVarietyCount === 0 ? C.danger : dietVarietyCount >= 3 ? C.good : C.warn },
+        ].map(s => (
+          <div key={s.label} style={{
+            background: C.section, border: `1px solid ${C.border}`,
+            borderRadius: 7, padding: '6px 8px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 16 }}>{s.icon}</div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{s.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: s.accent, marginTop: 2 }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Satisfaction ── */}
+      {avgSat !== null && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: C.section, border: `1px solid ${C.border}`,
+          borderRadius: 7, padding: '6px 10px', marginBottom: 10,
+        }}>
+          <span style={{ fontSize: 13, color: C.text }}>❤ 平均满意度</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 80, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${avgSat}%`, borderRadius: 3, background: satColor, transition: 'width 0.4s' }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: satColor }}>{avgSat}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Warnings ── */}
+      {!hasRoadAccess && (
+        <div style={{
+          background: 'rgba(200,100,20,0.2)', border: '1px solid rgba(240,140,40,0.6)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f5b060',
+        }}>⚠ 未与道路相连 — 居民无法通勤</div>
+      )}
+      {sickCount > 0 && (
+        <div style={{
+          background: 'rgba(180,50,50,0.2)', border: '1px solid rgba(220,80,80,0.55)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f09090',
+        }}>🏥 疫情：{sickCount} 人病倒 — 久病不愈将导致死亡</div>
+      )}
+      {deadCount > 0 && (
+        <div style={{
+          background: 'rgba(140,30,30,0.25)', border: '1px solid rgba(200,60,60,0.55)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f08080',
+        }}>💀 亡者 {deadCount} 具 — 积累过多将向邻居传播疫病</div>
+      )}
+      {houseFood <= 1 && (
+        <div style={{
+          background: 'rgba(200,80,20,0.2)', border: '1px solid rgba(240,120,40,0.55)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f5b060',
+        }}>🍚 粮食告急！ — 请确保集市有粮可售</div>
+      )}
+
+      {/* ── Food inventory ── */}
+      <div style={{
+        background: C.section, border: `1px solid ${C.border}`,
+        borderRadius: 7, padding: '8px 10px', marginBottom: 10,
+      }}>
+        <div style={{ fontSize: 12, color: C.title, fontWeight: 700, marginBottom: 6, letterSpacing: '0.08em' }}>
+          📦 仓储 · 饮食
+        </div>
+        {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
+          const amt = houseCrops ? (houseCrops[crop] ?? 0) : (crop === 'rice' ? houseFood : 0)
+          const barPct = Math.min(100, (amt / 30) * 100)
+          const barColor = amt <= 1 ? '#f08080' : amt < 5 ? '#f0c848' : '#80ee90'
+          return (
+            <div key={crop} style={{ marginBottom: 5, opacity: amt > 0.05 ? 1 : 0.45 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{ fontSize: 12, color: C.text }}>{CROP_ICON[crop]} {CROP_LABEL[crop]}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: amt > 0.05 ? barColor : C.dim }}>{amt.toFixed(1)} 担</span>
+              </div>
+              {crop === 'rice' && (
+                <div style={{ height: 5, borderRadius: 2, background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${barPct}%`, borderRadius: 2, background: barColor, transition: 'width 0.4s' }} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── Resident list ── */}
+      <div style={{
+        background: C.section, border: `1px solid ${C.border}`,
+        borderRadius: 7, padding: '8px 10px',
+      }}>
+        <div style={{ fontSize: 12, color: C.title, fontWeight: 700, marginBottom: 6, letterSpacing: '0.08em' }}>
+          {isManor ? '🏯 宅邸住户' : '🏠 住户列表'}
+          {residents.length > 0 && <span style={{ fontSize: 11, color: C.dim, marginLeft: 6, fontWeight: 400 }}>点击查看详情</span>}
+        </div>
+        {residents.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.dim, textAlign: 'center', padding: '4px 0' }}>暂无住户</div>
+        ) : residents.map(c => {
+          const profLabel = c.profession
+            ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
+            : c.workplaceId
+              ? (BUILDING_LABEL[state.buildings.find(bx => bx.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
+              : '待业'
+          const cSatColor = c.satisfaction >= 70 ? '#80ee90' : c.satisfaction >= 40 ? '#f0c848' : '#f08080'
+          const tierLabel = c.residentTier === 'gentry' ? '贵族' : c.residentTier === 'servant' ? '仆役' : null
+          return (
+            <div key={c.id}
+              onClick={() => selectCitizen(c.id)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '6px 6px', borderRadius: 6, cursor: 'pointer',
+                transition: 'background 0.15s',
+                marginBottom: 2,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,160,50,0.14)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 14 }}>👤</span>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>{c.name}</span>
+                  <span style={{ fontSize: 12, color: C.dim, marginLeft: 5 }}>{c.age}岁 · {profLabel}</span>
+                  {tierLabel && <span style={{ fontSize: 10, marginLeft: 5, color: '#f5d86a', border: '1px solid rgba(240,200,60,0.55)', borderRadius: 3, padding: '0 4px' }}>{tierLabel}</span>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {c.isSick && <span style={{ fontSize: 10, color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 3, padding: '0 4px' }}>病</span>}
+                <span style={{ fontSize: 11, color: c.isAtHome ? C.dim : '#8ec8ff', border: `1px solid ${c.isAtHome ? 'rgba(196,164,110,0.45)' : 'rgba(120,180,255,0.5)'}`, borderRadius: 3, padding: '0 5px' }}>
+                  {c.isAtHome ? '在家' : '通勤'}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: cSatColor }}>★{c.satisfaction}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+    </div>
+  )
+}
+
 // ─── Building panel ───────────────────────────────────────────────────────────
 
 function BuildingPanel() {
@@ -1723,6 +1943,10 @@ function BuildingPanel() {
   if (!b) return null
 
   const isHouse    = b.type === 'house' || b.type === 'manor'
+
+  // House uses dedicated dark-themed panel
+  if (isHouse) return <HouseInfoPanel />
+
   const isMarket   = b.type === 'market'
   const isGranary  = b.type === 'granary'
 
