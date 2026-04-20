@@ -932,23 +932,31 @@ export default function MapScene() {
 
     // ── Touch handlers (for road/build drag on mobile) ──────────────────────
     // We capture in capture-phase so we fire before OrbitControls' bubble listeners.
+    let touchDownPos: { clientX: number; clientY: number } | null = null
+
     function onTouchStart(e: TouchEvent) {
       const tool = stateRef.current.selectedTool
       if (tool === 'pan' || e.touches.length !== 1) return
       // Prevent OrbitControls from starting a pan when we own this gesture
       e.preventDefault()
       e.stopPropagation()
-      dragRef.current.active = true; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null
       const touch = e.touches[0]
-      const t = getTileAt(touch.clientX, touch.clientY); if (!t) return
-      dragRef.current.lastTileKey = `${t.x},${t.y}`
-      if (tool === 'road') {
-        dragRef.current.didDrag  = false
-        roadDragStartRef.current = t
-        const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
-      } else if (tool === 'farmZone' || tool === 'teaZone') {
-        dragRef.current.didDrag = true; dragRef.current.lastTile = t; paintFarmZone(t)
+      touchDownPos = { clientX: touch.clientX, clientY: touch.clientY }
+
+      // Drag tools: initialise drag state immediately
+      if (tool === 'road' || tool === 'farmZone' || tool === 'teaZone') {
+        dragRef.current.active = true; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null
+        const t = getTileAt(touch.clientX, touch.clientY); if (!t) return
+        dragRef.current.lastTileKey = `${t.x},${t.y}`
+        if (tool === 'road') {
+          dragRef.current.didDrag  = false
+          roadDragStartRef.current = t
+          const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
+        } else {
+          dragRef.current.didDrag = true; dragRef.current.lastTile = t; paintFarmZone(t)
+        }
       }
+      // Building types / bulldoze: no drag state needed — placement fires in onTouchEnd
     }
 
     function onTouchMove(e: TouchEvent) {
@@ -985,15 +993,28 @@ export default function MapScene() {
     function onTouchEnd(e: TouchEvent) {
       const tool = stateRef.current.selectedTool
       if (tool === 'pan') return
-      if (dragRef.current.active) {
-        if (tool === 'road') {
-          if (dragRef.current.didDrag && roadPreviewRef.current.length > 0) {
-            for (const tile of roadPreviewRef.current) paintRoad(tile)
-          }
-          setRoadPreview([]); roadPreviewRef.current = []; roadDragStartRef.current = null
+
+      if (tool === 'road' && dragRef.current.active) {
+        // Commit road drag (or single tap = place one tile)
+        if (dragRef.current.didDrag && roadPreviewRef.current.length > 0) {
+          for (const tile of roadPreviewRef.current) paintRoad(tile)
+        } else if (touchDownPos) {
+          // single tap on road tool — place one tile
+          const t = getTileAt(touchDownPos.clientX, touchDownPos.clientY)
+          if (t) paintRoad(t)
         }
+        setRoadPreview([]); roadPreviewRef.current = []; roadDragStartRef.current = null
         stopDrag()
+      } else if (tool === 'farmZone' || tool === 'teaZone') {
+        stopDrag()
+      } else {
+        // Building types, bulldoze, or any other tool: treat as tap → applyTool
+        if (touchDownPos) {
+          const t = getTileAt(touchDownPos.clientX, touchDownPos.clientY)
+          if (t) applyTool(t.x, t.y)
+        }
       }
+      touchDownPos = null
     }
 
     const c = gl.domElement
