@@ -664,6 +664,9 @@ export default function Tutorial({ onDismiss }: Props) {
   const showSpotlight = beaconRect && !(step.hideSpotlight?.(state, usingFallback) ?? false)
   const showHouseBeacon = step.id === 'resident-settle' && beaconHouse !== null
 
+  // ── Mobile compact bar for resident-inspect (bottom sheet takes 55vh) ───
+  const mobileCompact = isTouch && step.id === 'resident-inspect'
+
   return (
     <>
       {/* ── 3D House Beacon ── */}
@@ -720,7 +723,33 @@ export default function Tutorial({ onDismiss }: Props) {
       )}
 
       {/* ── Instruction panel ── */}
-      <div style={{
+      {mobileCompact ? (
+        /* Mobile compact bar: sits just below top bar, won't overlap bottom sheet */
+        <div style={{
+          position: 'fixed',
+          top: 56, left: 8, right: 8,
+          zIndex: 9510,
+          background: 'rgba(8,5,2,0.96)',
+          border: '1px solid rgba(200,160,55,0.65)',
+          borderRadius: 8,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.8)',
+          padding: '8px 14px',
+          fontFamily: '"Noto Serif SC", "SimSun", serif',
+          backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+          userSelect: 'none',
+        }}>
+          <span style={{ fontSize: 13, color: '#f0d580', fontWeight: 700 }}>
+            {step.emoji} {stepTitle} — 查看下方面板后点继续
+          </span>
+          <button onClick={advance} style={{
+            background: 'rgba(130,95,25,0.5)', border: '1px solid rgba(220,175,70,0.75)',
+            borderRadius: 4, padding: '5px 16px', color: '#f5e090',
+            fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.15em',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>继续 →</button>
+        </div>
+      ) : (
         position: 'fixed',
         ...(panelAtBottomLeft
           ? isTouch
@@ -798,6 +827,7 @@ export default function Tutorial({ onDismiss }: Props) {
           }}>跳过教程</button>
         </div>
       </div>
+      )}
 
       <style>{`
         @keyframes tut-ripple {
