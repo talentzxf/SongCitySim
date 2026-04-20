@@ -140,8 +140,8 @@ const STEPS: TutStep[] = [
   },
   {
     id: 'resident-settle', emoji: '🏠', title: '居民已入新宅！',
-    body:      '首位百姓已入住民居！\n\n地图上闪烁的金色光圈即为其所居之所——\n点击那座民居，察看宅邸详情。',
-    bodyTouch: '首位百姓已入住民居！\n点击地图上闪烁的金色光圈处的民居，察看宅邸详情。',
+    body:      '首位百姓已入住民居！\n\n已为你切换到【浏览】模式——\n点击地图上闪烁的金色光圈处的民居，察看宅邸详情。',
+    bodyTouch: '首位百姓已入住民居！\n已切换到【浏览】模式，点击地图上闪烁的金色光圈处的民居，察看宅邸详情。',
   },
   {
     id: 'resident-inspect', emoji: '📋', title: '宅邸详情', manual: true,
@@ -353,7 +353,7 @@ function HouseBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
 interface Props { onDismiss: () => void }
 
 export default function Tutorial({ onDismiss }: Props) {
-  const { state } = useSimulation()
+  const { state, selectTool } = useSimulation()
 
   const isTouch = React.useMemo(() =>
     typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
@@ -568,6 +568,13 @@ export default function Tutorial({ onDismiss }: Props) {
     if (idx >= 0) setStepIdx(idx)
   }, [state.citizens, state.buildings, stepIdx]) // eslint-disable-line
 
+  // ── resident-settle: auto-switch to pan so clicking the house selects it ─
+  React.useEffect(() => {
+    if (step.id === 'resident-settle') {
+      selectTool('pan')
+    }
+  }, [step.id]) // eslint-disable-line
+
   // Clear beacon when leaving resident-settle step
   React.useEffect(() => {
     if (step.id !== 'resident-settle' && step.id !== 'resident-inspect') {
@@ -578,6 +585,16 @@ export default function Tutorial({ onDismiss }: Props) {
 
   React.useEffect(() => { scheduledForStepRef.current = -1; setUsingFallback(false) }, [stepIdx])
   React.useEffect(() => () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current) }, [])
+
+  // ── Clicking the spotlight target on a manual step advances it ───────────
+  React.useEffect(() => {
+    if (!step.manual || !step.targetId) return
+    const el = document.querySelector(`[data-tutorial="${step.targetId}"]`) as HTMLElement | null
+    if (!el) return
+    const onClick = () => advance()
+    el.addEventListener('click', onClick)
+    return () => el.removeEventListener('click', onClick)
+  }, [step.id, step.manual, step.targetId, advance])
 
   // ── DOM spotlight beacon tracking ────────────────────────────────────────
   React.useEffect(() => {
@@ -687,6 +704,7 @@ export default function Tutorial({ onDismiss }: Props) {
             whiteSpace: 'nowrap', pointerEvents: 'none',
             zIndex: 9503, boxShadow: '0 2px 10px rgba(0,0,0,0.7)',
             animation: 'tut-float 1.0s ease-in-out infinite',
+            display: isTouch ? 'none' : undefined,
           }}>
             👆 点这里
             <span style={{
@@ -711,8 +729,6 @@ export default function Tutorial({ onDismiss }: Props) {
           : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }),
         zIndex: 9510,
         width: isTouch ? 'min(92vw, 480px)' : 'clamp(300px, 46vw, 560px)',
-        maxHeight: (panelAtBottomLeft && isTouch) ? 'calc(45vh - 8px)' : undefined,
-        overflowY: (panelAtBottomLeft && isTouch) ? 'auto' : undefined,
         background: 'rgba(8,5,2,0.96)',
         border: '1px solid rgba(200,160,55,0.65)',
         borderRadius: 10,
