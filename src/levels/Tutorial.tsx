@@ -405,7 +405,11 @@ export default function Tutorial({ onDismiss }: Props) {
       if (leftDown  && d > 12) setPanDone(true)
       if (rightDown && d > 12) setRotateDone(true)
     }
-    const onWheel = () => setZoomDone(true)
+    let wheelAccum = 0
+    const onWheel = (e: WheelEvent) => {
+      wheelAccum += Math.abs(e.deltaY)
+      if (wheelAccum > 120) setZoomDone(true)
+    }
     let touchStartX = 0, touchStartY = 0, lastPinchDist = 0, lastPinchAngle = 0
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) { touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY }
@@ -427,9 +431,7 @@ export default function Tutorial({ onDismiss }: Props) {
         const dist  = Math.hypot(dx, dy)
         const angle = Math.atan2(dy, dx)
         // Zoom: 双指有任何移动（距离变化 > 3px）即算完成
-        if (Math.abs(dist - lastPinchDist) > 3) setZoomDone(true)
-        // 也接受：双指放上屏幕并移动，直接视为缩放尝试
-        setZoomDone(true)
+        if (Math.abs(dist - lastPinchDist) > 20) setZoomDone(true)
         // Rotate: angular change > ~5° (0.09 rad) between the two fingers
         const raw = Math.abs(angle - lastPinchAngle)
         const angDiff = Math.min(raw, Math.PI * 2 - raw)
@@ -632,6 +634,7 @@ export default function Tutorial({ onDismiss }: Props) {
   const isDone   = step.id === 'done'
   const isManual = step.manual === true
   const PAD = 8
+  const panelAtBottomLeft = step.id === 'resident-settle' || step.id === 'resident-inspect'
 
   const stepBody  = (isTouch && step.bodyTouch) ? step.bodyTouch : step.body
   const stepTitle = isTouch ? (
@@ -701,10 +704,15 @@ export default function Tutorial({ onDismiss }: Props) {
       {/* ── Instruction panel ── */}
       <div style={{
         position: 'fixed',
-        top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)',
+        ...(panelAtBottomLeft
+          ? isTouch
+            ? { top: 60, left: 8, bottom: 'auto', transform: 'none' }          // mobile: top-left below top bar
+            : { bottom: 24, left: 16, top: 'auto', transform: 'none' }          // desktop: bottom-left
+          : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }),
         zIndex: 9510,
         width: isTouch ? 'min(92vw, 480px)' : 'clamp(300px, 46vw, 560px)',
+        maxHeight: (panelAtBottomLeft && isTouch) ? 'calc(45vh - 8px)' : undefined,
+        overflowY: (panelAtBottomLeft && isTouch) ? 'auto' : undefined,
         background: 'rgba(8,5,2,0.96)',
         border: '1px solid rgba(200,160,55,0.65)',
         borderRadius: 10,
