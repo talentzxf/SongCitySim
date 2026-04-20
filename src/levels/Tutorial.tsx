@@ -3,16 +3,52 @@
  */
 import React from 'react'
 import * as THREE from 'three'
-import { useSimulation } from '../state/simulation'
+import { useSimulation, ENTRY_TILE } from '../state/simulation'
+
+// ─── Connectivity helper ──────────────────────────────────────────────────────
+
+/** BFS from entry tile through roads; returns true if any house footprint is adjacent. */
+function housesReachableFromEntry(
+  roads: { x: number; y: number }[],
+  houses: { x: number; y: number; w?: number; h?: number }[],
+): boolean {
+  if (houses.length === 0) return true
+  const roadSet = new Set(roads.map(r => `${r.x},${r.y}`))
+  const entry = ENTRY_TILE
+  if (!roadSet.has(`${entry.x},${entry.y}`)) return false
+
+  function adjacentToHouse(rx: number, ry: number): boolean {
+    return houses.some(h => {
+      const bw = h.w ?? 1, bh = h.h ?? 1
+      for (let dx = 0; dx < bw; dx++)
+        for (let dy = 0; dy < bh; dy++)
+          if (Math.abs(rx - (h.x + dx)) + Math.abs(ry - (h.y + dy)) === 1) return true
+      return false
+    })
+  }
+
+  const visited = new Set<string>([`${entry.x},${entry.y}`])
+  const queue: { x: number; y: number }[] = [{ x: entry.x, y: entry.y }]
+  while (queue.length > 0) {
+    const cur = queue.shift()!
+    if (adjacentToHouse(cur.x, cur.y)) return true
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]) {
+      const nx = cur.x + dx, ny = cur.y + dy
+      const key = `${nx},${ny}`
+      if (!visited.has(key) && roadSet.has(key)) { visited.add(key); queue.push({ x: nx, y: ny }) }
+    }
+  }
+  return false
+}
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 
 type StepId =
   | 'pan-intro' | 'pan-drag' | 'pan-rotate' | 'pan-zoom'
   | 'road'
-  | 'house-open' | 'house-select'
+  | 'house-open' | 'house-select' | 'house-road'
   | 'start'
-  | 'waiting-resident'
+  | 'waiting-resident' | 'house-entry-road' | 'waiting-resident-2'
   | 'resident-settle' | 'resident-inspect'
   | 'farmzone-select' | 'farmzone-place'
   | 'connect-road'
@@ -76,6 +112,12 @@ const STEPS: TutStep[] = [
     hideSpotlight: (s) => s.selectedTool === 'house',
   },
   {
+    id: 'house-road', emoji: '🛤', title: '第二步：将民居连通道路', targetId: 'road-tool',
+    body:      '民居须紧邻道路，移民方能循路入城！\n\n选择底部工具栏的【道路】工具，将道路延伸至民居相邻的格子。',
+    bodyTouch: '民居须紧邻道路，移民才能入城！\n选择【道路】工具，将道路铺至民居旁边。',
+    hideSpotlight: (s) => s.selectedTool === 'road',
+  },
+  {
     id: 'start', emoji: '▶', title: '第三步：开启时光', targetId: 'start-btn',
     body:      '城已初具，万事俱备！点击顶部的【▶ 开始】按钮（可调慢/1×/2×速度），让时间流转，等待移民入城。',
     bodyTouch: '城已初具！点击顶部的【▶ 开始】按钮，让时间流转，等待移民入城。',
@@ -84,6 +126,17 @@ const STEPS: TutStep[] = [
     id: 'waiting-resident', emoji: '⏳', title: '静候移民叩门',
     body:      '时光已动，万物渐生。\n\n四方流民闻城中有宅可居，正扶老携幼、跋山涉水而来……\n\n稍候片刻，待首位百姓安顿入宅，方可继续。',
     bodyTouch: '时光已动，四方流民闻城中有宅可居，正赶路而来……\n\n稍候片刻，待首位百姓入宅。',
+  },
+  {
+    id: 'house-entry-road', emoji: '🚧', title: '道路尚未连通官道！', targetId: 'road-tool',
+    body:      '移民须沿官道入城，方能找到你的新居。\n\n当前民居的道路与入城官道尚未相连——\n请选择【道路】工具，将你的路网延伸，直至与城门口的官道接通。',
+    bodyTouch: '移民须沿官道入城，当前道路与入城官道未连通！\n请选择【道路】工具，将路网接上城门口的官道。',
+    hideSpotlight: (s) => s.selectedTool === 'road',
+  },
+  {
+    id: 'waiting-resident-2', emoji: '⏳', title: '官道已通，静候移民',
+    body:      '官道已然相连，移民正循路而来……\n\n稍候片刻，待首位百姓安顿入宅，方可继续。',
+    bodyTouch: '官道已通！稍候片刻，待首位百姓入宅。',
   },
   {
     id: 'resident-settle', emoji: '🏠', title: '居民已入新宅！',
@@ -373,8 +426,10 @@ export default function Tutorial({ onDismiss }: Props) {
         const dy    = e.touches[0].clientY - e.touches[1].clientY
         const dist  = Math.hypot(dx, dy)
         const angle = Math.atan2(dy, dx)
-        // Zoom: pinch distance change > 15 px
-        if (Math.abs(dist - lastPinchDist) > 15) setZoomDone(true)
+        // Zoom: 双指有任何移动（距离变化 > 3px）即算完成
+        if (Math.abs(dist - lastPinchDist) > 3) setZoomDone(true)
+        // 也接受：双指放上屏幕并移动，直接视为缩放尝试
+        setZoomDone(true)
         // Rotate: angular change > ~5° (0.09 rad) between the two fingers
         const raw = Math.abs(angle - lastPinchAngle)
         const angDiff = Math.min(raw, Math.PI * 2 - raw)
@@ -440,7 +495,28 @@ export default function Tutorial({ onDismiss }: Props) {
     else if (id === 'road')            done = state.roads.length > init.roads
     else if (id === 'house-open')      done = drawerOpen
     else if (id === 'house-select')    done = state.buildings.filter(b => b.type === 'house').length > init.houses
+    else if (id === 'house-road') {
+      // Pass immediately if any house already has an adjacent road; otherwise wait for one
+      done = state.buildings
+        .filter(b => b.type === 'house' || b.type === 'manor')
+        .some(b =>
+          [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) =>
+            state.roads.some(r => r.x === b.x + dx && r.y === b.y + dy),
+          ),
+        )
+    }
     else if (id === 'start')           done = state.running
+    else if (id === 'waiting-resident') {
+      // If houses exist but aren't reachable from entry → advance to house-entry-road step
+      const houses = state.buildings.filter(b => b.type === 'house' || b.type === 'manor')
+      done = houses.length > 0 && !housesReachableFromEntry(state.roads, houses)
+    }
+    else if (id === 'house-entry-road') {
+      // Road network now reaches a house → advance to waiting-resident-2
+      const houses = state.buildings.filter(b => b.type === 'house' || b.type === 'manor')
+      done = housesReachableFromEntry(state.roads, houses)
+    }
+    // waiting-resident-2: no auto-advance; residentSettledRef handles the jump to resident-settle
     else if (id === 'resident-settle') done = beaconHouse !== null && state.selectedBuildingId === beaconHouse.id
     else if (id === 'farmzone-select') done = state.selectedTool === 'farmZone'
     else if (id === 'farmzone-place')  done = state.farmZones.length > 0
