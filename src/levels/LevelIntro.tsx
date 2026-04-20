@@ -134,6 +134,36 @@ export default function LevelIntro({ onConfirm }: Props) {
         pointerEvents: 'none',
       }} />
 
+      {/* Skip button — top right */}
+      {!isLast && (
+        <button
+          onClick={e => { e.stopPropagation(); setSlide(SLIDES.length - 1) }}
+          style={{
+            position: 'absolute', top: 20, right: 24,
+            background: 'rgba(60,40,10,0.7)',
+            border: '1px solid rgba(200,160,70,0.55)',
+            borderRadius: 4,
+            padding: '7px 18px',
+            color: 'rgba(220,185,100,0.9)',
+            fontFamily: '"Noto Serif SC", serif',
+            fontSize: 12, letterSpacing: '0.2em',
+            cursor: 'pointer',
+            transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+            zIndex: 1,
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(100,70,18,0.85)'
+            e.currentTarget.style.borderColor = 'rgba(220,175,80,0.85)'
+            e.currentTarget.style.color = '#f5e090'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(60,40,10,0.7)'
+            e.currentTarget.style.borderColor = 'rgba(200,160,70,0.55)'
+            e.currentTarget.style.color = 'rgba(220,185,100,0.9)'
+          }}
+        >跳过 ⏭</button>
+      )}
+
       {/* Slide counter dots */}
       <div style={{ position: 'absolute', top: 32, display: 'flex', gap: 8 }}>
         {SLIDES.map((_, i) => (
