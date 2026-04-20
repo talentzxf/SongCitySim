@@ -750,83 +750,84 @@ export default function Tutorial({ onDismiss }: Props) {
           }}>继续 →</button>
         </div>
       ) : (
-        position: 'fixed',
-        ...(panelAtBottomLeft
-          ? isTouch
-            ? { top: 60, left: 8, bottom: 'auto', transform: 'none' }          // mobile: top-left below top bar
-            : { bottom: 24, left: 16, top: 'auto', transform: 'none' }          // desktop: bottom-left
-          : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }),
-        zIndex: 9510,
-        width: isTouch ? 'min(92vw, 480px)' : 'clamp(300px, 46vw, 560px)',
-        background: 'rgba(8,5,2,0.96)',
-        border: '1px solid rgba(200,160,55,0.65)',
-        borderRadius: 10,
-        boxShadow: '0 8px 48px rgba(0,0,0,0.9)',
-        padding: '18px 24px 16px',
-        fontFamily: '"Noto Serif SC", "SimSun", serif',
-        backdropFilter: 'blur(8px)',
-        userSelect: 'none',
-      }}>
-        {/* Progress dots */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 14, justifyContent: 'center' }}>
-          {STEPS.map((s, i) => (
-            <div key={s.id} style={{
-              height: 4, borderRadius: 2,
-              width: i === stepIdx ? 22 : 4,
-              background:
-                i < stepIdx   ? 'rgba(100,200,90,0.9)' :
-                i === stepIdx ? 'rgba(220,175,60,0.95)' :
-                                'rgba(180,150,70,0.18)',
-              transition: 'all 0.3s ease',
-            }} />
-          ))}
-        </div>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <span style={{ fontSize: 22 }}>{step.emoji}</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#f0d580', letterSpacing: '0.1em', flex: 1 }}>
-            {stepTitle}
-          </span>
-          <span style={{ fontSize: 11, color: 'rgba(180,150,70,0.4)', whiteSpace: 'nowrap' }}>
-            {stepIdx + 1}&thinsp;/&thinsp;{STEPS.length}
-          </span>
-        </div>
-        {/* Body */}
-        <div style={{ fontSize: 13, color: 'rgba(220,195,145,0.88)', lineHeight: 1.9, letterSpacing: '0.05em', whiteSpace: 'pre-line' }}>
-          {stepBody}
-        </div>
-        {/* Footer */}
-        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {isDone ? (
-            <button onClick={handleDismiss} style={{
-              background: 'rgba(80,160,50,0.35)', border: '1px solid rgba(120,200,90,0.7)',
-              borderRadius: 4, padding: '7px 28px', color: '#aaee98',
-              fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.25em', cursor: 'pointer',
-            }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(90,180,60,0.5)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(80,160,50,0.35)')}
-            >🎊 开始大展宏图</button>
-          ) : isManual ? (
-            <button onClick={advance} style={{
-              background: 'rgba(130,95,25,0.4)', border: '1px solid rgba(220,175,70,0.75)',
-              borderRadius: 4, padding: '7px 28px', color: '#f5e090',
-              fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.25em', cursor: 'pointer',
-            }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(160,115,35,0.6)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(130,95,25,0.4)')}
-            >继续 →</button>
-          ) : (
-            <span style={{ fontSize: 11, color: 'rgba(160,130,70,0.4)', letterSpacing: '0.08em' }}>
-              完成操作后自动进入下一步…
+        <div style={{
+          position: 'fixed',
+          ...(panelAtBottomLeft
+            ? isTouch
+              ? { top: 60, left: 8, bottom: 'auto', transform: 'none' }
+              : { bottom: 24, left: 16, top: 'auto', transform: 'none' }
+            : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }),
+          zIndex: 9510,
+          width: isTouch ? 'min(92vw, 480px)' : 'clamp(300px, 46vw, 560px)',
+          background: 'rgba(8,5,2,0.96)',
+          border: '1px solid rgba(200,160,55,0.65)',
+          borderRadius: 10,
+          boxShadow: '0 8px 48px rgba(0,0,0,0.9)',
+          padding: '18px 24px 16px',
+          fontFamily: '"Noto Serif SC", "SimSun", serif',
+          backdropFilter: 'blur(8px)',
+          userSelect: 'none',
+        }}>
+          {/* Progress dots */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 14, justifyContent: 'center' }}>
+            {STEPS.map((s, i) => (
+              <div key={s.id} style={{
+                height: 4, borderRadius: 2,
+                width: i === stepIdx ? 22 : 4,
+                background:
+                  i < stepIdx   ? 'rgba(100,200,90,0.9)' :
+                  i === stepIdx ? 'rgba(220,175,60,0.95)' :
+                                  'rgba(180,150,70,0.18)',
+                transition: 'all 0.3s ease',
+              }} />
+            ))}
+          </div>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 22 }}>{step.emoji}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#f0d580', letterSpacing: '0.1em', flex: 1 }}>
+              {stepTitle}
             </span>
-          )}
-          <button onClick={handleDismiss} style={{
-            background: 'transparent', border: '1px solid rgba(140,110,55,0.22)',
-            borderRadius: 3, padding: '4px 14px', color: 'rgba(150,120,65,0.4)',
-            fontFamily: '"Noto Serif SC", serif', fontSize: 11, letterSpacing: '0.1em', cursor: 'pointer',
-          }}>跳过教程</button>
+            <span style={{ fontSize: 11, color: 'rgba(180,150,70,0.4)', whiteSpace: 'nowrap' }}>
+              {stepIdx + 1}&thinsp;/&thinsp;{STEPS.length}
+            </span>
+          </div>
+          {/* Body */}
+          <div style={{ fontSize: 13, color: 'rgba(220,195,145,0.88)', lineHeight: 1.9, letterSpacing: '0.05em', whiteSpace: 'pre-line' }}>
+            {stepBody}
+          </div>
+          {/* Footer */}
+          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {isDone ? (
+              <button onClick={handleDismiss} style={{
+                background: 'rgba(80,160,50,0.35)', border: '1px solid rgba(120,200,90,0.7)',
+                borderRadius: 4, padding: '7px 28px', color: '#aaee98',
+                fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.25em', cursor: 'pointer',
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(90,180,60,0.5)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(80,160,50,0.35)')}
+              >🎊 开始大展宏图</button>
+            ) : isManual ? (
+              <button onClick={advance} style={{
+                background: 'rgba(130,95,25,0.4)', border: '1px solid rgba(220,175,70,0.75)',
+                borderRadius: 4, padding: '7px 28px', color: '#f5e090',
+                fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.25em', cursor: 'pointer',
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(160,115,35,0.6)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(130,95,25,0.4)')}
+              >继续 →</button>
+            ) : (
+              <span style={{ fontSize: 11, color: 'rgba(160,130,70,0.4)', letterSpacing: '0.08em' }}>
+                完成操作后自动进入下一步…
+              </span>
+            )}
+            <button onClick={handleDismiss} style={{
+              background: 'transparent', border: '1px solid rgba(140,110,55,0.22)',
+              borderRadius: 3, padding: '4px 14px', color: 'rgba(150,120,65,0.4)',
+              fontFamily: '"Noto Serif SC", serif', fontSize: 11, letterSpacing: '0.1em', cursor: 'pointer',
+            }}>跳过教程</button>
+          </div>
         </div>
-      </div>
       )}
 
       <style>{`
