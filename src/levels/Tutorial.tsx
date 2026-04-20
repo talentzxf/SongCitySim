@@ -146,8 +146,9 @@ const STEPS: TutStep[] = [
   {
     id: 'resident-inspect', emoji: '📋', title: '宅邸详情', manual: true,
     targetId: 'house-info-panel',
+    hideSpotlight: () => true,   // panel is already open; no spotlight overlay needed
     body:      '右侧面板即为宅邸详情，汝可于此察看：\n\n🏠 住户 — 已入住人口 / 最大容纳数\n💰 积蓄 — 此户人家现存钱财，用于购粮、纳税\n🍽 饮食多样 — 食粮种类愈丰，百姓愈是安乐\n❤ 满意度 — 此乃民心所向，满意度低则百姓离城\n\n——民者，邦之本也。万般治政，皆为黎庶温饱而设。\n\n察看完毕后，点击【继续】。',
-    bodyTouch: '右侧为宅邸详情：\n\n🏠 住户 — 入住/容纳\n💰 积蓄 — 家中钱财\n🍽 饮食 — 食粮种类\n❤ 满意度 — 民心所向\n\n察看后点击【继续】。',
+    bodyTouch: '下方即为宅邸详情：\n\n🏠 住户 — 入住/容纳\n💰 积蓄 — 家中钱财\n🍽 饮食 — 食粮种类\n❤ 满意度 — 民心所向\n\n察看后点击【继续】。',
   },
   {
     id: 'farmzone-select', emoji: '🌾', title: '第四步：选择农田工具', targetId: 'farmzone-tool',
@@ -410,13 +411,14 @@ export default function Tutorial({ onDismiss }: Props) {
       wheelAccum += Math.abs(e.deltaY)
       if (wheelAccum > 120) setZoomDone(true)
     }
-    let touchStartX = 0, touchStartY = 0, lastPinchDist = 0, lastPinchAngle = 0
+    let touchStartX = 0, touchStartY = 0, lastPinchDist = 0, lastPinchAngle = 0, pinchStartDist = 0
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) { touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY }
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX
         const dy = e.touches[0].clientY - e.touches[1].clientY
         lastPinchDist  = Math.hypot(dx, dy)
+        pinchStartDist = lastPinchDist
         lastPinchAngle = Math.atan2(dy, dx)
       }
     }
@@ -430,8 +432,8 @@ export default function Tutorial({ onDismiss }: Props) {
         const dy    = e.touches[0].clientY - e.touches[1].clientY
         const dist  = Math.hypot(dx, dy)
         const angle = Math.atan2(dy, dx)
-        // Zoom: 双指有任何移动（距离变化 > 3px）即算完成
-        if (Math.abs(dist - lastPinchDist) > 20) setZoomDone(true)
+        // Zoom: 与捏合开始时的距离相差 > 30px 才算完成
+        if (Math.abs(dist - pinchStartDist) > 30) setZoomDone(true)
         // Rotate: angular change > ~5° (0.09 rad) between the two fingers
         const raw = Math.abs(angle - lastPinchAngle)
         const angDiff = Math.min(raw, Math.PI * 2 - raw)

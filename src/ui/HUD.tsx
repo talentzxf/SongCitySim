@@ -296,13 +296,13 @@ function StatsPanel({
 
 // ─── ToolBar (floating pill, bottom center) ──────────────────────────────────
 
-function ToolBar({ onBuildingToggle, buildingOpen }: { onBuildingToggle: () => void; buildingOpen: boolean }) {
+function ToolBar({ onBuildingToggle, buildingOpen, hidden }: { onBuildingToggle: () => void; buildingOpen: boolean; hidden?: boolean }) {
   const { state, selectTool } = useSimulation()
   const tool = state.selectedTool
   const isBuildingActive = buildingOpen || ALL_BUILDING_TYPES.includes(tool as BuildingType)
 
   return (
-    <div className="tool-bar">
+    <div className="tool-bar" style={hidden ? { opacity: 0, pointerEvents: 'none', transform: 'translateX(-50%) translateY(20px)', transition: 'opacity 0.2s, transform 0.2s' } : { transition: 'opacity 0.2s, transform 0.2s' }}>
       {/* Group 1: navigation */}
       <button
         className={`tool-btn${tool === 'pan' ? ' active' : ''}`}
@@ -572,7 +572,8 @@ export default function HUD() {
       'no-wenmai': `文脉不足（${state.cityWenmai}/100，需≥30）。`,
       'no-shangmai': `商脉不足（${state.cityShangmai}/100，需≥30）。`,
     }
-    messageApi.warning(reasonMap[attempt.reason] ?? attempt.reason)
+    const msg = reasonMap[attempt.reason] ?? attempt.reason
+    if (msg) messageApi.warning(msg)
   }, [attempt]) // eslint-disable-line
 
   return (
@@ -596,6 +597,7 @@ export default function HUD() {
       <ToolBar
         onBuildingToggle={() => setBuildingOpen(v => !v)}
         buildingOpen={buildingOpen}
+        hidden={Boolean(state.selectedBuildingId || state.selectedCitizenId || state.selectedFarmZoneId || state.selectedTerrainTile)}
       />
 
       {/* ── Tool hint above toolbar ───────────────── */}

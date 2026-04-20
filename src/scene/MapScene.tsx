@@ -811,16 +811,17 @@ export default function MapScene() {
         const action = actionsRef.current.placeBuilding(wx, wy, tool as BuildingType)
         if (action && !action.success) {
           const reasonMap: Record<string, string> = {
-            'no-build-type-selected': 'Please select a building type first.',
-            'insufficient-funds':     'Not enough funds to build.',
-            'tile-occupied':          'This tile is already occupied.',
-            'road-occupied':          'A road exists here - bulldoze it first.',
-            'river-occupied':         'Cannot build on a river tile.',
-            'no-ore-vein':            'No ore vein here - iron mines must be on ore tiles.',
-            'no-forest':              'No forest here - lumber camps must be on forest tiles.',
-            'no-papermill':           'No paper mill within range - academy requires a 造纸坊 within 20 tiles.',
+            'no-build-type-selected': '请先选择建造类型。',
+            'insufficient-funds':     '资金不足，无法建造。',
+            'tile-occupied':          '格子已被建筑占用。',
+            'road-occupied':          '格子已有道路，请先拆除。',
+            'river-occupied':         '该处为河流，无法建造。',
+            'no-ore-vein':            '此处无铁矿脉，铁矿须建于矿脉格上。',
+            'no-forest':              '此处无林地，伐木场须建于林地格上。',
+            'no-papermill':           '附近无造纸坊，书院须在造纸坊二十格内。',
           }
-          try { (window as any).__MESSAGE_API__?.warning(reasonMap[action.reason] ?? action.reason) } catch {}
+          const msg = reasonMap[action.reason] ?? action.reason
+          if (msg) try { (window as any).__MESSAGE_API__?.warning(msg) } catch {}
         }
       } else if (tool === 'road') {
         const isForest = isForestAt(wx, wy) && !stateRef.current.roads.some(r => r.x === wx && r.y === wy)
