@@ -193,7 +193,9 @@ function StatsPanel({
   focusOreVein: () => void
 }) {
   const { state } = useSimulation()
-  const [collapsed, setCollapsed] = React.useState(false)
+  const [collapsed, setCollapsed] = React.useState(() =>
+    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+  )
 
   const _granariesGlobal = state.buildings.filter(b => b.type === 'granary')
   const _marketsGlobal   = state.buildings.filter(b => b.type === 'market')

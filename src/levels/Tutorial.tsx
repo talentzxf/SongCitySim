@@ -353,13 +353,14 @@ export default function Tutorial({ onDismiss }: Props) {
       if (rightDown && d > 12) setRotateDone(true)
     }
     const onWheel = () => setZoomDone(true)
-    let touchStartX = 0, touchStartY = 0, lastPinchDist = 0
+    let touchStartX = 0, touchStartY = 0, lastPinchDist = 0, lastPinchAngle = 0
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) { touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY }
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX
         const dy = e.touches[0].clientY - e.touches[1].clientY
-        lastPinchDist = Math.hypot(dx, dy)
+        lastPinchDist  = Math.hypot(dx, dy)
+        lastPinchAngle = Math.atan2(dy, dx)
       }
     }
     const onTouchMove = (e: TouchEvent) => {
@@ -368,11 +369,20 @@ export default function Tutorial({ onDismiss }: Props) {
         if (d > 10) setPanDone(true)
       }
       if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX
-        const dy = e.touches[0].clientY - e.touches[1].clientY
-        const dist = Math.hypot(dx, dy)
-        if (Math.abs(dist - lastPinchDist) > 15) { setZoomDone(true); setRotateDone(true) }
-        lastPinchDist = dist
+        const dx    = e.touches[0].clientX - e.touches[1].clientX
+        const dy    = e.touches[0].clientY - e.touches[1].clientY
+        const dist  = Math.hypot(dx, dy)
+        const angle = Math.atan2(dy, dx)
+        // Zoom: pinch distance change > 15 px
+        if (Math.abs(dist - lastPinchDist) > 15) setZoomDone(true)
+        // Rotate: angular change > ~5° (0.09 rad) between the two fingers
+        const raw = Math.abs(angle - lastPinchAngle)
+        const angDiff = Math.min(raw, Math.PI * 2 - raw)
+        if (angDiff > 0.09) setRotateDone(true)
+        // Any two-finger move of ≥ 8 px also counts as rotate attempt
+        if (dist > 8 || Math.hypot(dx, dy) > 8) setRotateDone(true)
+        lastPinchDist  = dist
+        lastPinchAngle = angle
       }
     }
     canvas.addEventListener('mousedown',  onMouseDown)

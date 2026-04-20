@@ -749,11 +749,11 @@ export default function MapScene() {
     }
 
     /** Terrain-aware ray -> tile coord (handles mountain geometry via ray-march). */
-    function getTile(e: MouseEvent): { x: number; y: number } | null {
+    function getTileAt(clientX: number, clientY: number): { x: number; y: number } | null {
       const rect = gl.domElement.getBoundingClientRect()
       raycaster.setFromCamera({
-        x:  ((e.clientX - rect.left) / rect.width)  * 2 - 1,
-        y: -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+        x:  ((clientX - rect.left) / rect.width)  * 2 - 1,
+        y: -((clientY - rect.top)  / rect.height) * 2 + 1,
       } as any, camera as THREE.Camera)
       const { origin: ro, direction: rd } = raycaster.ray
       if (rd.y >= 0) return null
@@ -771,6 +771,9 @@ export default function MapScene() {
       }
       if (!raycaster.ray.intersectPlane(plane, intersectPt)) return null
       return { x: Math.round(intersectPt.x), y: Math.round(intersectPt.z) }
+    }
+    function getTile(e: MouseEvent): { x: number; y: number } | null {
+      return getTileAt(e.clientX, e.clientY)
     }
 
     function applyTool(wx: number, wy: number) {
@@ -927,11 +930,81 @@ export default function MapScene() {
     }
     function onMouseLeaveGhost() { mouseOnCanvasRef.current = false }
 
+    // ── Touch handlers (for road/build drag on mobile) ──────────────────────
+    // We capture in capture-phase so we fire before OrbitControls' bubble listeners.
+    function onTouchStart(e: TouchEvent) {
+      const tool = stateRef.current.selectedTool
+      if (tool === 'pan' || e.touches.length !== 1) return
+      // Prevent OrbitControls from starting a pan when we own this gesture
+      e.preventDefault()
+      e.stopPropagation()
+      dragRef.current.active = true; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null
+      const touch = e.touches[0]
+      const t = getTileAt(touch.clientX, touch.clientY); if (!t) return
+      dragRef.current.lastTileKey = `${t.x},${t.y}`
+      if (tool === 'road') {
+        dragRef.current.didDrag  = false
+        roadDragStartRef.current = t
+        const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
+      } else if (tool === 'farmZone' || tool === 'teaZone') {
+        dragRef.current.didDrag = true; dragRef.current.lastTile = t; paintFarmZone(t)
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      const tool = stateRef.current.selectedTool
+      if (tool === 'pan' || !dragRef.current.active || e.touches.length !== 1) return
+      e.preventDefault()
+      e.stopPropagation()
+      const touch = e.touches[0]
+      const t = getTileAt(touch.clientX, touch.clientY); if (!t) return
+      const key = `${t.x},${t.y}`; if (key === dragRef.current.lastTileKey) return
+      dragRef.current.lastTileKey = key
+
+      if (tool === 'road' && roadDragStartRef.current) {
+        dragRef.current.didDrag = true
+        const start      = roadDragStartRef.current
+        const endOnMtn   = isMountainAt(t.x, t.y)
+        const startOnMtn = isMountainAt(start.x, start.y)
+        const s          = stateRef.current
+        const blockedTiles = new Set<string>([
+          ...s.buildings.map(b => `${b.x},${b.y}`),
+          ...s.farmZones.flatMap(z => [
+            `${z.x},${z.y}`, `${z.x+1},${z.y}`, `${z.x},${z.y+1}`, `${z.x+1},${z.y+1}`,
+          ]),
+        ])
+        const path = astarRoad(start, t, !endOnMtn && !startOnMtn, blockedTiles)
+        setRoadPreview(path); roadPreviewRef.current = path
+      } else if (tool === 'farmZone' || tool === 'teaZone') {
+        const from = dragRef.current.lastTile ?? t
+        expandToFourNeighborPath(rasterLine(from, t)).forEach(paintFarmZone)
+        dragRef.current.lastTile = t; dragRef.current.didDrag = true
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      const tool = stateRef.current.selectedTool
+      if (tool === 'pan') return
+      if (dragRef.current.active) {
+        if (tool === 'road') {
+          if (dragRef.current.didDrag && roadPreviewRef.current.length > 0) {
+            for (const tile of roadPreviewRef.current) paintRoad(tile)
+          }
+          setRoadPreview([]); roadPreviewRef.current = []; roadDragStartRef.current = null
+        }
+        stopDrag()
+      }
+    }
+
     const c = gl.domElement
     c.addEventListener('click',      onClick)
     c.addEventListener('mousedown',  onMouseDown)
     c.addEventListener('mousemove',  onMouseMoveGhost)
     c.addEventListener('mouseleave', onMouseLeaveGhost)
+    // Touch: use capture so we intercept before OrbitControls, passive:false to allow preventDefault
+    c.addEventListener('touchstart', onTouchStart, { capture: true, passive: false })
+    c.addEventListener('touchmove',  onTouchMove,  { capture: true, passive: false })
+    c.addEventListener('touchend',   onTouchEnd,   { capture: true, passive: false })
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup',   onMouseUp)
     window.addEventListener('blur',      stopDrag)
@@ -940,6 +1013,9 @@ export default function MapScene() {
       c.removeEventListener('mousedown',  onMouseDown)
       c.removeEventListener('mousemove',  onMouseMoveGhost)
       c.removeEventListener('mouseleave', onMouseLeaveGhost)
+      c.removeEventListener('touchstart', onTouchStart)
+      c.removeEventListener('touchmove',  onTouchMove)
+      c.removeEventListener('touchend',   onTouchEnd)
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup',   onMouseUp)
       window.removeEventListener('blur',      stopDrag)
