@@ -1,73 +1,357 @@
-html,body,#root { height: 100%; margin: 0; }
-.app-root { width: 100vw; height: 100vh; display: block; position: relative; background: linear-gradient(180deg, #dff2ff 0%, #cde6ff 100%); }
+html,body,#root { height: 100%; margin: 0; overflow: hidden; }
+.app-root { width: 100vw; height: 100vh; display: block; position: relative; overflow: hidden; background: linear-gradient(180deg, #dff2ff 0%, #cde6ff 100%); }
 canvas { width: 100%; height: 100%; display: block }
 
-.hud {
-  position: absolute;
-  left: 16px;
-  top: 16px;
-  z-index: 10;
-  width: min(340px, calc(50vw - 24px));
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
+/* ── Global scrollbar hiding for game UI ─────────────────────────── */
+.stats-panel::-webkit-scrollbar,
+.info-panel::-webkit-scrollbar,
+.building-drawer::-webkit-scrollbar { display: none; }
 
-.hud-card {
-  border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(6px);
-}
-
-.hud-tools-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.hud-selected-card {
-  border-radius: 10px;
-  background: #fafcff;
-}
-
-/* ─── Right info / property panel ────────────────── */
-.info-panel {
-  position: absolute;
-  right: 16px;
-  top: 16px;
-  z-index: 10;
-  width: min(340px, calc(50vw - 24px));
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(6px);
-}
-
-.info-panel-citizen-row {
+/* ── Top bar — warm parchment/bamboo aesthetic ───────────────────── */
+.top-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  height: 52px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px;
-  border-radius: 8px;
-  cursor: pointer;
+  gap: 0;
+  padding: 0 12px;
+  background: linear-gradient(180deg, rgba(42,26,10,0.97) 0%, rgba(30,16,4,0.98) 100%);
+  border-bottom: 1px solid rgba(196,154,48,0.45);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(220,180,80,0.15);
+}
+.top-bar-left  { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.top-bar-center{ display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.top-bar-right { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; min-width: 0; }
+
+/* Top bar text colours */
+.top-bar-title { color: #e8c870; font-weight: 700; font-size: 14px; white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,0.6); letter-spacing: 0.05em; }
+
+/* Top-bar stat chip */
+.tb-stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 2px 8px; border-radius: 5px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(200,160,60,0.2);
+  cursor: default; line-height: 1.2;
   transition: background 0.15s;
 }
-.info-panel-citizen-row:hover {
-  background: #f0f4ff;
+.tb-stat:hover { background: rgba(200,160,60,0.14); }
+.tb-stat.clickable { cursor: pointer; }
+.tb-stat-label { font-size: 9px; color: rgba(196,154,48,0.6); }
+.tb-stat-value { font-size: 12px; font-weight: 700; color: #e8d08a; }
+
+/* Top-bar icon buttons */
+.tb-icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 6px;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(200,160,60,0.25);
+  color: #c8a848; font-size: 14px; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tb-icon-btn:hover { background: rgba(200,160,60,0.2); border-color: rgba(200,160,60,0.5); }
+
+/* Top-bar play/speed buttons */
+.tb-play-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 12px; border-radius: 6px; border: none;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; letter-spacing: 0.06em;
+  transition: background 0.15s;
+}
+.tb-play-btn.play  { background: rgba(82,196,26,0.28); color: #95de64; border: 1px solid rgba(82,196,26,0.5); }
+.tb-play-btn.pause { background: rgba(250,173,20,0.22); color: #ffd666; border: 1px solid rgba(250,173,20,0.4); }
+.tb-play-btn:hover { filter: brightness(1.2); }
+.tb-speed-btn {
+  padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(200,160,60,0.2);
+  color: rgba(200,160,60,0.55); font-family: inherit;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.tb-speed-btn.active { background: rgba(200,160,60,0.25); color: #f0d060; border-color: rgba(200,160,60,0.55); }
+
+/* Top-bar divider */
+.tb-divider { width: 1px; height: 28px; background: rgba(200,160,60,0.18); flex-shrink: 0; }
+
+/* ── Stats panel (left, collapsible) ─────────────────────────────── */
+.stats-panel {
+  position: fixed;
+  top: 52px; left: 0;
+  z-index: 15;
+  width: min(300px, 92vw);
+  max-height: calc(100vh - 52px - 100px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  background: rgba(255,252,245,0.95);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 4px 0 16px rgba(0,0,0,0.14);
+  border-radius: 0 0 12px 0;
+  border-right: 1px solid rgba(200,160,60,0.15);
+  padding: 8px;
+  transition: transform 0.25s ease;
+}
+.stats-panel.collapsed {
+  transform: translateX(-100%);
+}
+/* Toggle tab — always fixed so it stays visible when panel is hidden */
+.stats-toggle-btn {
+  position: fixed;
+  left: 0; top: 62px;
+  width: 28px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(42,26,10,0.88);
+  border-radius: 0 8px 8px 0;
+  border: 1px solid rgba(196,154,48,0.35);
+  border-left: none;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.25);
+  cursor: pointer;
+  font-size: 12px; color: #c8a848;
+  user-select: none;
+  z-index: 16;
+  transition: left 0.25s ease;
+}
+/* When panel is open, shift tab to right edge of panel */
+.stats-panel:not(.collapsed) ~ .stats-toggle-btn,
+.stats-toggle-btn.open {
+  left: min(300px, 92vw);
+}
+.stats-toggle-btn:hover { background: rgba(60,38,14,0.92); }
+
+/* ── Tool bar — dark wood + gold game aesthetic ───────────────────── */
+.tool-bar {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  /* Dark wood gradient */
+  background: linear-gradient(180deg, rgba(48,28,10,0.97) 0%, rgba(28,14,4,0.99) 100%);
+  border: 1px solid rgba(196,154,48,0.55);
+  border-radius: 12px;
+  box-shadow:
+    0 6px 32px rgba(0,0,0,0.6),
+    0 1px 0 rgba(255,220,100,0.08) inset,
+    0 -1px 0 rgba(0,0,0,0.4) inset;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  /* Subtle inner glow */
+  outline: 1px solid rgba(0,0,0,0.3);
+  outline-offset: -1px;
 }
 
-.food-bar-bg {
-  background: #e8e8e8;
-  border-radius: 4px;
-  height: 7px;
-  width: 100%;
-  overflow: hidden;
+/* Vertical separator between tool groups */
+.tool-bar-sep {
+  width: 1px; height: 44px;
+  background: linear-gradient(180deg, transparent 0%, rgba(196,154,48,0.35) 50%, transparent 100%);
+  margin: 0 4px; flex-shrink: 0;
 }
-.food-bar-fill {
-  height: 7px;
-  border-radius: 4px;
-  transition: width 0.3s;
+
+.tool-btn {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-width: 54px; min-height: 58px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(196,154,48,0.5);
+  cursor: pointer;
+  padding: 6px 4px 5px;
+  gap: 3px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+.tool-btn .tool-icon {
+  font-size: 24px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+  transition: transform 0.1s;
+}
+.tool-btn .tool-label {
+  font-size: 10px;
+  font-family: "Noto Serif SC", "SimSun", serif;
+  color: rgba(180,140,60,0.55);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+
+.tool-btn:hover {
+  background: rgba(196,154,48,0.1);
+  border-color: rgba(196,154,48,0.25);
+  color: rgba(220,175,80,0.85);
+}
+.tool-btn:hover .tool-icon { transform: translateY(-1px); }
+.tool-btn:hover .tool-label { color: rgba(200,160,60,0.7); }
+
+.tool-btn:active .tool-icon { transform: translateY(1px); }
+
+/* Active state — golden selected */
+.tool-btn.active {
+  background: linear-gradient(180deg, rgba(180,130,30,0.32) 0%, rgba(100,65,8,0.45) 100%);
+  border-color: rgba(200,158,48,0.7);
+  box-shadow: 0 0 10px rgba(200,158,48,0.25), inset 0 1px 0 rgba(240,200,80,0.15);
+  color: #ffd060;
+}
+.tool-btn.active .tool-icon { filter: drop-shadow(0 0 5px rgba(255,200,60,0.5)); }
+.tool-btn.active .tool-label { color: #d4a820; font-weight: 700; }
+
+/* Building button — blue tinted */
+.tool-btn.building-btn { color: rgba(100,170,220,0.55); }
+.tool-btn.building-btn .tool-label { color: rgba(80,150,200,0.5); }
+.tool-btn.building-btn:hover { background: rgba(80,150,220,0.12); border-color: rgba(100,170,240,0.3); }
+.tool-btn.building-btn.active {
+  background: linear-gradient(180deg, rgba(40,100,180,0.3) 0%, rgba(20,60,120,0.4) 100%);
+  border-color: rgba(80,150,240,0.65);
+  box-shadow: 0 0 10px rgba(80,150,240,0.22), inset 0 1px 0 rgba(120,180,255,0.15);
+  color: #82c8ff;
+}
+.tool-btn.building-btn.active .tool-label { color: #60a8e0; }
+
+/* ── Building panel (floats above toolbar) ────────────────────────── */
+.building-panel-anchor {
+  position: fixed;
+  bottom: calc(14px + 78px + 10px); /* toolbar bottom + toolbar height + gap */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  width: min(520px, 96vw);
+  pointer-events: none;
+}
+.building-panel {
+  background: linear-gradient(180deg, rgba(38,22,6,0.98) 0%, rgba(25,12,2,0.99) 100%);
+  border: 1px solid rgba(196,154,48,0.5);
+  border-radius: 12px;
+  box-shadow:
+    0 -4px 32px rgba(0,0,0,0.55),
+    0 8px 24px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(220,180,80,0.12);
+  padding: 10px 12px 12px;
+  max-height: 55vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  transform-origin: bottom center;
+  transform: scaleY(0.85) translateY(12px);
+  opacity: 0;
+  transition: transform 0.2s cubic-bezier(0.32,1.2,0.5,1), opacity 0.18s ease;
+  pointer-events: none;
+}
+.building-panel::-webkit-scrollbar { display: none; }
+.building-panel.open {
+  transform: scaleY(1) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Small arrow pointing down toward the toolbar */
+.building-panel::after {
+  content: '';
+  position: absolute;
+  bottom: -7px; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 7px solid rgba(196,154,48,0.5);
+}
+/* Ant Design overrides inside dark panel */
+.building-panel .ant-tabs-tab { color: rgba(196,154,48,0.55) !important; }
+.building-panel .ant-tabs-tab-active .ant-tabs-tab-btn { color: #f0d060 !important; }
+.building-panel .ant-tabs-ink-bar { background: #c8a030 !important; }
+.building-panel .ant-tabs-nav::before { border-bottom-color: rgba(196,154,48,0.2) !important; }
+
+/* Building buttons inside panel */
+.building-panel .ant-btn-default {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(196,154,48,0.2) !important;
+  color: rgba(220,195,140,0.8) !important;
+}
+.building-panel .ant-btn-default:hover {
+  background: rgba(196,154,48,0.15) !important;
+  border-color: rgba(196,154,48,0.5) !important;
+  color: #f0d060 !important;
+}
+.building-panel .ant-btn-primary {
+  background: rgba(180,130,30,0.4) !important;
+  border-color: #c8a030 !important;
+  color: #ffd060 !important;
+  box-shadow: 0 0 8px rgba(200,160,48,0.3) !important;
+}
+
+/* ── Tool hint bar (above toolbar) ───────────────────────────────── */
+.tool-hint-bar {
+  position: fixed;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 19;
+  background: rgba(42,26,10,0.92);
+  border: 1px solid rgba(196,154,48,0.4);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: rgba(220,195,140,0.9);
+  max-width: 80vw;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  font-family: "Noto Serif SC", "SimSun", serif;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+/* ── Right info / property panel ─────────────────────────────────── */
+.info-panel {
+  position: fixed;
+  right: 0;
+  top: 52px;
+  z-index: 15;
+  width: min(340px, calc(50vw - 8px));
+  max-height: calc(100vh - 52px - 10px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  border-radius: 12px 0 0 12px;
+  border-left: 1px solid rgba(196,154,48,0.15);
+  box-shadow: -4px 0 20px rgba(0,0,0,0.16);
+  background: rgba(255,252,246,0.97);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ── Citizen / building rows ──────────────────────────────────────── */
+.info-panel-citizen-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px; border-radius: 8px;
+  cursor: pointer; transition: background 0.15s;
+}
+.info-panel-citizen-row:hover { background: #f5f0e8; }
+
+/* ── Food bars ───────────────────────────────────────────────────── */
+.food-bar-bg { background: #e8e8e8; border-radius: 4px; height: 7px; width: 100%; overflow: hidden; }
+.food-bar-fill { height: 7px; border-radius: 4px; transition: width 0.3s; }
+
+/* ── Legacy ──────────────────────────────────────────────────────── */
+.hud-card { border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,0.16); background: rgba(255,255,255,0.92); backdrop-filter: blur(6px); }
+.hud-tools-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+/* ── Mobile tweaks ────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .top-bar { height: 48px; padding: 0 8px; }
+  .top-bar-left .top-bar-title { display: none; }
+  .info-panel {
+    width: 100vw; right: 0; left: 0; top: auto; bottom: 0;
+    border-radius: 14px 14px 0 0; max-height: 55vh;
+    border-left: none; border-top: 1px solid rgba(196,154,48,0.2);
+    transform: none;
+  }
+  .tool-btn { min-width: 48px; min-height: 54px; }
+  .tb-stat-label { display: none; }
+  .tb-stat { padding: 2px 5px; }
 }

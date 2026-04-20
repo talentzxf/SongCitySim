@@ -328,6 +328,21 @@ export default function MapScene() {
   const roadPreviewRef                   = React.useRef<{ x: number; y: number }[]>([])
   const roadDragStartRef                 = React.useRef<{ x: number; y: number } | null>(null)
 
+  // Clear road preview + cancel drag when switching away from road tool
+  React.useEffect(() => {
+    if (state.selectedTool !== 'road') {
+      setRoadPreview([])
+      roadPreviewRef.current = []
+      roadDragStartRef.current = null
+      dragRef.current.active = false
+      dragRef.current.didDrag = false
+    }
+    // Hide placement ghost immediately when switching to pan/non-building tool
+    if (state.selectedTool === 'pan' || state.selectedTool === 'bulldoze') {
+      mouseOnCanvasRef.current = false
+    }
+  }, [state.selectedTool])
+
   // Ghost placement mouse tracking
   const mouseNDCRef      = React.useRef({ x: 0, y: 0 })
   const mouseOnCanvasRef = React.useRef(false)

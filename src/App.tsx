@@ -31,13 +31,28 @@ function MessageBridge() {
 function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRefObject<any>; bounds: MapBounds }) {
   const { state } = useSimulation()
   const controlsEnabled = state.selectedTool === 'pan'
-  const mouseButtons = React.useMemo(() => ({ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }), [])
+
+  // Detect touch/mobile device (once, stable)
+  const isTouch = React.useMemo(() =>
+    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
+
+  // Desktop: left-click = pan camera, right-click = rotate
+  // Mobile:  1-finger = pan, 2-finger = dolly+rotate
+  const mouseButtons = React.useMemo(
+    () => ({ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }),
+    [],
+  )
+  const touchConfig = React.useMemo(
+    () => ({ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }),
+    [],
+  )
 
   React.useEffect(() => {
     try {
       ;(window as any).__CONTROLS_STATE__ = { selectedTool: state.selectedTool, enabled: controlsEnabled, canRotate: controlsEnabled }
+      ;(window as any).__IS_TOUCH_DEVICE__ = isTouch
     } catch (e) {}
-  }, [state.selectedTool, controlsEnabled])
+  }, [state.selectedTool, controlsEnabled, isTouch])
 
   const clampTarget = React.useCallback(() => {
     const ctrl = controlsRef.current
@@ -98,6 +113,7 @@ function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRef
       enableZoom={true}
       maxDistance={span * 2}
       mouseButtons={mouseButtons}
+      touches={touchConfig}
     />
   )
 }

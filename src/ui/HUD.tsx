@@ -86,24 +86,420 @@ function dayPhaseTag(t: number) {
 
 
 
-// ─── Left HUD (controls) ─────────────────────────────────────────────────────
+// ─── TopBar ─────────────────────────────────────────────────────────────────
+
+function TopBar({
+  onTaxClick, onSave, onLoadClick,
+}: {
+  onTaxClick: () => void
+  onSave: () => void
+  onLoadClick: () => void
+}) {
+  const { state, start, stop, setSimSpeed } = useSimulation()
+  const { cityName } = useLevelContext()
+  const hour = Math.floor(state.dayTime * 24)
+  const isNight = state.dayTime < 0.25 || state.dayTime > 0.75
+  const timeIcon = isNight ? '🌙' : hour < 8 ? '🌅' : hour < 17 ? '☀️' : '🌆'
+  const net = state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total
+  const netColor = net >= 0 ? '#95de64' : '#ff7875'
+
+  return (
+    <div className="top-bar">
+      {/* Left: title + time */}
+      <div className="top-bar-left">
+        <span className="top-bar-title">🏯 永宋 · {cityName}</span>
+        <div className="tb-divider" />
+        <span style={{ fontSize: 16 }}>{timeIcon}</span>
+        <div style={{ lineHeight: 1.25 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#f0d890', letterSpacing: '0.04em' }}>
+            第 {state.dayCount} 天
+          </div>
+          <div style={{ fontSize: 10, color: 'rgba(200,170,90,0.55)', letterSpacing: '0.03em' }}>
+            月 {state.month} · {dayTimeLabel(state.dayTime).split('（')[0]}
+          </div>
+        </div>
+        <div className="tb-divider" style={{ marginLeft: 2 }} />
+        {/* Running status */}
+        <span style={{
+          fontSize: 10, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.1em',
+          background: state.running ? 'rgba(82,196,26,0.2)' : 'rgba(180,140,50,0.12)',
+          border: `1px solid ${state.running ? 'rgba(82,196,26,0.4)' : 'rgba(180,140,50,0.25)'}`,
+          color: state.running ? '#95de64' : 'rgba(200,170,90,0.45)',
+        }}>
+          {state.running ? '▶ 运行' : '⏸ 暂停'}
+        </span>
+      </div>
+
+      {/* Center: play/pause + speed */}
+      <div className="top-bar-center">
+        {state.running
+          ? <button className="tb-play-btn pause" data-tutorial="start-btn" onClick={stop}>⏸ 暂停</button>
+          : <button className="tb-play-btn play"  data-tutorial="start-btn" onClick={start}>▶ 开始</button>}
+        <div className="tb-divider" />
+        {([0.25, 1, 2] as const).map(s => (
+          <button key={s} className={`tb-speed-btn${state.simSpeed === s ? ' active' : ''}`}
+            onClick={() => setSimSpeed(s)}
+            title={s === 0.25 ? '慢放（¼速）' : s === 1 ? '正常速度' : '快进（2倍）'}>
+            {s === 0.25 ? '¼×' : s === 1 ? '1×' : '2×'}
+          </button>
+        ))}
+      </div>
+
+      {/* Right: stat chips + save/load */}
+      <div className="top-bar-right">
+        <Tooltip title={`上月收益 ${net >= 0 ? '+' : ''}${net} · 点击调整赋税`}>
+          <div className="tb-stat clickable" onClick={onTaxClick}>
+            <span className="tb-stat-label">💰 财帛</span>
+            <span className="tb-stat-value">¥{Math.floor(state.money)}</span>
+          </div>
+        </Tooltip>
+        <div className="tb-stat">
+          <span className="tb-stat-label">👤 户口</span>
+          <span className="tb-stat-value">{state.population}</span>
+        </div>
+        <div className="tb-stat">
+          <span className="tb-stat-label">😊 民心</span>
+          <span className="tb-stat-value" style={{ color: state.avgSatisfaction >= 70 ? '#95de64' : state.avgSatisfaction >= 40 ? '#ffd666' : '#ff7875' }}>
+            {state.avgSatisfaction}%
+          </span>
+        </div>
+        <Tooltip title={`上月净 ${net >= 0 ? '+' : ''}${net}`}>
+          <div className="tb-stat">
+            <span className="tb-stat-label">📊 月收益</span>
+            <span className="tb-stat-value" style={{ color: netColor }}>{net >= 0 ? '+' : ''}{net}</span>
+          </div>
+        </Tooltip>
+        <div className="tb-divider" />
+        <Tooltip title="存档（下载）">
+          <button className="tb-icon-btn" onClick={onSave} title="存档">💾</button>
+        </Tooltip>
+        <Tooltip title="读档（加载）">
+          <button className="tb-icon-btn" onClick={onLoadClick} title="读档">📂</button>
+        </Tooltip>
+      </div>
+    </div>
+  )
+}
+
+// ─── StatsPanel (left collapsible) ──────────────────────────────────────────
+
+function StatsPanel({
+  onTaxClick, oreClusterPoints, compassIdx, setCompassIdx, focusOreVein,
+}: {
+  onTaxClick: () => void
+  oreClusterPoints: { x: number; y: number }[]
+  compassIdx: number
+  setCompassIdx: React.Dispatch<React.SetStateAction<number>>
+  focusOreVein: () => void
+}) {
+  const { state } = useSimulation()
+  const [collapsed, setCollapsed] = React.useState(false)
+
+  const _granariesGlobal = state.buildings.filter(b => b.type === 'granary')
+  const _marketsGlobal   = state.buildings.filter(b => b.type === 'market')
+  const farmTotal    = state.farmZones.flatMap(z => z.piles).reduce((s, p) => s + p.amount, 0)
+  const granaryTotal = inventoryTotal(getAggregateCrops(_granariesGlobal))
+  const marketTotal  = inventoryTotal(getAggregateCrops(_marketsGlobal))
+  const isShopDay    = state.dayCount % 10 === 0
+  const nextShopIn   = 10 - (state.dayCount % 10)
+
+  return (
+    <>
+      <button
+        className={`stats-toggle-btn${collapsed ? '' : ' open'}`}
+        onClick={() => setCollapsed(v => !v)}
+        title={collapsed ? '展开面板' : '收起面板'}
+      >
+        {collapsed ? '▶' : '◀'}
+      </button>
+      <div className={`stats-panel${collapsed ? ' collapsed' : ''}`}>
+
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        {/* Time detail */}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {isShopDay
+            ? <Tag color="gold">🛍 旬休采购日</Tag>
+            : <Tag color="default" style={{ fontSize: 10 }}>旬休还剩 {nextShopIn} 天</Tag>}
+          <Tag color="blue">帧 {state.tick + 1}</Tag>
+          <Tag color={state.running ? 'green' : 'default'}>{state.running ? '运行' : '暂停'}</Tag>
+        </div>
+
+        {/* Stats grid */}
+        <Row gutter={4}>
+          <Col span={8}>
+            <Tooltip title={`丁税¥${state.lastTaxBreakdown.ding} · 田赋¥${state.lastTaxBreakdown.tian} · 市税¥${state.lastTaxBreakdown.shang} · 养民-¥${state.lastMonthlyExpenseBreakdown.total}`}>
+              <Card size="small" style={{ textAlign: 'center', cursor: 'help' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 10 }}>上月收益</Typography.Text>
+                <div style={{ color: (state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total) >= 0 ? '#52c41a' : '#ff4d4f', fontWeight: 600, fontSize: 12 }}>
+                  {(state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total) >= 0 ? '+' : ''}{state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total}
+                </div>
+              </Card>
+            </Tooltip>
+          </Col>
+          <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 10 }}>通勤</Typography.Text><div><Badge count={state.citizens.filter(c => c.motion !== null).length} showZero color="blue" size="small" /> <TeamOutlined /></div></Card></Col>
+          <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 10 }}>月份</Typography.Text><div style={{ fontWeight: 700 }}>{state.month}</div></Card></Col>
+        </Row>
+
+        {/* 文脉/商脉 */}
+        <Row gutter={4}>
+          <Col span={12}>
+            <Tooltip title="文脉：书院×12 + 造纸坊×6 + 寺庙×8 + 学子×3。宅邸须文脉≥30">
+              <Card size="small" style={{ textAlign: 'center', cursor: 'help', borderColor: state.cityWenmai >= 30 ? '#52c41a' : '#faad14' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 10 }}>📚 文脉</Typography.Text>
+                <div style={{ fontWeight: 700, fontSize: 12, color: state.cityWenmai >= 30 ? '#52c41a' : '#d4b106' }}>{state.cityWenmai}/100</div>
+              </Card>
+            </Tooltip>
+          </Col>
+          <Col span={12}>
+            <Tooltip title="商脉：草市×12 + 常平仓×4 + 商贩×3 + 月销售额×0.1（上限30）。宅邸须商脉≥30">
+              <Card size="small" style={{ textAlign: 'center', cursor: 'help', borderColor: state.cityShangmai >= 30 ? '#52c41a' : '#faad14' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 10 }}>💹 商脉</Typography.Text>
+                <div style={{ fontWeight: 700, fontSize: 12, color: state.cityShangmai >= 30 ? '#52c41a' : '#d4b106' }}>{state.cityShangmai}/100</div>
+              </Card>
+            </Tooltip>
+          </Col>
+        </Row>
+
+        {/* Need pressure + supply tags */}
+        <Space wrap size={3}>
+          <Tag color="orange" style={{ fontSize: 10 }}>🍚 食压 {state.needPressure.food}%</Tag>
+          <Tag color={state.needPressure.safety > 45 ? 'error' : 'green'} style={{ fontSize: 10 }}>🛡 治安 {state.needPressure.safety}%</Tag>
+          <Tag color={state.needPressure.culture > 45 ? 'warning' : 'green'} style={{ fontSize: 10 }}>📚 文化 {state.needPressure.culture}%</Tag>
+          <Tag color="green" style={{ fontSize: 10 }}>🌾 田 {farmTotal.toFixed(0)}</Tag>
+          <Tag color="gold" style={{ fontSize: 10 }}>🏚 仓 {granaryTotal.toFixed(0)}</Tag>
+          <Tag color="blue" style={{ fontSize: 10 }}>🛍 市 {marketTotal.toFixed(0)}</Tag>
+          {state.migrants.length > 0 && <Tag color="processing" style={{ fontSize: 10 }}>🐴 入城 {state.migrants.length}</Tag>}
+          {(() => { const n = state.citizens.filter(c => c.motion?.purpose === 'patrol').length; return n > 0 ? <Tag color="blue" style={{ fontSize: 10 }}>🏮 巡逻 {n}</Tag> : null })()}
+        </Space>
+
+        {/* Compass */}
+        <Tooltip title={oreClusterPoints.length > 0 ? `找矿罗盘：跳转到下一处铁矿脉，共 ${oreClusterPoints.length} 处` : '当前地图暂无铁矿脉'}>
+          <Button size="small" block onClick={focusOreVein} disabled={oreClusterPoints.length === 0} style={{ fontSize: 11 }}>
+            🧭 找矿罗盘
+            {oreClusterPoints.length > 0
+              ? <Typography.Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
+                  {(compassIdx === 0 ? oreClusterPoints.length : compassIdx)}/{oreClusterPoints.length}处
+                </Typography.Text>
+              : <Typography.Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>无矿脉</Typography.Text>}
+          </Button>
+        </Tooltip>
+
+        {/* Advice */}
+        <AdvicePanel />
+      </Space>
+    </div>
+    </>
+  )
+}
+
+// ─── ToolBar (floating pill, bottom center) ──────────────────────────────────
+
+function ToolBar({ onBuildingToggle, buildingOpen }: { onBuildingToggle: () => void; buildingOpen: boolean }) {
+  const { state, selectTool } = useSimulation()
+  const tool = state.selectedTool
+  const isBuildingActive = buildingOpen || ALL_BUILDING_TYPES.includes(tool as BuildingType)
+
+  return (
+    <div className="tool-bar">
+      {/* Group 1: navigation */}
+      <button
+        className={`tool-btn${tool === 'pan' ? ' active' : ''}`}
+        data-tutorial="pan-tool"
+        onClick={() => selectTool('pan')}
+      >
+        <span className="tool-icon">👆</span>
+        <span className="tool-label">浏览</span>
+      </button>
+
+      <div className="tool-bar-sep" />
+
+      {/* Group 2: terrain tools */}
+      {([
+        { id: 'road',     icon: '🛤',  label: '道路', tutorial: 'road-tool' },
+        { id: 'farmZone', icon: '🌾', label: '粮田', tutorial: 'farmzone-tool' },
+        { id: 'teaZone',  icon: '🍵', label: '茶园', tutorial: undefined },
+        { id: 'bulldoze', icon: '⛏',  label: '拆除', tutorial: undefined },
+      ] as { id: Tool; icon: string; label: string; tutorial?: string }[]).map(t => (
+        <button
+          key={t.id}
+          className={`tool-btn${tool === t.id ? ' active' : ''}`}
+          data-tutorial={t.tutorial}
+          onClick={() => selectTool(t.id)}
+        >
+          <span className="tool-icon">{t.icon}</span>
+          <span className="tool-label">{t.label}</span>
+        </button>
+      ))}
+
+      <div className="tool-bar-sep" />
+
+      {/* Group 3: building */}
+      <button
+        className={`tool-btn building-btn${isBuildingActive ? ' active' : ''}`}
+        data-tutorial="building-btn"
+        onClick={onBuildingToggle}
+      >
+        <span className="tool-icon">🏗</span>
+        <span className="tool-label">建筑</span>
+      </button>
+    </div>
+  )
+}
+
+// ─── BuildingDrawer (slides up from bottom) ──────────────────────────────────
+
+function BuildingDrawer({ open, onClose, paletteGroups }: {
+  open: boolean
+  onClose: () => void
+  paletteGroups: typeof PALETTE_GROUPS
+}) {
+  const { state, selectTool } = useSimulation()
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Don't close if clicking inside the panel or on the toolbar button itself
+      if (target.closest('.building-panel-anchor') || target.closest('.building-btn')) return
+      onClose()
+    }
+    // Delay so the opening click doesn't immediately close
+    const tid = setTimeout(() => document.addEventListener('mousedown', handler), 50)
+    return () => { clearTimeout(tid); document.removeEventListener('mousedown', handler) }
+  }, [open, onClose])
+
+  return (
+    <div className="building-panel-anchor">
+      <div className={`building-panel${open ? ' open' : ''}`}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#e8c870', letterSpacing: '0.08em' }}>🏗 选择建筑</span>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', color: 'rgba(200,160,60,0.5)',
+            fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: '0 2px',
+          }}>✕</button>
+        </div>
+
+        <Tabs
+          size="small"
+          defaultActiveKey={PALETTE_GROUPS[0]?.category}
+          items={paletteGroups.map(group => ({
+            key: group.category,
+            label: (
+              <span data-tutorial={
+                group.category === 'storage'     ? 'storage-tab'    :
+                group.category === 'commercial'  ? 'commercial-tab' :
+                group.category === 'residential' ? 'residential-tab': undefined
+              }>
+                {group.label}
+              </span>
+            ),
+            children: (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, paddingBottom: 4 }}>
+                {group.buildings.map(b => {
+                  const active = ACTIVE_IDS.has(b.id)
+                  const isSelected = state.selectedTool === b.id
+                  return (
+                    <Tooltip key={b.id} title={active ? b.desc : `${b.label}：尚未开放`} placement="top">
+                      <Button
+                        size="small"
+                        type={isSelected ? 'primary' : 'default'}
+                        data-tutorial={
+                          b.id === 'house'   ? 'house-tool'   :
+                          b.id === 'granary' ? 'granary-tool' :
+                          b.id === 'market'  ? 'market-tool'  : undefined
+                        }
+                        onClick={() => { if (active) { selectTool(b.id as BuildingType); onClose() } }}
+                        style={{ textAlign: 'left', width: '100%', opacity: active ? 1 : 0.35, cursor: active ? 'pointer' : 'not-allowed' }}
+                      >
+                        {b.icon} {b.label}
+                        {active && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>¥{b.cost}</span>}
+                      </Button>
+                    </Tooltip>
+                  )
+                })}
+              </div>
+            ),
+          }))}
+        />
+
+        {ALL_BUILDING_TYPES.includes(state.selectedTool as BuildingType) && (
+          <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(220,195,140,0.7)', textAlign: 'center', letterSpacing: '0.05em' }}>
+            ✦ 已选【{BUILDING_LABEL[state.selectedTool] ?? state.selectedTool}】— 点击地图格放置
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── ToolHintBar (floating above toolbar) ────────────────────────────────────
+
+function ToolHintBar() {
+  const { state } = useSimulation()
+  const tool = state.selectedTool
+  if (tool !== 'farmZone' && tool !== 'teaZone') return null
+  return (
+    <div style={{
+      position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 19, background: 'rgba(255,251,230,0.96)', border: '1px solid #ffe58f',
+      borderRadius: 8, padding: '4px 12px', fontSize: 11, maxWidth: '80vw', textAlign: 'center',
+    }}>
+      {tool === 'farmZone'
+        ? '🌾 粮田：点击河流三格内的平地（绿点），近水种稻，旱地种粟/麦。需紧邻道路耕作。'
+        : '🍵 茶园：点击山坡（琥珀色点），选 2×2 全山格梯田。需紧邻山道采摘。'}
+    </div>
+  )
+}
+
+// ─── Main HUD ────────────────────────────────────────────────────────────────
 
 export default function HUD() {
   const { state, start, stop, selectTool, selectTerrainTile, setTaxRates, setSimSpeed, loadSave } = useSimulation()
   const { level } = useLevelContext()
 
-  // ── ESC key → return to pan tool ─────────────────────────────────────────
+  // ── ESC → pan tool ───────────────────────────────────────────────────────
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && state.selectedTool !== 'pan') {
-        selectTool('pan')
+      if (e.key === 'Escape') {
+        if (buildingOpen) { setBuildingOpen(false); return }
+        if (state.selectedTool !== 'pan') selectTool('pan')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [state.selectedTool, selectTool])
 
-  // Filter building palette to only level-allowed buildings (null = sandbox = show all)
+  const [taxModalOpen, setTaxModalOpen]   = React.useState(false)
+  const [buildingOpen, setBuildingOpen]   = React.useState(false)
+
+  // Expose opener to Tutorial (which has no direct access to this state)
+  React.useEffect(() => {
+    ;(window as any).__OPEN_BUILDING_DRAWER__  = () => setBuildingOpen(true)
+    ;(window as any).__CLOSE_BUILDING_DRAWER__ = () => setBuildingOpen(false)
+    return () => {
+      delete (window as any).__OPEN_BUILDING_DRAWER__
+      delete (window as any).__CLOSE_BUILDING_DRAWER__
+      delete (window as any).__BUILDING_DRAWER_OPEN__
+    }
+  }, [])
+
+  // Keep Tutorial informed about current open state
+  React.useEffect(() => {
+    ;(window as any).__BUILDING_DRAWER_OPEN__ = buildingOpen
+  }, [buildingOpen])
+  const [compassIdx,   setCompassIdx]     = React.useState(0)
+  const [messageApi,   messageCtx]        = message.useMessage()
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  // Close building drawer when non-building tool is selected
+  React.useEffect(() => {
+    if (!ALL_BUILDING_TYPES.includes(state.selectedTool as BuildingType)) {
+      // keep drawer state - user may want to re-open
+    }
+  }, [state.selectedTool])
+
   const paletteGroups = React.useMemo(() => {
     const lvlAny = level as any
     if (!lvlAny?.allowedBuildings) return PALETTE_GROUPS
@@ -112,47 +508,7 @@ export default function HUD() {
       .map(g => ({ ...g, buildings: g.buildings.filter(b => allowed.has(b.id)) }))
       .filter(g => g.buildings.length > 0)
   }, [level])
-  const [taxModalOpen, setTaxModalOpen] = React.useState(false)
-  // ── 找矿罗盘 state ────────────────────────────────────────────────────────
-  const [compassIdx, setCompassIdx] = React.useState(0)
-  // ── 存档/读档 ─────────────────────────────────────────────────────────────
-  const [messageApi, messageCtx] = message.useMessage()
-  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-  function handleSave() {
-    stop()   // pause the world before saving
-    downloadSave(state)
-      .then(() => messageApi.success(`存档已下载：第 ${state.dayCount} 天`))
-      .catch((e: any) => messageApi.error(`存档失败：${e?.message ?? '未知错误'}`))
-  }
-
-  function handleLoadClick() {
-    fileInputRef.current?.click()
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = async ev => {
-      try {
-        const buf = ev.target?.result as ArrayBuffer
-        const result = await applySaveFile(buf)
-        if (result === 'redirecting') {
-          messageApi.loading('地图种子不同，正在重新生成地图……')
-          return
-        }
-        loadSave(result)
-        messageApi.success(`读档成功：第 ${result.state.dayCount} 天（月 ${result.state.month}）`)
-      } catch (err: any) {
-        messageApi.error(`读档失败：${err?.message ?? '未知错误'}`)
-      }
-    }
-    reader.readAsArrayBuffer(file)   // binary read for both .citysave and .json
-    e.target.value = ''              // allow re-selecting the same file
-  }
-  // Deduplicate ore veins into cluster representatives (one per 8-tile neighbourhood)
-  // In campaign mode, restrict to tiles within the level's playable bounds.
   const oreClusterPoints = React.useMemo(() => {
     const lvlAny = level as any
     const lb = lvlAny?.mapBounds as { minX: number; maxX: number; minY: number; maxY: number } | undefined
@@ -170,321 +526,81 @@ export default function HUD() {
     if (oreClusterPoints.length === 0) return
     const tile = oreClusterPoints[compassIdx % oreClusterPoints.length]
     setCompassIdx(i => (i + 1) % oreClusterPoints.length)
-    // Signal MapScene to fly camera + show bouncing arrow
     ;(window as any).__ORE_COMPASS_TARGET__ = { x: tile.x, y: tile.y, id: Date.now() }
-    // Highlight the ore vein tile and switch to pan so the info panel appears
     selectTerrainTile({ x: tile.x, y: tile.y, kind: 'ore' })
     selectTool('pan')
   }
-  const attempt = state.lastBuildAttempt
 
-  const feedback = React.useMemo(() => {
-    if (!attempt) return null
-    if (attempt.success) return { type: 'success' as const, message: `建造成功: ${attempt.buildType} @ (${attempt.x}, ${attempt.y})` }
+  function handleSave() {
+    stop()
+    downloadSave(state)
+      .then(() => messageApi.success(`存档已下载：第 ${state.dayCount} 天`))
+      .catch((e: any) => messageApi.error(`存档失败：${e?.message ?? '未知错误'}`))
+  }
+  function handleLoadClick() { fileInputRef.current?.click() }
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = async ev => {
+      try {
+        const buf = ev.target?.result as ArrayBuffer
+        const result = await applySaveFile(buf)
+        if (result === 'redirecting') { messageApi.loading('地图种子不同，正在重新生成地图……'); return }
+        loadSave(result)
+        messageApi.success(`读档成功：第 ${result.state.dayCount} 天（月 ${result.state.month}）`)
+      } catch (err: any) { messageApi.error(`读档失败：${err?.message ?? '未知错误'}`) }
+    }
+    reader.readAsArrayBuffer(file); e.target.value = ''
+  }
+
+  // Build feedback toast
+  const attempt = state.lastBuildAttempt
+  React.useEffect(() => {
+    if (!attempt || attempt.success) return
     const reasonMap: Record<string, string> = {
       'no-build-type-selected': '请先选择建造类型。',
       'insufficient-funds': '资金不足，无法建造。',
       'tile-occupied': '格子已被建筑占用。',
       'road-occupied': '格子已有道路，请先推平。',
       'river-occupied': '该处为河流，无法建造。',
-      'no-ore-vein': '此处无铁矿脉，铁矿坑只能建于铁矿脉（地图上铁矿图标）之上。',
-      'no-forest': '此处无林地，采木场只能建于林地或山中树林（地图上绿色/墨绿树林）之上。',
-      'no-papermill': '方圆二十格内无造纸坊，书院须在造纸坊附近方可建造。',
-      'no-river-access': '此处离水太远，造纸坊须建于河流五格之内（需靠水碓）。',
-      'no-wenmai': `文脉不足（当前 ${state.cityWenmai}/100，需≥30），宅邸须城中文风兴盛方可建造。请先建书院、造纸坊、寺庙。`,
-      'no-shangmai': `商脉不足（当前 ${state.cityShangmai}/100，需≥30），宅邸须贸易繁荣方可建造。请先建草市、常平仓。`,
+      'no-ore-vein': '此处无铁矿脉。',
+      'no-forest': '此处无林地。',
+      'no-papermill': '书院须在造纸坊（方圆二十格内）附近。',
+      'no-river-access': '造纸坊须建于河流五格之内。',
+      'no-wenmai': `文脉不足（${state.cityWenmai}/100，需≥30）。`,
+      'no-shangmai': `商脉不足（${state.cityShangmai}/100，需≥30）。`,
     }
-    return { type: 'warning' as const, message: `建造失败: ${reasonMap[attempt.reason] ?? attempt.reason}` }
-  }, [attempt, state.cityWenmai, state.cityShangmai])
-
-  const hour = Math.floor(state.dayTime * 24)
-  const isNight = state.dayTime < 0.25 || state.dayTime > 0.75
-  const _granariesGlobal = state.buildings.filter(b => b.type === 'granary')
-  const _marketsGlobal   = state.buildings.filter(b => b.type === 'market')
-  const farmTotal    = state.farmZones.flatMap(z => z.piles).reduce((s, p) => s + p.amount, 0)
-  const granaryTotal = inventoryTotal(getAggregateCrops(_granariesGlobal))
-  const marketTotal  = inventoryTotal(getAggregateCrops(_marketsGlobal))
-
-  const isShopDay = state.dayCount % 10 === 0
-  const nextShopIn = 10 - (state.dayCount % 10)
+    messageApi.warning(reasonMap[attempt.reason] ?? attempt.reason)
+  }, [attempt]) // eslint-disable-line
 
   return (
     <>
       {messageCtx}
-      {/* Hidden file input for save loading */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".citysave,.json"
-        onChange={handleFileChange}
-        style={{ display: 'none' }}
+      <input ref={fileInputRef} type="file" accept=".citysave,.json" onChange={handleFileChange} style={{ display: 'none' }} />
+
+      {/* ── Top bar ───────────────────────────────── */}
+      <TopBar onTaxClick={() => setTaxModalOpen(true)} onSave={handleSave} onLoadClick={handleLoadClick} />
+
+      {/* ── Left stats panel (collapsible) ────────── */}
+      <StatsPanel
+        onTaxClick={() => setTaxModalOpen(true)}
+        oreClusterPoints={oreClusterPoints}
+        compassIdx={compassIdx}
+        setCompassIdx={setCompassIdx}
+        focusOreVein={focusOreVein}
       />
-      {/* ── Left control panel ────────────────────── */}
-      <div className="hud">
-        <Card className="hud-card" size="small" bordered={false}>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            {/* Title */}
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Typography.Title level={5} style={{ margin: 0 }}>🏯 永宋千秋：筑城天下 </Typography.Title>
-              <Space size={6}>
-                <Tag color="blue">帧 {state.tick + 1}</Tag>
-                <Tag color={state.running ? 'green' : 'default'}>{state.running ? '运行中' : '已暂停'}</Tag>
-              </Space>
-            </Space>
 
-            {/* Time */}
-            <Card size="small" style={{ background: isNight ? '#1a2040' : '#fffbe6', borderColor: isNight ? '#3a4a80' : '#ffe58f' }}>
-              <Space>
-                <span style={{ fontSize: 18 }}>{isNight ? '🌙' : hour < 8 ? '🌅' : hour < 17 ? '☀️' : '🌆'}</span>
-                <div>
-                  <Typography.Text style={{ color: isNight ? '#aac' : '#333', fontWeight: 600 }}>
-                    第 {state.dayCount} 天 · {dayTimeLabel(state.dayTime)}
-                  </Typography.Text>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
-                    {dayPhaseTag(state.dayTime)}
-                    {isShopDay
-                      ? <Tag color="gold">🛍 旬休采购日</Tag>
-                      : <Tag color="default" style={{ fontSize: 10 }}>旬休还剩 {nextShopIn} 天</Tag>}
-                  </div>
-                </div>
-              </Space>
-            </Card>
+      {/* ── Bottom floating tool bar ──────────────── */}
+      <ToolBar
+        onBuildingToggle={() => setBuildingOpen(v => !v)}
+        buildingOpen={buildingOpen}
+      />
 
-            {/* Stats */}
-            <Row gutter={6}>
-              <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>月份</Typography.Text><div style={{ fontWeight: 700 }}>{state.month}</div></Card></Col>
-              <Col span={8}>
-                <Tooltip title={
-                  <div>
-                    <div>点击调整赋税课率</div>
-                    {state.monthlyConstructionCost > 0 &&
-                      <div style={{ marginTop: 4, color: '#ffccc7' }}>🏗 本月已建造：¥{state.monthlyConstructionCost}</div>}
-                  </div>
-                }>
-                  <Card size="small" style={{ textAlign: 'center', cursor: 'pointer', borderColor: '#d4b106' }}
-                    onClick={() => setTaxModalOpen(true)}>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>财帛 💰</Typography.Text>
-                    <div style={{ fontWeight: 700 }}>¥{state.money.toFixed(2)}</div>
-                  </Card>
-                </Tooltip>
-              </Col>
-              <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>户口</Typography.Text><div style={{ fontWeight: 700 }}>{state.population}</div></Card></Col>
-            </Row>
-            <Row gutter={6}>
-              <Col span={8}>
-                <Tooltip title={`丁税¥${state.lastTaxBreakdown.ding} · 田赋¥${state.lastTaxBreakdown.tian} · 市税¥${state.lastTaxBreakdown.shang} · 养民-¥${state.lastMonthlyExpenseBreakdown.total}`}>
-                  <Card size="small" style={{ textAlign: 'center', cursor: 'help' }}>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>上月收益</Typography.Text>
-                    <div style={{ color: (state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total) >= 0 ? '#52c41a' : '#ff4d4f', fontWeight: 600 }}>
-                      {(state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total) >= 0 ? '+' : ''}
-                      {state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total}
-                    </div>
-                  </Card>
-                </Tooltip>
-              </Col>
-              <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>民心</Typography.Text><div>{state.avgSatisfaction}%</div></Card></Col>
-              <Col span={8}><Card size="small" style={{ textAlign: 'center' }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>通勤</Typography.Text><div><Badge count={state.citizens.filter(c => c.motion !== null).length} showZero color="blue" size="small" /> <TeamOutlined /></div></Card></Col>
-            </Row>
-            {/* 城市文脉 & 商脉 */}
-            <Row gutter={6}>
-              <Col span={12}>
-                <Tooltip title={`文脉：书院×12 + 造纸坊×6 + 寺庙×8 + 学子×3。宅邸须文脉≥30`}>
-                  <Card size="small" style={{ textAlign: 'center', cursor: 'help', borderColor: state.cityWenmai >= 30 ? '#52c41a' : '#faad14' }}>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>📚 文脉</Typography.Text>
-                    <div style={{ fontWeight: 700, color: state.cityWenmai >= 30 ? '#52c41a' : '#d4b106' }}>
-                      {state.cityWenmai} / 100
-                    </div>
-                  </Card>
-                </Tooltip>
-              </Col>
-              <Col span={12}>
-                <Tooltip title={`商脉：草市×12 + 常平仓×4 + 商贩×3 + 月销售额×0.1（上限30）。宅邸须商脉≥30`}>
-                  <Card size="small" style={{ textAlign: 'center', cursor: 'help', borderColor: state.cityShangmai >= 30 ? '#52c41a' : '#faad14' }}>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>💰 商脉</Typography.Text>
-                    <div style={{ fontWeight: 700, color: state.cityShangmai >= 30 ? '#52c41a' : '#d4b106' }}>
-                      {state.cityShangmai} / 100
-                    </div>
-                  </Card>
-                </Tooltip>
-              </Col>
-            </Row>
+      {/* ── Tool hint above toolbar ───────────────── */}
+      <ToolHintBar />
 
-            {/* Need pressure + supply */}
-            <Space wrap size={4}>
-              <Tag color="orange">🍚 粮食压力 {state.needPressure.food}%</Tag>
-              <Tag color={state.needPressure.safety > 45 ? 'error' : 'green'}>🛡 治安 {state.needPressure.safety}%</Tag>
-              <Tag color={state.needPressure.culture > 45 ? 'warning' : 'green'}>📚 文化 {state.needPressure.culture}%</Tag>
-              <Tag color="green">🌾 田间 {farmTotal.toFixed(1)}</Tag>
-              <Tag color="gold">🏚 粮仓 {granaryTotal.toFixed(1)}</Tag>
-              <Tag color="blue">🛍 集市 {marketTotal.toFixed(1)}</Tag>
-              {state.farmZones.flatMap(z => z.piles).length > 0 && <Tag color="lime">📦 堆积 {state.farmZones.flatMap(z => z.piles).length}</Tag>}
-              {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'oxcart')).length > 0 && <Tag color="orange">🐂 牛车 {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'oxcart')).length}</Tag>}
-              {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'marketbuyer')).length > 0 && <Tag color="purple">🧺 行商 {state.buildings.flatMap(b => b.agents.filter(a => a.kind === 'marketbuyer')).length}</Tag>}
-              {state.migrants.length > 0 && <Tag color="processing">🐴 入城 {state.migrants.length}</Tag>}
-              {getAggregateBldgUnit(state.buildings.filter(b => b.type === 'lumbercamp'), 'timber') > 0 && <Tag color="green">🪵 木料 {getAggregateBldgUnit(state.buildings.filter(b => (b.type as string) === 'lumbercamp'), 'timber').toFixed(0)}</Tag>}
-              {(() => {
-                const patrolCount = state.citizens.filter(c => c.motion?.purpose === 'patrol').length
-                return patrolCount > 0 ? <Tag color="blue">🏮 巡逻 {patrolCount}</Tag> : null
-              })()}
-            </Space>
-
-            {/* Start / Stop + speed control */}
-            <Space.Compact block>
-              {state.running
-                ? <Button icon={<PauseCircleOutlined />} onClick={stop} style={{ flex: 2 }}>停止</Button>
-                : <Button data-tutorial="start-btn" type="primary" icon={<PlayCircleOutlined />} onClick={start} style={{ flex: 2 }}>开始</Button>}
-              {([0.25, 1, 2] as const).map(s => (
-                <Button key={s} size="middle"
-                  type={state.simSpeed === s ? 'primary' : 'default'}
-                  onClick={() => setSimSpeed(s)}
-                  title={s === 0.25 ? '慢放（¼速）' : s === 1 ? '正常速度' : '快进（2倍）'}
-                  style={{ flex: 1, fontSize: 12 }}>
-                  {s === 0.25 ? '慢' : s === 1 ? '×1' : '×2'}
-                </Button>
-              ))}
-            </Space.Compact>
-
-            {/* Save / Load */}
-            <Space.Compact block>
-              <Tooltip title="将当前城市存档下载为 JSON 文件">
-                <Button icon={<DownloadOutlined />} onClick={handleSave} style={{ flex: 1 }}>
-                  💾 存档
-                </Button>
-              </Tooltip>
-              <Tooltip title="从本地 JSON 文件读取存档（若地图种子不同将自动刷新页面重建地形）">
-                <Button icon={<UploadOutlined />} onClick={handleLoadClick} style={{ flex: 1 }}>
-                  📂 读档
-                </Button>
-              </Tooltip>
-            </Space.Compact>
-
-
-            <Divider style={{ margin: '4px 0' }}>工具</Divider>
-
-            {/* Core tools */}
-            <Space.Compact block>
-              {(['pan', 'road', 'farmZone', 'teaZone', 'bulldoze'] as Tool[]).map(t => (
-                <Button key={t} type={state.selectedTool === t ? 'primary' : 'default'}
-                  data-tutorial={
-                    t === 'pan'      ? 'pan-tool'      :
-                    t === 'road'     ? 'road-tool'     :
-                    t === 'farmZone' ? 'farmzone-tool' : undefined
-                  }
-                  icon={t === 'bulldoze' ? <DeleteOutlined /> : undefined}
-                  onClick={() => selectTool(t)} style={{ flex: 1 }}>
-                  {t === 'pan' ? '浏览' : t === 'road' ? '道路' : t === 'farmZone' ? '🌾粮田' : t === 'teaZone' ? '🍵茶园' : '拆除'}
-                </Button>
-              ))}
-            </Space.Compact>
-
-            {/* 找矿罗盘 */}
-            <Tooltip title={
-              oreClusterPoints.length > 0
-                ? `找矿罗盘：每点一次跳转到下一处铁矿脉并高亮选中，共 ${oreClusterPoints.length} 处矿藏，循环巡览。`
-                : '当前地图暂无铁矿脉。'
-            }>
-              <Button
-                size="small" block
-                onClick={focusOreVein}
-                disabled={oreClusterPoints.length === 0}
-                style={{ fontSize: 12 }}
-              >
-                🧭 找矿罗盘
-                {oreClusterPoints.length > 0
-                  ? <Typography.Text type="secondary" style={{ fontSize: 10, marginLeft: 6 }}>
-                      第 {(compassIdx === 0 ? oreClusterPoints.length : compassIdx)}/{oreClusterPoints.length} 处
-                    </Typography.Text>
-                  : <Typography.Text type="secondary" style={{ fontSize: 10, marginLeft: 6 }}>无矿脉</Typography.Text>
-                }
-              </Button>
-            </Tooltip>
-            {state.selectedTool === 'road' && (
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                🌉 跨河建桥：¥80×跨度　🌲 伐木清路：林地额外 ¥25
-              </Typography.Text>
-            )}
-            {state.selectedTool === 'farmZone' && (
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                🌾 <b>粮田</b>：点击河流三格内的平地（绿点范围），近水自动种稻，旱地种粟/麦。需紧邻道路方可耕作。
-              </Typography.Text>
-            )}
-            {state.selectedTool === 'teaZone' && (
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                🍵 <b>茶园</b>：点击山坡（琥珀色点），选 2×2 全山地格开梯田种茶。需紧邻山道方可采摘。
-              </Typography.Text>
-            )}
-
-            {/* Building palette — auto-generated from BUILDING_REGISTRY, grouped by category */}
-            <Collapse size="small" defaultActiveKey={['buildings']} items={[{
-              key: 'buildings',
-              label: '建筑',
-              children: (
-                <Tabs
-                  size="small"
-                  defaultActiveKey={PALETTE_GROUPS[0]?.category}
-                  style={{ marginTop: -4 }}
-                  items={paletteGroups.map(group => ({
-                    key: group.category,
-                    label: (
-                      <span data-tutorial={
-                        group.category === 'storage'    ? 'storage-tab'    :
-                        group.category === 'commercial' ? 'commercial-tab' :
-                        group.category === 'residential'? 'residential-tab': undefined
-                      }>
-                        {group.label}
-                      </span>
-                    ),
-                    children: (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                        {group.buildings.map(b => {
-                          const active = ACTIVE_IDS.has(b.id)
-                          return (
-                            <Tooltip
-                              key={b.id}
-                              title={active ? b.desc : `${b.label}：尚未开放`}
-                              placement="right"
-                            >
-                              <Button
-                                size="small"
-                                type={state.selectedTool === b.id ? 'primary' : 'default'}
-                                data-tutorial={
-                                  b.id === 'house'   ? 'house-tool'   :
-                                  b.id === 'granary' ? 'granary-tool' :
-                                  b.id === 'market'  ? 'market-tool'  : undefined
-                                }
-                                onClick={() => { if (active) selectTool(b.id as BuildingType) }}
-                                style={{
-                                  textAlign: 'left', width: '100%',
-                                  opacity: active ? 1 : 0.4,
-                                  cursor: active ? 'pointer' : 'not-allowed',
-                                }}
-                              >
-                                {b.icon} {b.label}{' '}
-                                <Typography.Text type="secondary" style={{ fontSize: 10 }}>
-                                  {active ? `¥${b.cost}` : '待开放'}
-                                </Typography.Text>
-                              </Button>
-                            </Tooltip>
-                          )
-                        })}
-                      </div>
-                    ),
-                  }))}
-                />
-              ),
-            }]} />
-
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              Pan: 左键平移 / 右键旋转。粮田须在河流五步以内。茶园须在山地（2×2全山格）。铁矿坑须建于铁矿脉，采木场须建于林地<b>或山中树林</b>，书院须先建造纸坊（方圆二十格内）。草市与常平仓占地 2×2。<b>宅邸须文脉≥30且商脉≥30</b>。巡检司派弓手巡街，百姓吃饱后有治安需求，有巡逻兵经过则安心。
-            </Typography.Text>
-
-            {feedback && <Alert showIcon type={feedback.type} message={feedback.message} style={{ padding: '4px 8px' }} />}
-
-            {/* 上奏 */}
-            <AdvicePanel />
-          </Space>
-        </Card>
-      </div>
+      {/* ── Building drawer (slides up) ───────────── */}
+      <BuildingDrawer open={buildingOpen} onClose={() => setBuildingOpen(false)} paletteGroups={paletteGroups} />
 
       {/* ── Tax rate modal ────────────────────────── */}
       <TaxModal open={taxModalOpen} onClose={() => setTaxModalOpen(false)} setTaxRates={setTaxRates} />
@@ -757,7 +873,7 @@ function DebugOverlay() {
   }
 
   return (
-    <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+    <div style={{ position: 'fixed', top: 58, right: 12, zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
       {/* Toggle row — FPS badge always visible */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{
@@ -1212,7 +1328,7 @@ function InfoPanel() {
   if (!hasSelection) return null
 
   return (
-    <div className="info-panel">
+    <div className="info-panel" data-tutorial="house-info-panel">
       <div style={{ padding: '12px 12px 0' }}>
         {state.selectedCitizenId
           ? <CitizenPanel />

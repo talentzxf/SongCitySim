@@ -65,42 +65,6 @@ const initial: CityState = {
   cityShangmai: 0,
 }
 
-// Starter house adjacent to highway so migrants can spawn on day 1
-try {
-  if (Array.isArray(HIGHWAY_MAIN_PATH) && HIGHWAY_MAIN_PATH.length > 0 && initial.buildings.length === 0) {
-    const hp = HIGHWAY_MAIN_PATH[Math.max(0, Math.floor(HIGHWAY_MAIN_PATH.length / 2))]
-    const halfX = Math.floor(MAP_SIZE_X / 2), halfY = Math.floor(MAP_SIZE_Y / 2)
-    const MAP_MIN_X = -halfX, MAP_MAX_X = halfX - 1, MAP_MIN_Y = -halfY, MAP_MAX_Y = halfY - 1
-    function isClearTile(x: number, y: number) {
-      if (x < MAP_MIN_X || x > MAP_MAX_X || y < MAP_MIN_Y || y > MAP_MAX_Y) return false
-      return !isRiverAt(x, y) && !isMountainAt(x, y) && !isRoadAt(initial.roads, x, y) &&
-        !initial.buildings.some(b => b.x === x && b.y === y)
-    }
-    const preferred = { x: hp.x + 1, y: hp.y }
-    let chosen: { x: number; y: number } | null = isClearTile(preferred.x, preferred.y) ? preferred : null
-    if (!chosen) {
-      const q: { x: number; y: number }[] = [preferred]
-      const seen = new Set<string>([`${preferred.x},${preferred.y}`])
-      while (q.length > 0 && !chosen) {
-        const cur = q.shift()!
-        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]) {
-          const nx = cur.x + dx, ny = cur.y + dy, key = `${nx},${ny}`
-          if (seen.has(key)) continue; seen.add(key)
-          if (nx < MAP_MIN_X || nx > MAP_MAX_X || ny < MAP_MIN_Y || ny > MAP_MAX_Y) continue
-          if (isClearTile(nx, ny)) { chosen = { x: nx, y: ny }; break }
-          q.push({ x: nx, y: ny })
-        }
-      }
-    }
-    const { x: bx, y: by } = chosen ?? preferred
-    const bid = 'b-house-1'
-    initial.buildings = [{
-      id: bid, type: 'house', x: bx, y: by, w: 1, h: 1, level: 1, capacity: 6, occupants: 0, workerSlots: 0, cost: 100,
-      agents: [],
-      residentData: { food: 15, crops: { rice: 15, millet: 0, wheat: 0, soybean: 0, vegetable: 0, tea: 0 }, savings: 50, tools: 0, safety: 0, dead: 0 },
-    }]
-  }
-} catch { /* ignore � best-effort for tests */ }
 
 // --- Context --------------------------------------------------------------
 const SimulationContext = createContext<{
