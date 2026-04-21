@@ -878,6 +878,18 @@ export default function MapScene() {
     // ── Touch handlers (for road/build drag on mobile) ──────────────────────
     // We capture in capture-phase so we fire before OrbitControls' bubble listeners.
     let touchDownPos: { clientX: number; clientY: number } | null = null
+    // Tracks the most-recent touch position so building tools can place on lift
+    let touchCurPos:  { clientX: number; clientY: number } | null = null
+
+    /** Update mouseNDC from a touch point so PlacementGhost follows the finger */
+    function updateNDCFromTouch(clientX: number, clientY: number) {
+      const rect = gl.domElement.getBoundingClientRect()
+      mouseNDCRef.current = {
+        x:  ((clientX - rect.left) / rect.width)  * 2 - 1,
+        y: -((clientY - rect.top)  / rect.height) * 2 + 1,
+      }
+      mouseOnCanvasRef.current = true
+    }
 
     function onTouchStart(e: TouchEvent) {
       const tool = stateRef.current.selectedTool
@@ -887,6 +899,7 @@ export default function MapScene() {
       e.stopPropagation()
       const touch = e.touches[0]
       touchDownPos = { clientX: touch.clientX, clientY: touch.clientY }
+      touchCurPos  = { clientX: touch.clientX, clientY: touch.clientY }
 
       // Drag tools: initialise drag state immediately
       if (tool === 'road' || tool === 'farmZone' || tool === 'teaZone') {
@@ -900,21 +913,29 @@ export default function MapScene() {
         } else {
           dragRef.current.didDrag = true; dragRef.current.lastTile = t; paintFarmZone(t)
         }
+      } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
+        // Building / bulldoze on mobile: show ghost immediately at touch position,
+        // place/execute on lift. Mark drag active so touchMove keeps ghost updated.
+        dragRef.current.active = true
+        updateNDCFromTouch(touch.clientX, touch.clientY)
       }
-      // Building types / bulldoze: no drag state needed — placement fires in onTouchEnd
     }
 
     function onTouchMove(e: TouchEvent) {
       const tool = stateRef.current.selectedTool
-      if (tool === 'pan' || !dragRef.current.active || e.touches.length !== 1) return
+      if (tool === 'pan' || e.touches.length !== 1) return
       e.preventDefault()
       e.stopPropagation()
       const touch = e.touches[0]
+      touchCurPos = { clientX: touch.clientX, clientY: touch.clientY }
+
+      if (!dragRef.current.active) return
       const t = getTileAt(touch.clientX, touch.clientY); if (!t) return
-      const key = `${t.x},${t.y}`; if (key === dragRef.current.lastTileKey) return
-      dragRef.current.lastTileKey = key
+      const key = `${t.x},${t.y}`
 
       if (tool === 'road' && roadDragStartRef.current) {
+        if (key === dragRef.current.lastTileKey) return
+        dragRef.current.lastTileKey = key
         dragRef.current.didDrag = true
         const start      = roadDragStartRef.current
         const endOnMtn   = isMountainAt(t.x, t.y)
@@ -929,9 +950,14 @@ export default function MapScene() {
         const path = astarRoad(start, t, !endOnMtn && !startOnMtn, blockedTiles)
         setRoadPreview(path); roadPreviewRef.current = path
       } else if (tool === 'farmZone' || tool === 'teaZone') {
+        if (key === dragRef.current.lastTileKey) return
+        dragRef.current.lastTileKey = key
         const from = dragRef.current.lastTile ?? t
         expandToFourNeighborPath(rasterLine(from, t)).forEach(paintFarmZone)
         dragRef.current.lastTile = t; dragRef.current.didDrag = true
+      } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
+        // Keep ghost following finger
+        updateNDCFromTouch(touch.clientX, touch.clientY)
       }
     }
 
@@ -952,14 +978,24 @@ export default function MapScene() {
         stopDrag()
       } else if (tool === 'farmZone' || tool === 'teaZone') {
         stopDrag()
+      } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
+        // Place at wherever the finger was last seen (drag-to-place UX)
+        const pos = touchCurPos ?? touchDownPos
+        if (pos) {
+          const t = getTileAt(pos.clientX, pos.clientY)
+          if (t) applyTool(t.x, t.y)
+        }
+        mouseOnCanvasRef.current = false
+        stopDrag()
       } else {
-        // Building types, bulldoze, or any other tool: treat as tap → applyTool
+        // Fallback for any other tool
         if (touchDownPos) {
           const t = getTileAt(touchDownPos.clientX, touchDownPos.clientY)
           if (t) applyTool(t.x, t.y)
         }
       }
       touchDownPos = null
+      touchCurPos  = null
     }
 
     const c = gl.domElement
