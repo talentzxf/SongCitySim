@@ -158,6 +158,17 @@ export async function applySaveFile(data: ArrayBuffer): Promise<SaveFile | 'redi
   const save = parseSaveFile(json)
 
   if (save.worldSeed === WORLD_SEED) {
+    // Log a warning if worldGenConfig changed since this save was created.
+    // We can't re-run worldgen here (it's a module-level IIFE), but the
+    // mismatch is surfaced so the developer is aware.
+    const savedCfg = JSON.stringify(save.worldGenConfig)
+    const curCfg   = JSON.stringify(worldGenConfig)
+    if (savedCfg !== curCfg) {
+      console.warn(
+        '[save] worldGenConfig changed since this save was created. ' +
+        'Terrain layout may differ slightly despite matching worldSeed.',
+      )
+    }
     return save
   }
 
