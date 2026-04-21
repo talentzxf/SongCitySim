@@ -30,11 +30,19 @@ function MessageBridge() {
 
 function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRefObject<any>; bounds: MapBounds }) {
   const { state } = useSimulation()
-  const controlsEnabled = state.selectedTool === 'pan'
 
   // Detect touch/mobile device (once, stable)
   const isTouch = React.useMemo(() =>
     typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
+
+  // On desktop: disable controls whenever a non-pan tool is active (mouse events handled by MapScene).
+  // On mobile:  keep controls enabled even for non-pan tools so the user can still pinch-zoom /
+  //             two-finger rotate/pan to position themselves before confirming placement.
+  //             Single-finger events for the active tool are intercepted in capture-phase by
+  //             MapScene's touch handlers (they call e.preventDefault + e.stopPropagation) so
+  //             OrbitControls never sees them.
+  const isPanTool       = state.selectedTool === 'pan'
+  const controlsEnabled = isPanTool || isTouch
 
   // Desktop: left-click = pan camera, right-click = rotate
   // Mobile:  1-finger = pan, 2-finger = dolly+rotate
@@ -52,7 +60,7 @@ function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRef
       ;(window as any).__CONTROLS_STATE__ = { selectedTool: state.selectedTool, enabled: controlsEnabled, canRotate: controlsEnabled }
       ;(window as any).__IS_TOUCH_DEVICE__ = isTouch
     } catch (e) {}
-  }, [state.selectedTool, controlsEnabled, isTouch])
+  }, [state.selectedTool, controlsEnabled, isPanTool, isTouch])
 
   const clampTarget = React.useCallback(() => {
     const ctrl = controlsRef.current
@@ -78,7 +86,7 @@ function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRef
     try { (window as any).__LEVEL_BOUNDS__ = bounds } catch {}
   }, [bounds])
 
-  React.useEffect(() => { if (controlsEnabled) clampTarget() }, [controlsEnabled, clampTarget])
+  React.useEffect(() => { if (controlsEnabled) clampTarget() }, [controlsEnabled, isPanTool, clampTarget])
 
   React.useEffect(() => {
     const ctrl = controlsRef.current
@@ -108,7 +116,7 @@ function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRef
     <OrbitControls
       ref={controlsRef}
       enabled={controlsEnabled}
-      enablePan={controlsEnabled}
+      enablePan={isPanTool}
       enableRotate={true}
       enableZoom={true}
       maxDistance={span * 2}
