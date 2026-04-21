@@ -357,8 +357,8 @@ function BuildingDrawer({ open, onClose, paletteGroups }: {
   paletteGroups: typeof PALETTE_GROUPS
 }) {
   const { state, selectTool } = useSimulation()
-
-  // Close on outside click
+  const isTouch = React.useMemo(() =>
+    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
   React.useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
@@ -404,7 +404,11 @@ function BuildingDrawer({ open, onClose, paletteGroups }: {
                   const active = ACTIVE_IDS.has(b.id)
                   const isSelected = state.selectedTool === b.id
                   return (
-                    <Tooltip key={b.id} title={active ? b.desc : `${b.label}：尚未开放`} placement="top">
+                    <Tooltip key={b.id}
+                      title={active ? b.desc : `${b.label}：尚未开放`}
+                      placement="top"
+                      open={isTouch ? false : undefined}
+                    >
                       <Button
                         size="small"
                         type={isSelected ? 'primary' : 'default'}
@@ -632,15 +636,10 @@ function MobileBuildingBar() {
   const isTouch = React.useMemo(() =>
     typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
 
-  const tool = state.selectedTool
-  const isBuildingTool = ALL_BUILDING_TYPES.includes(tool as BuildingType)
-  if (!isTouch || !isBuildingTool) return null
-
-  const def = BUILDING_REGISTRY[tool]
-  if (!def) return null
-
+  // All hooks must be before any early return (Rules of Hooks)
   const [canPlace, setCanPlace] = React.useState(true)
   React.useEffect(() => {
+    if (!isTouch) return
     let raf: number
     const poll = () => {
       const t = (window as any).__MOBILE_PLACEMENT_TILE__
@@ -649,7 +648,14 @@ function MobileBuildingBar() {
     }
     raf = requestAnimationFrame(poll)
     return () => cancelAnimationFrame(raf)
-  }, [])
+  }, [isTouch])
+
+  const tool = state.selectedTool
+  const isBuildingTool = ALL_BUILDING_TYPES.includes(tool as BuildingType)
+  if (!isTouch || !isBuildingTool) return null
+
+  const def = BUILDING_REGISTRY[tool]
+  if (!def) return null
 
   function confirm() {
     const fn = (window as any).__CONFIRM_BUILDING_PLACEMENT__
