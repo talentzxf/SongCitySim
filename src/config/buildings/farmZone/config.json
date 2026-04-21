@@ -1,0 +1,36 @@
+{
+  "id": "farmZone",
+  "label": "粮田",
+  "labelEn": "Grain Field",
+  "category": "farming",
+  "tier": 1,
+  "cost": 0,
+  "maintenanceCostPerMonth": 0,
+  "footprint": { "w": 2, "h": 2 },
+  "capacity": 0,
+  "workerSlots": 0,
+  "jobs": [],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": [],
+    "notTerrain": ["mountain", "river"]
+  },
+  "inputs": [],
+  "outputs": [
+    { "goodId": "rice",      "amountPerDay": 0, "optional": true },
+    { "goodId": "millet",    "amountPerDay": 0, "optional": true },
+    { "goodId": "wheat",     "amountPerDay": 0, "optional": true },
+    { "goodId": "soybean",   "amountPerDay": 0, "optional": true },
+    { "goodId": "vegetable", "amountPerDay": 0, "optional": true }
+  ],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "需建于河流五格之内的平地。农夫每轮收获粮食，由牛车运往粮仓。需紧邻道路方可耕作",
+  "icon": "🌾",
+  "renderAssets": {}
+}
+

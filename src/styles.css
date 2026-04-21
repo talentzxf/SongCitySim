@@ -267,10 +267,12 @@ canvas { width: 100%; height: 100%; display: block }
   border-top: 7px solid rgba(196,154,48,0.5);
 }
 /* Ant Design overrides inside dark panel */
-.building-panel .ant-tabs-tab { color: rgba(196,154,48,0.55) !important; }
+.building-panel .ant-tabs-tab { color: rgba(196,154,48,0.55) !important; padding: 6px 6px !important; font-size: 11px !important; }
 .building-panel .ant-tabs-tab-active .ant-tabs-tab-btn { color: #f0d060 !important; }
 .building-panel .ant-tabs-ink-bar { background: #c8a030 !important; }
 .building-panel .ant-tabs-nav::before { border-bottom-color: rgba(196,154,48,0.2) !important; }
+.building-panel .ant-tabs-nav-list { gap: 0 !important; }
+.building-panel .ant-tabs-tab + .ant-tabs-tab { margin: 0 !important; }
 
 /* Building buttons inside panel */
 .building-panel .ant-btn-default {
@@ -288,6 +290,12 @@ canvas { width: 100%; height: 100%; display: block }
   border-color: #c8a030 !important;
   color: #ffd060 !important;
   box-shadow: 0 0 8px rgba(200,160,48,0.3) !important;
+}
+
+/* ── Building tab scroll hint pulse ──────────────────────────────── */
+@keyframes building-tab-hint-pulse {
+  0%,100% { opacity: 1;   transform: translateX(0); }
+  50%      { opacity: 0.4; transform: translateX(3px); }
 }
 
 /* ── Tool hint bar (above toolbar) ───────────────────────────────── */
@@ -355,8 +363,9 @@ canvas { width: 100%; height: 100%; display: block }
   /* Hide non-essential top-bar elements */
   .tb-hide-mobile { display: none !important; }
 
-  /* Left section: hide everything (title, time, dividers already handled by tb-hide-mobile) */
-  .top-bar-left { display: none; }
+  /* Left section: hide title but keep date detail */
+  .top-bar-left { min-width: 0; }
+  .top-bar-left .top-bar-title { display: none; }
 
   /* Compact center buttons */
   .tb-play-btn  { padding: 5px 10px; font-size: 11px; }

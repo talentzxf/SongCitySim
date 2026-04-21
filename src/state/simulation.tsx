@@ -130,6 +130,11 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   function setPopulation(v: number) { setState(s => ({ ...s, population: v })) }
 
   function placeBuilding(x: number, y: number, type?: BuildingType) {
+    // Farm zones are stored in a separate state slice — delegate immediately
+    if (type === 'farmZone' || type === 'teaZone') {
+      placeFarmZone(x, y, type === 'teaZone' ? 'tea' : 'grain')
+      return
+    }
     const action = { type: 'placeBuilding', x, y, buildType: type ?? null, success: false, reason: '' }
     try {
       setState(s => {
@@ -340,7 +345,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   }
   function selectTool(t: Tool) {
     const isBT = ALL_BUILDING_TYPES.includes(t as BuildingType)
-    const keepSelection = t === 'pan' || t === 'farmZone' || t === 'teaZone'
+    const keepSelection = t === 'pan'
     setState(s => ({ ...s, selectedTool: t, selectedBuildingType: isBT ? (t as BuildingType) : null, selectedBuildingId: keepSelection ? s.selectedBuildingId : null, selectedCitizenId: keepSelection ? s.selectedCitizenId : null, selectedFarmZoneId: keepSelection ? s.selectedFarmZoneId : null, selectedTerrainTile: keepSelection ? s.selectedTerrainTile : null }))
   }
   function selectRoadMode(mode: 'around' | 'over') { setState(s => ({ ...s, selectedRoadMode: mode })) }

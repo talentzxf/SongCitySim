@@ -1,0 +1,32 @@
+{
+  "id": "teaZone",
+  "label": "茶园",
+  "labelEn": "Tea Garden",
+  "category": "farming",
+  "tier": 2,
+  "cost": 0,
+  "maintenanceCostPerMonth": 0,
+  "footprint": { "w": 2, "h": 2 },
+  "capacity": 0,
+  "workerSlots": 0,
+  "jobs": [],
+  "prerequisites": {
+    "nearbyBuildings": [],
+    "minCityPopulation": 0,
+    "minCityMoney": 0,
+    "techNodes": [],
+    "terrain": ["mountain"],
+    "notTerrain": ["river"]
+  },
+  "inputs": [],
+  "outputs": [
+    { "goodId": "tea", "amountPerDay": 0, "optional": true }
+  ],
+  "addons": [],
+  "serviceRadius": 0,
+  "needBonus": {},
+  "desc": "须建于 2×2 全为山地的梯田上。茶农采茶，由牛车运往粮仓。需紧邻山道方可采摘",
+  "icon": "🍃",
+  "renderAssets": {}
+}
+

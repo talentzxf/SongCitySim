@@ -190,8 +190,8 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
   const raycaster   = React.useRef(new THREE.Raycaster())
   const plane       = React.useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
   const hit         = React.useRef(new THREE.Vector3())
-  const isBuildingTool = ALL_BUILDING_TYPES.includes(tool as BuildingType)
-  const isFarmTool     = tool === 'farmZone'
+  const isFarmTool     = tool === 'farmZone' || tool === 'teaZone'
+  const isBuildingTool = ALL_BUILDING_TYPES.includes(tool as BuildingType) && !isFarmTool
 
   useFrame(() => {
     const show = mouseOnCanvasRef.current && (isBuildingTool || isFarmTool)
@@ -247,15 +247,26 @@ function PlacementGhost({ tool, stateRef, mouseNDCRef, mouseOnCanvasRef }: {
     if (isFarmTool) {
       const mesh = farmRef.current; if (!mesh) return
       const fp = [{ x: tx, y: ty }, { x: tx+1, y: ty }, { x: tx, y: ty+1 }, { x: tx+1, y: ty+1 }]
-      const valid = !outOfBounds &&
-        fp.every(t =>
-          (!lb || (t.x >= lb.minX && t.x <= lb.maxX && t.y >= lb.minY && t.y <= lb.maxY)) &&
-          !isRiverAt(t.x, t.y) && !isMountainAt(t.x, t.y) &&
-          !s.buildings.some(b => b.x === t.x && b.y === t.y) &&
-          !s.roads.some(r => r.x === t.x && r.y === t.y) &&
-          !s.farmZones.some(z => t.x >= z.x && t.x <= z.x+1 && t.y >= z.y && t.y <= z.y+1)
-        ) && fp.some(t => isNearRiverFive(t.x, t.y))
-      mesh.position.set(tx + 0.5, 0.016, ty + 0.5); mesh.visible = true
+      const blocked = fp.some(t =>
+        isRiverAt(t.x, t.y) ||
+        s.buildings.some(b => b.x === t.x && b.y === t.y) ||
+        s.roads.some(r => r.x === t.x && r.y === t.y) ||
+        s.farmZones.some(z => t.x >= z.x && t.x <= z.x+1 && t.y >= z.y && t.y <= z.y+1)
+      )
+      const inBounds = !outOfBounds && fp.every(t =>
+        !lb || (t.x >= lb.minX && t.x <= lb.maxX && t.y >= lb.minY && t.y <= lb.maxY)
+      )
+      let valid = inBounds && !blocked
+      if (tool === 'teaZone') {
+        // 茶园：2×2 必须全为山地
+        valid = valid && fp.every(t => isMountainAt(t.x, t.y))
+      } else {
+        // 粮田：不能有山地，须在河流五格之内
+        valid = valid && fp.every(t => !isMountainAt(t.x, t.y)) && fp.some(t => isNearRiverFive(t.x, t.y))
+      }
+      // teaZone ghost sits at mountain height; farmZone is flat
+      const ghostY = tool === 'teaZone' ? tileH(tx, ty) + 0.016 : 0.016
+      mesh.position.set(tx + 0.5, ghostY, ty + 0.5); mesh.visible = true
       ;(mesh.material as THREE.MeshBasicMaterial).color.set(valid ? '#52c41a' : '#ff4d4f')
     }
   })

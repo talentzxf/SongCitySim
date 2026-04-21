@@ -10,10 +10,12 @@ export type BuildingType =
   | 'papermill'    // 造纸坊
   | 'lumbercamp'   // 采木场
   | 'watchpost'    // 巡检司（治安）
+  | 'farmZone'     // 粮田（2×2，近水平地）
+  | 'teaZone'      // 茶园（2×2，山地梯田）
 
 export const ALL_BUILDING_TYPES: BuildingType[] = [
   'house', 'manor', 'market', 'granary', 'blacksmith', 'mine', 'academy', 'papermill', 'lumbercamp',
-  'watchpost',
+  'watchpost', 'farmZone', 'teaZone',
 ]
 
 export type Profession =
@@ -294,7 +296,7 @@ export type Migrant = {
 
 // ─── UI / action types ───────────────────────────────────────────────────────
 
-export type Tool = 'pan' | 'road' | 'bulldoze' | 'farmZone' | 'teaZone' | BuildingType
+export type Tool = 'pan' | 'road' | 'bulldoze' | BuildingType
 
 export type LastAction =
   | { kind: 'placeBuilding'; id: string; cost: number }

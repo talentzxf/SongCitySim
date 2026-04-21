@@ -281,8 +281,9 @@ export default function MapScene() {
     if (state.selectedTool === 'pan' || state.selectedTool === 'bulldoze') {
       mouseOnCanvasRef.current = false
     }
-    // Mobile: when a building tool is selected, show ghost at map centre immediately
-    if (isTouch && ALL_BUILDING_TYPES.includes(state.selectedTool as BuildingType)) {
+    // Mobile: when a building/farm tool is selected, show ghost at map centre immediately
+    const isMobilePlacementTool = ALL_BUILDING_TYPES.includes(state.selectedTool as BuildingType)
+    if (isTouch && isMobilePlacementTool) {
       mouseNDCRef.current = { x: 0, y: 0 }
       mouseOnCanvasRef.current = true
       mobilePlacementActiveRef.current = true
@@ -296,9 +297,9 @@ export default function MapScene() {
     ;(window as any).__CONFIRM_BUILDING_PLACEMENT__ = () => {
       const tile = mobilePlacementTileRef.current
       const tool = stateRef.current.selectedTool
-      if (tile && ALL_BUILDING_TYPES.includes(tool as BuildingType)) {
+      if (!tile) return
+      if (ALL_BUILDING_TYPES.includes(tool as BuildingType)) {
         actionsRef.current.placeBuilding(tile.x, tile.y, tool as BuildingType)
-        // Stay in placement mode so user can place multiple buildings
       }
     }
     ;(window as any).__CANCEL_BUILDING_PLACEMENT__ = () => {
@@ -635,10 +636,23 @@ export default function MapScene() {
         // Expose for HUD bar (validity check)
         const tile = mobilePlacementTileRef.current
         const s = stateRef.current
-        const canPlace = !s.buildings.some(b => b.x === tile.x && b.y === tile.y)
-                      && !s.roads.some(r => r.x === tile.x && r.y === tile.y)
-        ;(window as any).__MOBILE_PLACEMENT_TILE__ = { ...tile, canPlace }
-      }
+        const _tool = s.selectedTool
+        let canPlace: boolean
+        if (_tool === 'farmZone' || _tool === 'teaZone') {
+          const fp = [{ x: tile.x, y: tile.y }, { x: tile.x+1, y: tile.y }, { x: tile.x, y: tile.y+1 }, { x: tile.x+1, y: tile.y+1 }]
+          canPlace = !fp.some(t =>
+            isRiverAt(t.x, t.y) ||
+            s.buildings.some(b => b.x === t.x && b.y === t.y) ||
+            s.roads.some(r => r.x === t.x && r.y === t.y) ||
+            s.farmZones.some(z => t.x >= z.x && t.x <= z.x+1 && t.y >= z.y && t.y <= z.y+1)
+          )
+          if (_tool === 'teaZone') canPlace = canPlace && fp.every(t => isMountainAt(t.x, t.y))
+          else canPlace = canPlace && fp.every(t => !isMountainAt(t.x, t.y)) && fp.some(t => isNearRiverFive(t.x, t.y))
+        } else {
+          canPlace = !s.buildings.some(b => b.x === tile.x && b.y === tile.y)
+                  && !s.roads.some(r => r.x === tile.x && r.y === tile.y)
+        }
+        ;(window as any).__MOBILE_PLACEMENT_TILE__ = { ...tile, canPlace }      }
     }
     // --- Compass fly-to (runs every frame, before culling throttle) ----------
     const newCompassTarget = (window as any).__ORE_COMPASS_TARGET__
@@ -827,10 +841,6 @@ export default function MapScene() {
         if (isForest) {
           try { (window as any).__MESSAGE_API__?.warning({ content: `🌲 伐木清路 · 额外耗费 ¥${FOREST_CLEAR_COST} 文`, duration: 2 }) } catch {}
         }
-      } else if (tool === 'farmZone') {
-        actionsRef.current.placeFarmZone(wx, wy, 'grain')
-      } else if (tool === 'teaZone') {
-        actionsRef.current.placeFarmZone(wx, wy, 'tea')
       } else if (tool === 'bulldoze') {
         const b = s.buildings.find(b => {
           const bw = b.w ?? 1, bh = b.h ?? 1
@@ -859,7 +869,7 @@ export default function MapScene() {
     function onClick(e: MouseEvent) {
       if (objectClickedRef.current) { objectClickedRef.current = false; return }
       const tool = stateRef.current.selectedTool
-      if ((tool === 'road' || tool === 'farmZone' || tool === 'teaZone') && dragRef.current.didDrag) {
+      if (tool === 'road' && dragRef.current.didDrag) {
         dragRef.current.didDrag = false; return
       }
       const t = getTile(e); if (t) applyTool(t.x, t.y)
@@ -867,17 +877,13 @@ export default function MapScene() {
 
     function onMouseDown(e: MouseEvent) {
       const tool = stateRef.current.selectedTool
-      if (tool !== 'road' && tool !== 'farmZone' && tool !== 'teaZone') return
+      if (tool !== 'road') return
       dragRef.current.active = true; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null
       const t = getTile(e); if (!t) return
       dragRef.current.lastTileKey = `${t.x},${t.y}`
-      if (tool === 'road') {
-        dragRef.current.didDrag  = false
-        roadDragStartRef.current = t
-        const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
-      } else {
-        dragRef.current.didDrag = true; dragRef.current.lastTile = t; paintFarmZone(t)
-      }
+      dragRef.current.didDrag  = false
+      roadDragStartRef.current = t
+      const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
     }
 
     function onMouseMove(e: MouseEvent) {
@@ -901,11 +907,6 @@ export default function MapScene() {
         ])
         const path = astarRoad(start, t, !endOnMtn && !startOnMtn, blockedTiles)
         setRoadPreview(path); roadPreviewRef.current = path
-
-      } else if (tool === 'farmZone' || tool === 'teaZone') {
-        const from = dragRef.current.lastTile ?? t
-        expandToFourNeighborPath(rasterLine(from, t)).forEach(paintFarmZone)
-        dragRef.current.lastTile = t; dragRef.current.didDrag = true
       }
     }
 
@@ -956,20 +957,16 @@ export default function MapScene() {
       touchCurPos  = { clientX: touch.clientX, clientY: touch.clientY }
 
       // Drag tools: initialise drag state immediately
-      if (tool === 'road' || tool === 'farmZone' || tool === 'teaZone') {
+      if (tool === 'road') {
         dragRef.current.active = true; dragRef.current.lastTileKey = ''; dragRef.current.lastTile = null
         const t = getTileAt(touch.clientX, touch.clientY); if (!t) return
         dragRef.current.lastTileKey = `${t.x},${t.y}`
-        if (tool === 'road') {
-          dragRef.current.didDrag  = false
-          roadDragStartRef.current = t
-          const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
-        } else {
-          dragRef.current.didDrag = true; dragRef.current.lastTile = t; paintFarmZone(t)
-        }
+        dragRef.current.didDrag  = false
+        roadDragStartRef.current = t
+        const preview = [t]; setRoadPreview(preview); roadPreviewRef.current = preview
       } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
-        // Building / bulldoze on mobile: show ghost immediately at touch position,
-        // place/execute on lift. Mark drag active so touchMove keeps ghost updated.
+        // Ghost-based placement: show ghost immediately at touch position,
+        // user lifts finger then taps "放置" to confirm.
         dragRef.current.active = true
         updateNDCFromTouch(touch.clientX, touch.clientY)
       }
@@ -1003,12 +1000,6 @@ export default function MapScene() {
         ])
         const path = astarRoad(start, t, !endOnMtn && !startOnMtn, blockedTiles)
         setRoadPreview(path); roadPreviewRef.current = path
-      } else if (tool === 'farmZone' || tool === 'teaZone') {
-        if (key === dragRef.current.lastTileKey) return
-        dragRef.current.lastTileKey = key
-        const from = dragRef.current.lastTile ?? t
-        expandToFourNeighborPath(rasterLine(from, t)).forEach(paintFarmZone)
-        dragRef.current.lastTile = t; dragRef.current.didDrag = true
       } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
         // Keep ghost following finger
         updateNDCFromTouch(touch.clientX, touch.clientY)
@@ -1029,8 +1020,6 @@ export default function MapScene() {
           if (t) paintRoad(t)
         }
         setRoadPreview([]); roadPreviewRef.current = []; roadDragStartRef.current = null
-        stopDrag()
-      } else if (tool === 'farmZone' || tool === 'teaZone') {
         stopDrag()
       } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
         // Mobile Plan A: ghost stays visible after lift; user taps "放置" button to confirm.

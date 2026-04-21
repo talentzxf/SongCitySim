@@ -11,6 +11,7 @@ export type BuildingCategory =
   | 'cultural'      // 文化/宗教：寺庙、书院等
   | 'civic'         // 公共设施：药铺等
   | 'storage'       // 仓储：粮仓等
+  | 'farming'       // 农业：粮田、茶园等
 
 /** Grid footprint in tiles. 1×1 is the default single tile. */
 export type Footprint = {
