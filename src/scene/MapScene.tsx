@@ -253,6 +253,16 @@ export default function MapScene() {
                                           lastTile: null as null | { x: number; y: number } })
   const objectClickedRef = React.useRef(false)
 
+  // ── Mobile building placement (Plan A) ──────────────────────────────────
+  const isTouch = React.useMemo(() =>
+    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
+  // Tracks the tile the ghost is currently over (updated in useFrame)
+  const mobilePlacementTileRef    = React.useRef<{ x: number; y: number } | null>(null)
+  const mobilePlacementActiveRef  = React.useRef(false)
+  const mobileRaycaster           = React.useRef(new THREE.Raycaster())
+  const mobilePlane               = React.useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
+  const mobileHitVec              = React.useRef(new THREE.Vector3())
+
   // Road drag-preview (React state for rendering, ref for event handlers)
   const [roadPreview, setRoadPreview]    = React.useState<{ x: number; y: number }[]>([])
   const roadPreviewRef                   = React.useRef<{ x: number; y: number }[]>([])
@@ -271,7 +281,35 @@ export default function MapScene() {
     if (state.selectedTool === 'pan' || state.selectedTool === 'bulldoze') {
       mouseOnCanvasRef.current = false
     }
-  }, [state.selectedTool])
+    // Mobile: when a building tool is selected, show ghost at map centre immediately
+    if (isTouch && ALL_BUILDING_TYPES.includes(state.selectedTool as BuildingType)) {
+      mouseNDCRef.current = { x: 0, y: 0 }
+      mouseOnCanvasRef.current = true
+      mobilePlacementActiveRef.current = true
+    } else {
+      mobilePlacementActiveRef.current = false
+    }
+  }, [state.selectedTool, isTouch])
+
+  // Expose confirm / cancel for the HUD placement bar
+  React.useEffect(() => {
+    ;(window as any).__CONFIRM_BUILDING_PLACEMENT__ = () => {
+      const tile = mobilePlacementTileRef.current
+      const tool = stateRef.current.selectedTool
+      if (tile && ALL_BUILDING_TYPES.includes(tool as BuildingType)) {
+        actionsRef.current.placeBuilding(tile.x, tile.y, tool as BuildingType)
+        // Stay in placement mode so user can place multiple buildings
+      }
+    }
+    ;(window as any).__CANCEL_BUILDING_PLACEMENT__ = () => {
+      mouseOnCanvasRef.current = false
+      mobilePlacementActiveRef.current = false
+    }
+    return () => {
+      delete (window as any).__CONFIRM_BUILDING_PLACEMENT__
+      delete (window as any).__CANCEL_BUILDING_PLACEMENT__
+    }
+  }, [])
 
   // Ghost placement mouse tracking
   const mouseNDCRef      = React.useRef({ x: 0, y: 0 })
@@ -586,6 +624,22 @@ export default function MapScene() {
   const hitRef       = React.useRef(new THREE.Vector3())
 
   useFrame((_, delta) => {
+    // --- Mobile building placement: track current ghost tile every frame ------
+    if (mobilePlacementActiveRef.current) {
+      mobileRaycaster.current.setFromCamera(mouseNDCRef.current as any, camera as THREE.PerspectiveCamera)
+      if (mobileRaycaster.current.ray.intersectPlane(mobilePlane.current, mobileHitVec.current)) {
+        mobilePlacementTileRef.current = {
+          x: Math.round(mobileHitVec.current.x),
+          y: Math.round(mobileHitVec.current.z),
+        }
+        // Expose for HUD bar (validity check)
+        const tile = mobilePlacementTileRef.current
+        const s = stateRef.current
+        const canPlace = !s.buildings.some(b => b.x === tile.x && b.y === tile.y)
+                      && !s.roads.some(r => r.x === tile.x && r.y === tile.y)
+        ;(window as any).__MOBILE_PLACEMENT_TILE__ = { ...tile, canPlace }
+      }
+    }
     // --- Compass fly-to (runs every frame, before culling throttle) ----------
     const newCompassTarget = (window as any).__ORE_COMPASS_TARGET__
     if (newCompassTarget && typeof newCompassTarget.id === 'number' &&
@@ -979,13 +1033,8 @@ export default function MapScene() {
       } else if (tool === 'farmZone' || tool === 'teaZone') {
         stopDrag()
       } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
-        // Place at wherever the finger was last seen (drag-to-place UX)
-        const pos = touchCurPos ?? touchDownPos
-        if (pos) {
-          const t = getTileAt(pos.clientX, pos.clientY)
-          if (t) applyTool(t.x, t.y)
-        }
-        mouseOnCanvasRef.current = false
+        // Mobile Plan A: ghost stays visible after lift; user taps "放置" button to confirm.
+        // Just keep ghost at the last dragged position — do NOT place here.
         stopDrag()
       } else {
         // Fallback for any other tool

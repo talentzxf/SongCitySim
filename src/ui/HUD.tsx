@@ -614,10 +614,115 @@ export default function HUD() {
       <InfoPanel />
       {/* ── Event-driven game hints ───────────────── */}
       <GameHints />
+      {/* ── Mobile building placement bar ─────────── */}
+      <MobileBuildingBar />
 
       {/* ── Debug overlay (top-right) ─────────────── */}
       <DebugOverlay />
     </>
+  )
+}
+
+// ─── Mobile building placement bar ───────────────────────────────────────────
+// Shown on touch devices when a building type tool is active.
+// Lets user drag ghost on the map, then tap "放置" to confirm.
+
+function MobileBuildingBar() {
+  const { state, selectTool } = useSimulation()
+  const isTouch = React.useMemo(() =>
+    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
+
+  const tool = state.selectedTool
+  const isBuildingTool = ALL_BUILDING_TYPES.includes(tool as BuildingType)
+  if (!isTouch || !isBuildingTool) return null
+
+  const def = BUILDING_REGISTRY[tool]
+  if (!def) return null
+
+  const [canPlace, setCanPlace] = React.useState(true)
+  React.useEffect(() => {
+    let raf: number
+    const poll = () => {
+      const t = (window as any).__MOBILE_PLACEMENT_TILE__
+      setCanPlace(t ? t.canPlace !== false : true)
+      raf = requestAnimationFrame(poll)
+    }
+    raf = requestAnimationFrame(poll)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  function confirm() {
+    const fn = (window as any).__CONFIRM_BUILDING_PLACEMENT__
+    if (typeof fn === 'function') fn()
+  }
+  function cancel() {
+    const fn = (window as any).__CANCEL_BUILDING_PLACEMENT__
+    if (typeof fn === 'function') fn()
+    selectTool('pan')
+  }
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 90,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 8500,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      background: 'rgba(10,6,2,0.82)',
+      border: '1px solid rgba(200,160,55,0.6)',
+      borderRadius: 40,
+      padding: '8px 14px',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+      fontFamily: '"Noto Serif SC","SimSun",serif',
+      userSelect: 'none',
+      pointerEvents: 'auto',
+      whiteSpace: 'nowrap',
+    }}>
+      {/* Cancel */}
+      <button onClick={cancel} style={{
+        background: 'rgba(180,60,40,0.25)',
+        border: '1px solid rgba(220,80,60,0.5)',
+        borderRadius: 24,
+        color: '#ffaa99',
+        fontSize: 13,
+        padding: '6px 16px',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        letterSpacing: '0.08em',
+      }}>✕ 取消</button>
+
+      {/* Building info */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 4px' }}>
+        <span style={{ fontSize: 20 }}>{def.icon ?? '🏗'}</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#f0d580', letterSpacing: '0.06em' }}>
+            {def.label}
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(200,165,100,0.75)' }}>
+            ¥{def.cost} · 拖动选位置
+          </div>
+        </div>
+      </div>
+
+      {/* Confirm */}
+      <button onClick={confirm} disabled={!canPlace} style={{
+        background: canPlace ? 'rgba(40,140,60,0.35)' : 'rgba(80,80,80,0.3)',
+        border: `1px solid ${canPlace ? 'rgba(80,200,100,0.6)' : 'rgba(120,120,120,0.4)'}`,
+        borderRadius: 24,
+        color: canPlace ? '#88ee99' : '#888',
+        fontSize: 13,
+        padding: '6px 16px',
+        cursor: canPlace ? 'pointer' : 'not-allowed',
+        fontFamily: 'inherit',
+        letterSpacing: '0.08em',
+        transition: 'all 0.15s',
+      }}>✓ 放置</button>
+    </div>
   )
 }
 
