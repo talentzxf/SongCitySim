@@ -138,7 +138,7 @@ void main() {
 `
 
 const BOUNDS_FRAG = /* glsl */`
-precision mediump float;
+precision highp float;
 uniform mat4  uInvViewProj;
 uniform float uMinX;
 uniform float uMaxX;
@@ -204,16 +204,20 @@ function BoundsOverlay({ bounds }: { bounds: FogBounds }) {
     uniforms.uMaxZ.value = bounds.maxY + 0.5
   }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, uniforms])
 
-  // Update inverse view-projection matrix every frame (camera moves)
+  // Update inverse view-projection matrix every frame (camera moves).
+  // Priority 1 = runs AFTER camera controls (priority 0) have updated the
+  // camera matrix, so we never read a stale matrixWorldInverse mid-drag.
   useFrame(() => {
     const mat = matRef.current
     if (!mat) return
+    // Force matrix recompute in case controls haven't called updateMatrixWorld yet
+    camera.updateMatrixWorld(true)
     _vpMat.current.multiplyMatrices(
       (camera as THREE.PerspectiveCamera).projectionMatrix,
       camera.matrixWorldInverse,
     )
     mat.uniforms.uInvViewProj.value.copy(_vpMat.current).invert()
-  })
+  }, 1)
 
   return (
     <mesh renderOrder={100} frustumCulled={false}>
