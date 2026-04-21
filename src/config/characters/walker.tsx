@@ -42,8 +42,9 @@ export default function CommutingWalker({ x, y, purpose, selected, onClick }: {
 
   return (
     <group ref={ref} position={[x, 0, y]} onClick={onClick}>
-      <mesh position={[0, 0.3, 0]}>
-        <cylinderGeometry args={[0.38, 0.38, 0.62, 8]} />
+      {/* Hit cylinder: tall (top y=0.80) so it's easy to tap from isometric view */}
+      <mesh position={[0, 0.40, 0]}>
+        <cylinderGeometry args={[0.38, 0.38, 0.80, 8]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <mesh ref={bodyRef} position={[0, 0.19, 0]}>

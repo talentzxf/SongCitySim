@@ -1050,21 +1050,28 @@ export default function MapScene() {
         mouseOnCanvasRef={mouseOnCanvasRef}
       />
 
-      {/* Buildings - click-interactive, objectClickedRef guard lives here */}
-      {visibleBuildings.map(b => (
-        <group key={b.id} onClick={(e: any) => {
-          e.stopPropagation()
-          objectClickedRef.current = true
-          if (stateRef.current.selectedTool === 'bulldoze') {
-            actionsRef.current.removeBuilding(b.id); return
-          }
-          selectTool('pan')
-          selectCitizen(null)
-          selectBuilding(state.selectedBuildingId === b.id ? null : b.id)
-        }}>
-          {buildingMesh(b)}
-        </group>
-      ))}
+{/* Buildings - click-interactive, objectClickedRef guard lives here */}
+{visibleBuildings.map(b => (
+  <group key={b.id} onClick={(e: any) => {
+    e.stopPropagation()
+    objectClickedRef.current = true
+    if (stateRef.current.selectedTool === 'bulldoze') {
+      actionsRef.current.removeBuilding(b.id); return
+    }
+    selectTool('pan')
+    selectCitizen(null)
+    selectBuilding(state.selectedBuildingId === b.id ? null : b.id)
+  }}>
+    {/* Priority hit plane at y=0.55 — above resident cylinders (top ~0.52) but
+        below their new tall cylinders (top 0.80). Ensures clicking the building
+        body (where no resident stands) selects the building, not a nearby resident. */}
+    <mesh position={[0, 0.55, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[0.92, 0.92]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} side={2} />
+    </mesh>
+    {buildingMesh(b)}
+  </group>
+))}
 
       {/* Sick markers + selection rings */}
       <OverlayLayer

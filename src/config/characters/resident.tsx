@@ -9,8 +9,11 @@ export default function ResidentAvatar({ x, y, seed, selected, onClick }: {
   const color = seed % 2 === 0 ? palette.character.robe : palette.character.robeAccent
   return (
     <group position={[x + ox, 0, y + oz]} onClick={onClick}>
-      <mesh position={[0, 0.25, 0]}>
-        <cylinderGeometry args={[0.36, 0.36, 0.52, 8]} />
+      {/* Hit cylinder: top at y=0.80 (above building priority plane at y=0.55)
+          so clicking on a resident beats the building plane.
+          Radius 0.22 = resident offset, so it doesn't reach the building centre. */}
+      <mesh position={[0, 0.40, 0]}>
+        <cylinderGeometry args={[0.22, 0.22, 0.80, 8]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <mesh position={[0, 0.17, 0]}>

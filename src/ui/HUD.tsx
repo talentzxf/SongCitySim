@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons'
 import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, ORE_VEIN_TILES, getAggregateCrops, getAggregateBldgUnit, inventoryTotal, createEmptyInventory, DEFAULT_MARKET_CFG } from '../state/simulation'
 import { downloadSave, applySaveFile } from '../state/save'
+import GameHints from './GameHints'
 import configData from '../config/buildings-and-citizens.json'
 import { BUILDING_REGISTRY } from '../config/buildings/_loader'
 import { JOB_REGISTRY } from '../config/jobs/_loader'
@@ -611,6 +612,8 @@ export default function HUD() {
 
       {/* ── Right info panel ──────────────────────── */}
       <InfoPanel />
+      {/* ── Event-driven game hints ───────────────── */}
+      <GameHints />
 
       {/* ── Debug overlay (top-right) ─────────────── */}
       <DebugOverlay />
@@ -2934,7 +2937,7 @@ function CitizenPanel() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Space size={6}>
-          <Typography.Text strong style={{ fontSize: 15 }} data-testid="selected-citizen-name">
+          <Typography.Text strong style={{ fontSize: 15, color: 'rgba(240,215,160,1)' }} data-testid="selected-citizen-name">
             {c.name}
           </Typography.Text>
           {tierTag}
@@ -2945,9 +2948,11 @@ function CitizenPanel() {
         <Space size={4}>
           {canGoBack && (
             <Button size="small" type="text" icon={<HomeOutlined />} title="返回住宅"
+              style={{ color: 'rgba(220,195,145,0.9)' }}
               onClick={() => { selectBuilding(c.houseId); selectCitizen(null) }} />
           )}
           <Button size="small" type="text" icon={<CloseOutlined />}
+            style={{ color: 'rgba(220,195,145,0.9)' }}
             onClick={() => selectCitizen(null)} />
         </Space>
       </div>

@@ -358,18 +358,18 @@ function ForestInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }) 
     for (const { x, y } of tiles) {
       let s = (((x * 73856093) ^ (y * 19349663)) >>> 0)
       const rng = () => { s = ((Math.imul(s, 1664525) + 1013904223) >>> 0); return s / 4294967296 }
-      // 1 main tree
-      const th = 0.22 + rng() * 0.14
-      trunks.push({ wx: x + (rng()-0.5)*0.3, wz: y + (rng()-0.5)*0.3, sx: 0.07, sy: th, sz: 0.07, ry: rng()*Math.PI*2 })
-      const cr = 0.22 + rng() * 0.12
-      crowns.push({ wx: trunks[trunks.length-1].wx, wz: trunks[trunks.length-1].wz, sx: cr, sy: cr*(1.2+rng()*0.6), sz: cr, ry: rng()*Math.PI*2 })
-      // 1-2 smaller trees
+      // 1 main tree — taller and more varied (0.38–0.72)
+      const th = 0.38 + rng() * 0.34
+      trunks.push({ wx: x + (rng()-0.5)*0.3, wz: y + (rng()-0.5)*0.3, sx: 0.09, sy: th, sz: 0.09, ry: rng()*Math.PI*2 })
+      const cr = 0.30 + rng() * 0.18
+      crowns.push({ wx: trunks[trunks.length-1].wx, wz: trunks[trunks.length-1].wz, sx: cr, sy: cr*(1.3+rng()*0.7), sz: cr, ry: rng()*Math.PI*2 })
+      // 1-2 smaller companion trees (0.22–0.52)
       for (let i = 0; i < 1 + Math.floor(rng()*2); i++) {
-        const th2 = 0.14 + rng() * 0.10
+        const th2 = 0.22 + rng() * 0.30
         const wx2 = x + (rng()-0.5)*0.72, wz2 = y + (rng()-0.5)*0.72
-        trunks.push({ wx: wx2, wz: wz2, sx: 0.05, sy: th2, sz: 0.05, ry: rng()*Math.PI*2 })
-        const cr2 = 0.14 + rng() * 0.09
-        crowns.push({ wx: wx2, wz: wz2, sx: cr2, sy: cr2*(1.1+rng()*0.5), sz: cr2, ry: rng()*Math.PI*2 })
+        trunks.push({ wx: wx2, wz: wz2, sx: 0.07, sy: th2, sz: 0.07, ry: rng()*Math.PI*2 })
+        const cr2 = 0.20 + rng() * 0.14
+        crowns.push({ wx: wx2, wz: wz2, sx: cr2, sy: cr2*(1.2+rng()*0.6), sz: cr2, ry: rng()*Math.PI*2 })
       }
     }
     return { trunks, crowns }
@@ -429,14 +429,14 @@ function PineTreeInstances({ tiles }: { tiles: Array<{ x: number; y: number }> }
       const bh = tileH(x, y)
       let s = (((x * 73856093) ^ (y * 19349663)) >>> 0)
       const rng = () => { s = ((Math.imul(s, 1664525) + 1013904223) >>> 0); return s / 4294967296 }
-      // 主松树
-      const th = 0.30 + rng() * 0.22
-      const r1 = 0.18 + rng() * 0.09
+      // 主松树 — taller, more varied (0.48–0.90)
+      const th = 0.48 + rng() * 0.42
+      const r1 = 0.26 + rng() * 0.14
       out.push({ wx: x + (rng()-0.5)*0.28, wz: y + (rng()-0.5)*0.28, bh, th, r1, r2: r1 * 0.58, ry: rng()*Math.PI*2 })
-      // 0–1 副松树
+      // 0–1 副松树 (0.28–0.58)
       if (rng() > 0.42) {
-        const th2 = 0.18 + rng() * 0.14
-        const r1b = 0.11 + rng() * 0.06
+        const th2 = 0.28 + rng() * 0.30
+        const r1b = 0.16 + rng() * 0.10
         out.push({ wx: x + (rng()-0.5)*0.70, wz: y + (rng()-0.5)*0.70, bh, th: th2, r1: r1b, r2: r1b*0.58, ry: rng()*Math.PI*2 })
       }
     }
