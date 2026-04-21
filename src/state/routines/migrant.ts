@@ -6,6 +6,13 @@ import {
   adjacentHasRoad, buildingHasRoadAccess, roadsAdjacent, findRoadPath, seededNeeds, createCitizenProfile,
   ENTRY_TILE, bfsHighwayPath,
 } from '../helpers'
+
+/** Seeded pseudo-random float in [0,1) */
+function seededRand(seed: number): number {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453
+  return x - Math.floor(x)
+}
+
 export const migrantRoutine: TickRoutine = (ctx) => {
   const { s, nextTick, houseMap, houses } = ctx
   let citizens = ctx.citizens
@@ -58,37 +65,48 @@ export const migrantRoutine: TickRoutine = (ctx) => {
       peddlerState: null,
     }]
   }
-  // spawn a new migrant toward a vacant, road-accessible house
-  const targetIds = new Set(migrants.map(m => m.targetHouseId))
-  const vacant    = houses.filter(h => {
-    const occ = citizens.filter(c => c.houseId === h.id).length +
-                migrants.filter(m => m.targetHouseId === h.id).length
-    return occ < h.capacity && adjacentHasRoad(s.roads, h.x, h.y)
-  })
-  const spawnH = vacant.find(h => !targetIds.has(h.id))
-  if (spawnH && s.roads.some(r => r.x === ENTRY_TILE.x && r.y === ENTRY_TILE.y)) {
-    const candidates = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
-      .map(tr => findRoadPath(s.roads, ENTRY_TILE, tr))
-      .filter((p): p is { x: number; y: number }[] => Boolean(p))
-      .sort((a, b) => a.length - b.length)
-    if (candidates.length > 0) {
-      migrants = [...migrants, {
-        id: `m-${nextTick}-${Math.floor(Math.random() * 10000)}`,
-        targetHouseId: spawnH.id, route: candidates[0],
-        routeIndex: 0, routeT: 0, speed: MIGRANT_TILES_PER_SECOND,
-      }]
-    } else {
-      // fallback: use the highway BFS path
-      const fallback = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
-        .map(tr => bfsHighwayPath(ENTRY_TILE, tr))
+  // spawn new migrants toward vacant, road-accessible houses
+  // Spawn up to MAX_SPAWN_PER_TICK per tick; cap total in-transit at MAX_MIGRANTS_ON_ROAD.
+  const MAX_SPAWN_PER_TICK  = 5
+  const MAX_MIGRANTS_ON_ROAD = 20
+  const hasEntryRoad = s.roads.some(r => r.x === ENTRY_TILE.x && r.y === ENTRY_TILE.y)
+  if (hasEntryRoad && migrants.length < MAX_MIGRANTS_ON_ROAD) {
+    // vacant = houses where (settled + in-transit) < capacity
+    const vacant = houses.filter(h => {
+      const occ = citizens.filter(c => c.houseId === h.id).length +
+                  migrants.filter(m => m.targetHouseId === h.id).length
+      return occ < h.capacity && adjacentHasRoad(s.roads, h.x, h.y)
+    })
+    const canSpawn = Math.min(MAX_SPAWN_PER_TICK, MAX_MIGRANTS_ON_ROAD - migrants.length, vacant.length)
+    for (let i = 0; i < canSpawn; i++) {
+      const spawnH = vacant[i]
+      const seed   = nextTick * 1000 + i * 100 + Math.floor(Math.random() * 100)
+      const r0     = seededRand(seed)
+      const speed  = MIGRANT_TILES_PER_SECOND * (0.75 + r0 * 0.55)
+      // Each successive migrant starts 2 tiles further along so they visually spread out
+      const staggerTiles = seededRand(seed + 1) * 0.5 + i * 2.0
+      const candidates = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
+        .map(tr => findRoadPath(s.roads, ENTRY_TILE, tr))
         .filter((p): p is { x: number; y: number }[] => Boolean(p))
         .sort((a, b) => a.length - b.length)
-      if (fallback.length > 0)
-        migrants = [...migrants, {
-          id: `m-${nextTick}-${Math.floor(Math.random() * 10000)}`,
-          targetHouseId: spawnH.id, route: fallback[0],
-          routeIndex: 0, routeT: 0, speed: MIGRANT_TILES_PER_SECOND,
-        }]
+      let route: { x: number; y: number }[] | null = candidates[0] ?? null
+      if (!route) {
+        const fallback = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
+          .map(tr => bfsHighwayPath(ENTRY_TILE, tr))
+          .filter((p): p is { x: number; y: number }[] => Boolean(p))
+          .sort((a, b) => a.length - b.length)
+        route = fallback[0] ?? null
+      }
+      if (!route) continue
+      const maxStagger    = Math.max(0, route.length - 2)
+      const staggerClamped = Math.min(staggerTiles, maxStagger)
+      const routeIndex    = Math.floor(staggerClamped)
+      const routeT        = staggerClamped - routeIndex
+      migrants = [...migrants, {
+        id: `m-${nextTick}-${i}-${Math.floor(Math.random() * 10000)}`,
+        targetHouseId: spawnH.id, route,
+        routeIndex, routeT: Math.min(0.99, routeT), speed, seed,
+      }]
     }
   }
   ctx.citizens = citizens

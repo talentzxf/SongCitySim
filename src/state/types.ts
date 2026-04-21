@@ -288,6 +288,8 @@ export type Migrant = {
   targetHouseId: string
   route: { x: number; y: number }[]
   routeIndex: number; routeT: number; speed: number
+  /** Deterministic seed for visual variety (body size, clothing, mount type) */
+  seed: number
 }
 
 // ─── UI / action types ───────────────────────────────────────────────────────

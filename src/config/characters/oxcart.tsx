@@ -1,8 +1,7 @@
 import React from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { SIM_TICK_MS } from '../../config/simulation'
-import { useCharacterAnim, lerpTerrainY } from './_shared'
+import { useCharacterAnim, tileH, SMOOTH } from './_shared'
 
 /** 粮仓牛车（granary ↔ 农场往返） */
 export default function OxCartMesh({ x, y, loaded }: { x: number; y: number; loaded: boolean }) {
@@ -11,13 +10,15 @@ export default function OxCartMesh({ x, y, loaded }: { x: number; y: number; loa
   useFrame((_, delta) => {
     if (!ref.current) return
     const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    ref.current.position.y = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    const dx = a.targetX - a.startX; const dz = a.targetY - a.startY
-    if (Math.abs(dx) + Math.abs(dz) > 0.001) {
+    const px = ref.current.position.x, pz = ref.current.position.z
+    const f = Math.min(1, SMOOTH * delta)
+    const newX = px + (a.targetX - px) * f
+    const newZ = pz + (a.targetY - pz) * f
+    const dx = newX - px, dz = newZ - pz
+    ref.current.position.x = newX
+    ref.current.position.z = newZ
+    ref.current.position.y = tileH(Math.round(newX), Math.round(newZ))
+    if (Math.abs(dx) + Math.abs(dz) > 0.0001) {
       a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 8))
       ref.current.rotation.y = a.facing
     }
@@ -69,4 +70,3 @@ export default function OxCartMesh({ x, y, loaded }: { x: number; y: number; loa
     </group>
   )
 }
-

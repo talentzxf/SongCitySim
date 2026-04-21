@@ -3,9 +3,10 @@
  * peddlers, ox carts, market buyers.
  */
 import React from 'react'
+import { SIM_TICK_MS } from '../config/simulation'
 import {
-  logicalMigrantPos, logicalMotionPos, logicalAgentPos, logicalPeddlerStatePos,
-  type Citizen, type Migrant, type BuildingAgent, type PeddlerState, type CitizenMotion,
+  logicalMigrantPosAhead, logicalMotionPosAhead, logicalAgentPosAhead, logicalPeddlerStatePosAhead,
+  type Migrant, type BuildingAgent, type PeddlerState, type CitizenMotion,
 } from '../state/simulation'
 import MigrantHorse    from '../config/characters/migrant'
 import CommutingWalker from '../config/characters/walker'
@@ -31,6 +32,8 @@ export interface CharacterLayerProps {
   onCitizenClick: (citizenId: string, e: any) => void
 }
 
+const AHEAD_S = SIM_TICK_MS / 1000  // look 1 tick ahead for smooth animation
+
 export function CharacterLayer({
   walkers, migrants, residents, oxCarts, marketBuyers, peddlers,
   selectedCitizenId, onCitizenClick,
@@ -38,19 +41,19 @@ export function CharacterLayer({
   return (
     <>
       {oxCarts.map(c => {
-        const p = logicalAgentPos(c)
+        const p = logicalAgentPosAhead(c, AHEAD_S)
         return <OxCartMesh key={c.id} x={p.x} y={p.y} loaded={c.pickedUp} />
       })}
       {marketBuyers.map(mb => {
-        const p = logicalAgentPos(mb)
+        const p = logicalAgentPosAhead(mb, AHEAD_S)
         return <MarketBuyerMesh key={mb.id} x={p.x} y={p.y} loaded={mb.pickedUp} />
       })}
       {migrants.map(m => {
-        const p = logicalMigrantPos(m)
-        return <MigrantHorse key={m.id} x={p.x} y={p.y} />
+        const p = logicalMigrantPosAhead(m, AHEAD_S)
+        return <MigrantHorse key={m.id} x={p.x} y={p.y} seed={m.seed ?? 0} />
       })}
       {walkers.map(w => {
-        const p = logicalMotionPos(w.motion)
+        const p = logicalMotionPosAhead(w.motion, AHEAD_S)
         return (
           <CommutingWalker
             key={w.id} x={p.x} y={p.y} purpose={w.motion.purpose}
@@ -65,7 +68,7 @@ export function CharacterLayer({
           onClick={(e: any) => onCitizenClick(r.id, e)} />
       ))}
       {peddlers.map(p => {
-        const pos = logicalPeddlerStatePos(p.peddlerState)
+        const pos = logicalPeddlerStatePosAhead(p.peddlerState, AHEAD_S)
         return <PeddlerMesh key={p.id} x={pos.x} y={pos.y} />
       })}
     </>

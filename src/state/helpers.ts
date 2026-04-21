@@ -464,28 +464,72 @@ export function createHighwayRoads(): { x: number; y: number }[] {
 }
 
 // ─── Logical positions (interpolated for rendering) ───────────────────────
+
+/** Advance along a route array by `tiles` distance, returning new index+T. */
+function advanceRoute(
+  route: { x: number; y: number }[],
+  idx: number, t: number, tiles: number,
+): { idx: number; t: number } {
+  let ri = idx, rt = t + tiles
+  while (rt >= 1 && ri < route.length - 1) { rt -= 1; ri++ }
+  return { idx: ri, t: Math.min(1, rt) }
+}
+
 export function logicalMigrantPos(m: Migrant) {
   const a = m.route[m.routeIndex] ?? m.route[m.route.length - 1] ?? { x: 0, y: 0 }
   const b = m.route[m.routeIndex + 1] ?? a
   return { x: a.x + (b.x - a.x) * m.routeT, y: a.y + (b.y - a.y) * m.routeT }
 }
+/** Position extrapolated `dt` seconds ahead along the migrant's route. */
+export function logicalMigrantPosAhead(m: Migrant, dt: number) {
+  const { idx, t } = advanceRoute(m.route, m.routeIndex, m.routeT, m.speed * dt)
+  const a = m.route[idx] ?? m.route[m.route.length - 1] ?? { x: 0, y: 0 }
+  const b = m.route[idx + 1] ?? a
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+}
+
 /** Interpolated position for a citizen in motion (was logicalWalkerPos). */
 export function logicalMotionPos(motion: CitizenMotion) {
   const a = motion.route[motion.routeIndex] ?? motion.route[motion.route.length - 1] ?? { x: 0, y: 0 }
   const b = motion.route[motion.routeIndex + 1] ?? a
   return { x: a.x + (b.x - a.x) * motion.routeT, y: a.y + (b.y - a.y) * motion.routeT }
 }
+/** Position extrapolated `dt` seconds ahead along a citizen motion route. */
+export function logicalMotionPosAhead(motion: CitizenMotion, dt: number) {
+  const { idx, t } = advanceRoute(motion.route, motion.routeIndex, motion.routeT, motion.speed * dt)
+  const a = motion.route[idx] ?? motion.route[motion.route.length - 1] ?? { x: 0, y: 0 }
+  const b = motion.route[idx + 1] ?? a
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+}
+
 /** Interpolated position for a building logistics agent (ox-cart or market buyer). */
 export function logicalAgentPos(agent: BuildingAgent) {
   const a = agent.route[agent.routeIndex] ?? agent.route[agent.route.length - 1] ?? { x: 0, y: 0 }
   const b = agent.route[agent.routeIndex + 1] ?? a
   return { x: a.x + (b.x - a.x) * agent.routeT, y: a.y + (b.y - a.y) * agent.routeT }
 }
+/** Position extrapolated `dt` seconds ahead along a building agent route. */
+export function logicalAgentPosAhead(agent: BuildingAgent, dt: number) {
+  const { idx, t } = advanceRoute(agent.route, agent.routeIndex, agent.routeT, agent.speed * dt)
+  const a = agent.route[idx] ?? agent.route[agent.route.length - 1] ?? { x: 0, y: 0 }
+  const b = agent.route[idx + 1] ?? a
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+}
+
 /** Interpolated position for a peddler state (merchant delivery). */
 export function logicalPeddlerStatePos(p: PeddlerState) {
   return {
     x: p.fromTile.x + (p.toTile.x - p.fromTile.x) * p.segT,
     y: p.fromTile.y + (p.toTile.y - p.fromTile.y) * p.segT,
+  }
+}
+/** Position extrapolated `dt` seconds ahead for a peddler. */
+export function logicalPeddlerStatePosAhead(p: PeddlerState, dt: number) {
+  const newT = p.segT + p.speed * dt
+  if (newT >= 1) return { x: p.toTile.x, y: p.toTile.y }
+  return {
+    x: p.fromTile.x + (p.toTile.x - p.fromTile.x) * newT,
+    y: p.fromTile.y + (p.toTile.y - p.fromTile.y) * newT,
   }
 }
 

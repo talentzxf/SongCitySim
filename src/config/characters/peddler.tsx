@@ -1,9 +1,8 @@
 import React from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { SIM_TICK_MS } from '../../config/simulation'
 import { palette } from '../../theme/palette'
-import { useCharacterAnim, lerpTerrainY } from './_shared'
+import { useCharacterAnim, tileH, SMOOTH } from './_shared'
 
 /** 游商（肩挑货担沿路叫卖） */
 export default function PeddlerMesh({ x, y }: { x: number; y: number }) {
@@ -12,17 +11,19 @@ export default function PeddlerMesh({ x, y }: { x: number; y: number }) {
   useFrame((_, delta) => {
     if (!ref.current) return
     const a = animRef.current; a.time += delta
-    a.elapsedMs = Math.min(SIM_TICK_MS, a.elapsedMs + delta * 1000)
-    const t = Math.min(1, a.elapsedMs / SIM_TICK_MS)
-    ref.current.position.x = THREE.MathUtils.lerp(a.startX, a.targetX, t)
-    ref.current.position.z = THREE.MathUtils.lerp(a.startY, a.targetY, t)
-    ref.current.position.y = lerpTerrainY(a.startX, a.startY, a.targetX, a.targetY, t)
-    const dx = a.targetX - a.startX, dz = a.targetY - a.startY
-    if (Math.abs(dx) + Math.abs(dz) > 0.001) {
+    const px = ref.current.position.x, pz = ref.current.position.z
+    const f = Math.min(1, SMOOTH * delta)
+    const newX = px + (a.targetX - px) * f
+    const newZ = pz + (a.targetY - pz) * f
+    const dx = newX - px, dz = newZ - pz
+    ref.current.position.x = newX
+    ref.current.position.z = newZ
+    const moving = Math.abs(dx) + Math.abs(dz) > 0.0001
+    if (moving) {
       a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10))
       ref.current.rotation.y = a.facing
     }
-    ref.current.position.y += Math.sin(a.time * 7) * 0.012
+    ref.current.position.y = tileH(Math.round(newX), Math.round(newZ)) + Math.sin(a.time * 7) * 0.012
   })
 
   return (
@@ -57,4 +58,3 @@ export default function PeddlerMesh({ x, y }: { x: number; y: number }) {
     </group>
   )
 }
-
