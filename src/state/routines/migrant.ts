@@ -4,7 +4,7 @@ import { MIGRANT_TILES_PER_SECOND, SIM_TICK_MS } from '../../config/simulation'
 import {
   BUILDING_DEFS, PROFESSION_BY_BUILDING,
   adjacentHasRoad, buildingHasRoadAccess, roadsAdjacent, findRoadPath, seededNeeds, createCitizenProfile,
-  ENTRY_TILE, bfsHighwayPath,
+  ENTRY_TILE,
 } from '../helpers'
 
 /** Seeded pseudo-random float in [0,1) */
@@ -12,6 +12,9 @@ function seededRand(seed: number): number {
   const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453
   return x - Math.floor(x)
 }
+
+// Throttle: only warn about isolated houses at most once every 15 seconds
+let lastIsolatedWarnMs = 0
 
 export const migrantRoutine: TickRoutine = (ctx) => {
   const { s, nextTick, houseMap, houses } = ctx
@@ -78,6 +81,7 @@ export const migrantRoutine: TickRoutine = (ctx) => {
       return occ < h.capacity && adjacentHasRoad(s.roads, h.x, h.y)
     })
     const canSpawn = Math.min(MAX_SPAWN_PER_TICK, MAX_MIGRANTS_ON_ROAD - migrants.length, vacant.length)
+    let isolatedHouseFound = false
     for (let i = 0; i < canSpawn; i++) {
       const spawnH = vacant[i]
       const seed   = nextTick * 1000 + i * 100 + Math.floor(Math.random() * 100)
@@ -85,19 +89,18 @@ export const migrantRoutine: TickRoutine = (ctx) => {
       const speed  = MIGRANT_TILES_PER_SECOND * (0.75 + r0 * 0.55)
       // Each successive migrant starts 2 tiles further along so they visually spread out
       const staggerTiles = seededRand(seed + 1) * 0.5 + i * 2.0
-      const candidates = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
+      // Only use real road paths — never bfsHighwayPath (which ignores roads and
+      // lets migrants fly through open terrain to unreachable houses).
+      const route = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
         .map(tr => findRoadPath(s.roads, ENTRY_TILE, tr))
         .filter((p): p is { x: number; y: number }[] => Boolean(p))
-        .sort((a, b) => a.length - b.length)
-      let route: { x: number; y: number }[] | null = candidates[0] ?? null
+        .sort((a, b) => a.length - b.length)[0] ?? null
+
       if (!route) {
-        const fallback = roadsAdjacent(s.roads, spawnH.x, spawnH.y)
-          .map(tr => bfsHighwayPath(ENTRY_TILE, tr))
-          .filter((p): p is { x: number; y: number }[] => Boolean(p))
-          .sort((a, b) => a.length - b.length)
-        route = fallback[0] ?? null
+        // House has adjacent road but that road isn't connected to the entry tile.
+        isolatedHouseFound = true
+        continue
       }
-      if (!route) continue
       const maxStagger    = Math.max(0, route.length - 2)
       const staggerClamped = Math.min(staggerTiles, maxStagger)
       const routeIndex    = Math.floor(staggerClamped)
@@ -107,6 +110,26 @@ export const migrantRoutine: TickRoutine = (ctx) => {
         targetHouseId: spawnH.id, route,
         routeIndex, routeT: Math.min(0.99, routeT), speed, seed,
       }]
+    }
+    // Also check vacant houses that were beyond canSpawn limit for isolation
+    if (!isolatedHouseFound) {
+      for (let i = canSpawn; i < Math.min(vacant.length, canSpawn + 5); i++) {
+        const h = vacant[i]
+        const reachable = roadsAdjacent(s.roads, h.x, h.y)
+          .some(tr => Boolean(findRoadPath(s.roads, ENTRY_TILE, tr)))
+        if (!reachable) { isolatedHouseFound = true; break }
+      }
+    }
+    // Warn user about isolated houses (throttled to once per 15 s)
+    if (isolatedHouseFound) {
+      const now = Date.now()
+      if (now - lastIsolatedWarnMs > 15_000) {
+        lastIsolatedWarnMs = now
+        const api = (window as any).__MESSAGE_API__
+        if (api?.warning) {
+          api.warning('🏠 有住宅尚未连通入城道路，居民无法迁入，请修路将其与入城口相连。')
+        }
+      }
     }
   }
   ctx.citizens = citizens

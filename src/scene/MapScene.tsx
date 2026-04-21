@@ -126,29 +126,23 @@ interface FogBounds { minX: number; maxX: number; minY: number; maxY: number }
 
 const BOUNDS_VERT = /* glsl */`
 attribute vec3 position;
-varying vec2 vNdc;
 void main() {
   // Bypass all camera transforms — output NDC directly.
-  // Pass NDC coords as varying so the fragment shader doesn't need
-  // gl_FragCoord / uResolution (which flickers on mobile when the
-  // browser dynamically resizes the canvas).
-  vNdc = position.xy;
   gl_Position = vec4(position.xy, 0.999, 1.0);
 }
 `
 
 const BOUNDS_FRAG = /* glsl */`
-precision highp float;
+precision mediump float;
 uniform mat4  uInvViewProj;
+uniform vec2  uResolution;
 uniform float uMinX;
 uniform float uMaxX;
 uniform float uMinZ;
 uniform float uMaxZ;
-varying vec2  vNdc;
 
 void main() {
-  // vNdc is already in [-1,1]x[-1,1] NDC — no gl_FragCoord needed.
-  vec2 ndc = vNdc;
+  vec2 ndc = (gl_FragCoord.xy / uResolution) * 2.0 - 1.0;
 
   vec4 nearH = uInvViewProj * vec4(ndc, -1.0, 1.0);
   vec4 farH  = uInvViewProj * vec4(ndc,  1.0, 1.0);
@@ -183,13 +177,12 @@ void main() {
 `
 
 function BoundsOverlay({ bounds }: { bounds: FogBounds }) {
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
   const matRef = React.useRef<THREE.RawShaderMaterial | null>(null)
-  // Pre-allocate to avoid per-frame GC pressure
-  const _vpMat = React.useRef(new THREE.Matrix4())
 
   const uniforms = React.useMemo(() => ({
     uInvViewProj: { value: new THREE.Matrix4() },
+    uResolution:  { value: new THREE.Vector2() },
     uMinX: { value: bounds.minX - 0.5 },
     uMaxX: { value: bounds.maxX + 0.5 },
     uMinZ: { value: bounds.minY - 0.5 },
@@ -204,20 +197,20 @@ function BoundsOverlay({ bounds }: { bounds: FogBounds }) {
     uniforms.uMaxZ.value = bounds.maxY + 0.5
   }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, uniforms])
 
-  // Update inverse view-projection matrix every frame (camera moves).
-  // Priority 1 = runs AFTER camera controls (priority 0) have updated the
-  // camera matrix, so we never read a stale matrixWorldInverse mid-drag.
+  // Update matrix + resolution every frame
   useFrame(() => {
     const mat = matRef.current
     if (!mat) return
-    // Force matrix recompute in case controls haven't called updateMatrixWorld yet
-    camera.updateMatrixWorld(true)
-    _vpMat.current.multiplyMatrices(
+    const vp = new THREE.Matrix4().multiplyMatrices(
       (camera as THREE.PerspectiveCamera).projectionMatrix,
       camera.matrixWorldInverse,
     )
-    mat.uniforms.uInvViewProj.value.copy(_vpMat.current).invert()
-  }, 1)
+    mat.uniforms.uInvViewProj.value.copy(vp).invert()
+    // Use domElement.width/height (true physical pixels, always current) instead of
+    // gl.getSize() which returns a cached value that lags behind on mobile when the
+    // browser toolbar hides/shows and resizes the canvas mid-frame.
+    mat.uniforms.uResolution.value.set(gl.domElement.width, gl.domElement.height)
+  })
 
   return (
     <mesh renderOrder={100} frustumCulled={false}>
