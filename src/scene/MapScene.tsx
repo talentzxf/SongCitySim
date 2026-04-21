@@ -116,115 +116,43 @@ if (typeof window !== 'undefined') {
 }
 
 // ===========================================================================
-// BoundsOverlay — screen-space fragment shader that darkens everything outside
-// the playable area.  A full-screen quad is rendered in clip/NDC space so it
-// is completely independent of the camera orientation.  The frag shader
-// reconstructs the world XZ position for each pixel by ray-casting through the
-// inverse view-projection matrix and intersecting with the y=0 ground plane.
+// BoundsOverlay — four dark ground planes surrounding the playable area.
+// Replaces the old full-screen ray-cast shader, which flickered on mobile
+// because it depended on camera.matrixWorldInverse being current in useFrame
+// (OrbitControls updates the camera in its own useFrame, registered after ours).
+// World-space geometry has zero camera dependency and never flickers.
 // ===========================================================================
 interface FogBounds { minX: number; maxX: number; minY: number; maxY: number }
 
-const BOUNDS_VERT = /* glsl */`
-attribute vec3 position;
-void main() {
-  // Bypass all camera transforms — output NDC directly.
-  gl_Position = vec4(position.xy, 0.999, 1.0);
+const OVERLAY_Y     = 0.06
+const OVERLAY_ALPHA = 0.78
+const OVERLAY_EXT   = 160
+
+/** One dark rectangular panel sitting on the ground */
+function DarkPanel({ cx, cz, w, d }: { cx: number; cz: number; w: number; d: number }) {
+  return (
+    <mesh position={[cx, OVERLAY_Y, cz]} rotation={[-Math.PI / 2, 0, 0]}
+      renderOrder={50} frustumCulled={false}>
+      <planeGeometry args={[w, d]} />
+      <meshBasicMaterial color="#000000" transparent opacity={OVERLAY_ALPHA}
+        depthTest={false} depthWrite={false} />
+    </mesh>
+  )
 }
-`
-
-const BOUNDS_FRAG = /* glsl */`
-precision mediump float;
-uniform mat4  uInvViewProj;
-uniform vec2  uResolution;
-uniform float uMinX;
-uniform float uMaxX;
-uniform float uMinZ;
-uniform float uMaxZ;
-
-void main() {
-  vec2 ndc = (gl_FragCoord.xy / uResolution) * 2.0 - 1.0;
-
-  vec4 nearH = uInvViewProj * vec4(ndc, -1.0, 1.0);
-  vec4 farH  = uInvViewProj * vec4(ndc,  1.0, 1.0);
-  vec3 nearW = nearH.xyz / nearH.w;
-  vec3 farW  = farH.xyz  / farH.w;
-  vec3 dir   = farW - nearW;
-
-  if (abs(dir.y) > 0.0001) {
-    float t = -nearW.y / dir.y;
-    if (t > 0.0) {
-      vec3 hit = nearW + dir * t;
-
-      // Signed distance to each edge (positive = inside)
-      float dx = min(hit.x - uMinX, uMaxX - hit.x);
-      float dz = min(hit.z - uMinZ, uMaxZ - hit.z);
-      float dist = min(dx, dz);  // positive inside, negative outside
-
-      // Fully inside → transparent
-      if (dist >= 0.0) discard;
-
-      // Soft edge: fade from 0 at boundary to full opacity at FADE units outside
-      const float FADE = 5.0;
-      float alpha = 0.75 * smoothstep(0.0, FADE, -dist);  // 0 at boundary, 0.75 far out
-      if (alpha < 0.01) discard;
-      gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
-      return;
-    }
-  }
-
-  gl_FragColor = vec4(0.0, 0.0, 0.0, 0.75);
-}
-`
 
 function BoundsOverlay({ bounds }: { bounds: FogBounds }) {
-  const { camera, gl } = useThree()
-  const matRef = React.useRef<THREE.RawShaderMaterial | null>(null)
-
-  const uniforms = React.useMemo(() => ({
-    uInvViewProj: { value: new THREE.Matrix4() },
-    uResolution:  { value: new THREE.Vector2() },
-    uMinX: { value: bounds.minX - 0.5 },
-    uMaxX: { value: bounds.maxX + 0.5 },
-    uMinZ: { value: bounds.minY - 0.5 },
-    uMaxZ: { value: bounds.maxY + 0.5 },
-  }), [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY])
-
-  // Update bounds uniforms when they change
-  React.useEffect(() => {
-    uniforms.uMinX.value = bounds.minX - 0.5
-    uniforms.uMaxX.value = bounds.maxX + 0.5
-    uniforms.uMinZ.value = bounds.minY - 0.5
-    uniforms.uMaxZ.value = bounds.maxY + 0.5
-  }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, uniforms])
-
-  // Update matrix + resolution every frame
-  useFrame(() => {
-    const mat = matRef.current
-    if (!mat) return
-    const vp = new THREE.Matrix4().multiplyMatrices(
-      (camera as THREE.PerspectiveCamera).projectionMatrix,
-      camera.matrixWorldInverse,
-    )
-    mat.uniforms.uInvViewProj.value.copy(vp).invert()
-    // Use domElement.width/height (true physical pixels, always current) instead of
-    // gl.getSize() which returns a cached value that lags behind on mobile when the
-    // browser toolbar hides/shows and resizes the canvas mid-frame.
-    mat.uniforms.uResolution.value.set(gl.domElement.width, gl.domElement.height)
-  })
-
+  const { minX, maxX, minY, maxY } = bounds
+  const l = minX - 0.5, r = maxX + 0.5
+  const n = minY - 0.5, f = maxY + 0.5
+  const EXT = OVERLAY_EXT
+  const totalW = (r - l) + 2 * EXT
   return (
-    <mesh renderOrder={100} frustumCulled={false}>
-      <planeGeometry args={[2, 2]} />
-      <rawShaderMaterial
-        ref={matRef}
-        vertexShader={BOUNDS_VERT}
-        fragmentShader={BOUNDS_FRAG}
-        uniforms={uniforms}
-        transparent
-        depthTest={false}
-        depthWrite={false}
-      />
-    </mesh>
+    <>
+      <DarkPanel cx={(l + r) / 2}  cz={n - EXT / 2}  w={totalW}  d={EXT} />
+      <DarkPanel cx={(l + r) / 2}  cz={f + EXT / 2}  w={totalW}  d={EXT} />
+      <DarkPanel cx={l - EXT / 2}  cz={(n + f) / 2}  w={EXT}     d={f - n} />
+      <DarkPanel cx={r + EXT / 2}  cz={(n + f) / 2}  w={EXT}     d={f - n} />
+    </>
   )
 }
 
