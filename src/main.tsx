@@ -11,6 +11,15 @@ try {
   // ignore non-browser environments
 }
 
+// Fade out + remove the pre-React splash once JS executes
+try {
+  const splash = document.getElementById('pre-splash')
+  if (splash) {
+    splash.classList.add('hide')
+    setTimeout(() => splash.remove(), 700)
+  }
+} catch (e) {}
+
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
