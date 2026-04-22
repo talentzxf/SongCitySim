@@ -755,12 +755,16 @@ export default function Tutorial({ onDismiss }: Props) {
   const PAD = 8
 
   // Smart panel placement: if spotlight target is in the lower half → panel goes to top so it
-  // doesn't block the target (e.g. bottom toolbar buttons). Map-view steps stay bottom-left.
+  // doesn't block the target (e.g. bottom toolbar buttons). Default is center.
   const panelSide: 'top' | 'bottom' | 'center' = (() => {
-    if (isMigrantFollowStep || step.id === 'resident-settle' || step.id === 'resident-inspect') return 'bottom'
+    // These steps show a property panel on the right — keep tutorial at bottom-left
+    if (step.id === 'resident-settle' || step.id === 'resident-inspect') return 'bottom'
+    // Migrant-follow steps: user is working on the map, keep panel centered (less intrusive)
+    if (isMigrantFollowStep) return 'center'
     if (beaconRect) {
       const midY = beaconRect.top + beaconRect.height / 2
-      return midY > window.innerHeight * 0.52 ? 'top' : 'bottom'
+      // Bottom-toolbar target → move panel to top so it doesn't block the button
+      return midY > window.innerHeight * 0.52 ? 'top' : 'center'
     }
     return 'center'
   })()
