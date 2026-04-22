@@ -350,18 +350,19 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const showSpotlight      = !step.flash && step.targetId && !(step.hideSpotlight?.(state) ?? false)
   const showFlashSpotlight = step.flash && step.targetId
 
-  // Smart panel: target in lower half → panel at top; otherwise bottom-left
-  const panelAtTop = targetRect
-    ? (targetRect.top + targetRect.height / 2) > window.innerHeight * 0.52
-    : false
+  // Panel placement:
+  //  • Building drawer open → center (don't block the drawer)
+  //  • Bottom-toolbar target (midY > 52%) → top-center
+  //  • Everything else → center
+  const buildingDrawerOpen = !!(window as any).__BUILDING_DRAWER_OPEN__
+  const panelAtTop = !buildingDrawerOpen && !!targetRect &&
+    (targetRect.top + targetRect.height / 2) > window.innerHeight * 0.52
 
   const panelStyle: React.CSSProperties = panelAtTop
     ? isTouch
       ? { top: 8,  left: 8, right: 8,  transform: 'none' }
-      : { top: 24, left: 16, right: 'auto', transform: 'none' }
-    : isTouch
-      ? { bottom: 60, left: 8, right: 8, transform: 'none' }
-      : { bottom: 24, left: 16, top: 'auto', transform: 'none' }
+      : { top: 24, left: '50%', transform: 'translateX(-50%)' }
+    : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
 
   return (
     <>
