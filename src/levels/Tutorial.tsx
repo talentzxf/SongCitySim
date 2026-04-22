@@ -881,12 +881,12 @@ export default function Tutorial({ onDismiss }: Props) {
           position: 'fixed',
           ...(panelPos === 'top-center'
             ? isTouch
-              ? { top: 8,  left: 8, right: 8, transform: 'none' }
-              : { top: 24, left: '50%', transform: 'translateX(-50%)' }
+              ? { top: 52, left: 8, right: 8, transform: 'none' }       // below 48px mobile top-bar
+              : { top: 58, left: '50%', transform: 'translateX(-50%)' }  // below 52px desktop top-bar
             : panelPos === 'top-right'
             ? isTouch
-              ? { top: 8,  right: 8, transform: 'none' }
-              : { top: 24, right: 24, transform: 'none' }
+              ? { top: 52, right: 8, transform: 'none' }                 // below 48px mobile top-bar
+              : { top: 58, right: 24, transform: 'none' }                // below 52px desktop top-bar
             : panelPos === 'bottom-left'
             ? isTouch
               ? { bottom: 60, left: 8, right: 8, transform: 'none' }

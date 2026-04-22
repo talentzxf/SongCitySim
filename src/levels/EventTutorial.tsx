@@ -372,12 +372,12 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
 
   const panelStyle: React.CSSProperties = panelAtTopRight
     ? isTouch
-      ? { top: 8, right: 8 }
-      : { top: 24, right: 24 }
+      ? { top: 52, right: 8 }   // below 48px mobile top-bar
+      : { top: 58, right: 24 }  // below 52px desktop top-bar
     : panelAtTop
     ? isTouch
-      ? { top: 8,  left: 8, right: 8,  transform: 'none' }
-      : { top: 24, left: '50%', transform: 'translateX(-50%)' }
+      ? { top: 52, left: 8, right: 8,  transform: 'none' }  // below mobile top-bar
+      : { top: 58, left: '50%', transform: 'translateX(-50%)' }
     : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
 
   return (
