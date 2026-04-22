@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { Alert, Badge, Button, Card, Col, Collapse, Divider, Modal, Progress, Row, Slider, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import {
   CloseOutlined, DeleteOutlined, ExclamationCircleOutlined,
@@ -1856,3 +1856,1414 @@ function MineNoWorkerHint() {
   )
 }
 
+// ─── House info panel (dark parchment theme) ─────────────────────────────────
+
+function HouseInfoPanel() {
+  const { state, selectBuilding, selectCitizen } = useSimulation()
+  const b = state.buildings.find(x => x.id === state.selectedBuildingId)
+  if (!b) return null
+
+  const isManor = b.type === 'manor'
+  const buildingName = isManor ? '宅邸' : '民居'
+  const residents = state.citizens.filter(c => c.houseId === b.id)
+  const houseFood    = b.residentData?.food ?? 0
+  const houseSavings = b.residentData?.savings ?? 0
+  const houseCrops   = b.residentData?.crops
+  const dietVarietyCount = houseCrops ? Object.values(houseCrops).filter(v => v > 0.1).length : 0
+  const dietInfo = DIET_VARIETY_LABELS[Math.min(dietVarietyCount, 5)] ?? DIET_VARIETY_LABELS[1]
+
+  const hasRoadAccess = (() => {
+    const bw = b.w ?? 1, bh = b.h ?? 1
+    for (let dx = 0; dx < bw; dx++) for (let dy = 0; dy < bh; dy++) {
+      const tx = b.x + dx, ty = b.y + dy
+      for (const [ddx, ddy] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+        const nx = tx + ddx, ny = ty + ddy
+        if (nx >= b.x && nx < b.x + bw && ny >= b.y && ny < b.y + bh) continue
+        if (state.roads.some(r => r.x === nx && r.y === ny)) return true
+      }
+    }
+    return false
+  })()
+
+  const sickCount = residents.filter(c => c.isSick).length
+  const deadCount = b.residentData?.dead ?? 0
+  const avgSat = residents.length > 0
+    ? Math.round(residents.reduce((s, c) => s + c.satisfaction, 0) / residents.length)
+    : null
+  const satColor = avgSat == null ? '#888' : avgSat >= 70 ? '#6dde7a' : avgSat >= 40 ? '#e8c44a' : '#f07070'
+
+  // Dark parchment palette — high contrast
+  const C = {
+    bg:      'rgba(22,13,4,0.0)',
+    section: 'rgba(255,210,50,0.07)',
+    border:  'rgba(200,155,50,0.40)',
+    title:   '#f0d878',
+    text:    '#e8d0a0',
+    dim:     '#c4a46e',
+    gold:    '#f8e888',
+    warn:    '#f5aa48',
+    danger:  '#f08080',
+    good:    '#80ee90',
+  }
+
+  const CROP_ICON: Record<string, string> = {
+    rice: '🌾', millet: '🌻', wheat: '🌿', soybean: '🫘', vegetable: '🥬', tea: '🍵',
+  }
+
+  return (
+    <div style={{ padding: '10px 12px 14px', color: C.text, fontFamily: '"Noto Serif SC","SimSun",serif' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>{isManor ? '🏯' : '🏠'}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: C.gold, letterSpacing: '0.08em' }}>{buildingName}</span>
+          <span style={{ fontSize: 11, color: C.text }}>({b.x}, {b.y})</span>
+        </div>
+        <button onClick={() => selectBuilding(null)} style={{
+          background: 'transparent', border: '1px solid rgba(200,155,50,0.3)',
+          borderRadius: 4, color: C.dim, fontSize: 13, padding: '2px 8px', cursor: 'pointer',
+        }}>✕</button>
+      </div>
+
+      {/* ── Key stats row ── */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10,
+      }}>
+        {[
+          { label: '住户', value: `${residents.length} / ${b.capacity}`, icon: '👥', accent: residents.length >= b.capacity ? C.warn : C.gold },
+          { label: '积蓄', value: `¥${houseSavings.toFixed(0)}`, icon: '💰', accent: houseSavings < 5 ? C.danger : C.gold },
+          { label: '饮食', value: dietInfo.label, icon: '🍽', accent: dietVarietyCount === 0 ? C.danger : dietVarietyCount >= 3 ? C.good : C.warn },
+        ].map(s => (
+          <div key={s.label} style={{
+            background: C.section, border: `1px solid ${C.border}`,
+            borderRadius: 7, padding: '6px 8px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 16 }}>{s.icon}</div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{s.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: s.accent, marginTop: 2 }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Satisfaction ── */}
+      {avgSat !== null && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: C.section, border: `1px solid ${C.border}`,
+          borderRadius: 7, padding: '6px 10px', marginBottom: 10,
+        }}>
+          <span style={{ fontSize: 13, color: C.text }}>❤ 平均满意度</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 80, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${avgSat}%`, borderRadius: 3, background: satColor, transition: 'width 0.4s' }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: satColor }}>{avgSat}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Warnings ── */}
+      {!hasRoadAccess && (
+        <div style={{
+          background: 'rgba(200,100,20,0.2)', border: '1px solid rgba(240,140,40,0.6)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f5b060',
+        }}>⚠ 未与道路相连 — 居民无法通勤</div>
+      )}
+      {sickCount > 0 && (
+        <div style={{
+          background: 'rgba(180,50,50,0.2)', border: '1px solid rgba(220,80,80,0.55)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f09090',
+        }}>🏥 疫情：{sickCount} 人病倒 — 久病不愈将导致死亡</div>
+      )}
+      {deadCount > 0 && (
+        <div style={{
+          background: 'rgba(140,30,30,0.25)', border: '1px solid rgba(200,60,60,0.55)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f08080',
+        }}>💀 亡者 {deadCount} 具 — 积累过多将向邻居传播疫病</div>
+      )}
+      {houseFood <= 1 && (
+        <div style={{
+          background: 'rgba(200,80,20,0.2)', border: '1px solid rgba(240,120,40,0.55)',
+          borderRadius: 7, padding: '7px 10px', marginBottom: 8,
+          fontSize: 13, color: '#f5b060',
+        }}>🍚 粮食告急！ — 请确保集市有粮可售</div>
+      )}
+
+      {/* ── Food inventory ── */}
+      <div style={{
+        background: C.section, border: `1px solid ${C.border}`,
+        borderRadius: 7, padding: '8px 10px', marginBottom: 10,
+      }}>
+        <div style={{ fontSize: 12, color: C.title, fontWeight: 700, marginBottom: 6, letterSpacing: '0.08em' }}>
+          📦 仓储 · 饮食
+        </div>
+        {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
+          const amt = houseCrops ? (houseCrops[crop] ?? 0) : (crop === 'rice' ? houseFood : 0)
+          const barPct = Math.min(100, (amt / 30) * 100)
+          const barColor = amt <= 1 ? '#f08080' : amt < 5 ? '#f0c848' : '#80ee90'
+          return (
+            <div key={crop} style={{ marginBottom: 5, opacity: amt > 0.05 ? 1 : 0.45 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{ fontSize: 12, color: C.text }}>{CROP_ICON[crop]} {CROP_LABEL[crop]}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: amt > 0.05 ? barColor : C.dim }}>{amt.toFixed(1)} 担</span>
+              </div>
+              {crop === 'rice' && (
+                <div style={{ height: 5, borderRadius: 2, background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${barPct}%`, borderRadius: 2, background: barColor, transition: 'width 0.4s' }} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── Resident list ── */}
+      <div style={{
+        background: C.section, border: `1px solid ${C.border}`,
+        borderRadius: 7, padding: '8px 10px',
+      }}>
+        <div style={{ fontSize: 12, color: C.title, fontWeight: 700, marginBottom: 6, letterSpacing: '0.08em' }}>
+          {isManor ? '🏯 宅邸住户' : '🏠 住户列表'}
+          {residents.length > 0 && <span style={{ fontSize: 11, color: C.dim, marginLeft: 6, fontWeight: 400 }}>点击查看详情</span>}
+        </div>
+        {residents.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.dim, textAlign: 'center', padding: '4px 0' }}>暂无住户</div>
+        ) : residents.map(c => {
+          const profLabel = c.profession
+            ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
+            : c.workplaceId
+              ? (BUILDING_LABEL[state.buildings.find(bx => bx.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
+              : '待业'
+          const cSatColor = c.satisfaction >= 70 ? '#80ee90' : c.satisfaction >= 40 ? '#f0c848' : '#f08080'
+          const tierLabel = c.residentTier === 'gentry' ? '贵族' : c.residentTier === 'servant' ? '仆役' : null
+          return (
+            <div key={c.id}
+              onClick={() => selectCitizen(c.id)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '6px 6px', borderRadius: 6, cursor: 'pointer',
+                transition: 'background 0.15s',
+                marginBottom: 2,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,160,50,0.14)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 14 }}>👤</span>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>{c.name}</span>
+                  <span style={{ fontSize: 12, color: C.dim, marginLeft: 5 }}>{c.age}岁 · {profLabel}</span>
+                  {tierLabel && <span style={{ fontSize: 10, marginLeft: 5, color: '#f5d86a', border: '1px solid rgba(240,200,60,0.55)', borderRadius: 3, padding: '0 4px' }}>{tierLabel}</span>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {c.isSick && <span style={{ fontSize: 10, color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 3, padding: '0 4px' }}>病</span>}
+                <span style={{ fontSize: 11, color: c.isAtHome ? C.dim : '#8ec8ff', border: `1px solid ${c.isAtHome ? 'rgba(196,164,110,0.45)' : 'rgba(120,180,255,0.5)'}`, borderRadius: 3, padding: '0 5px' }}>
+                  {c.isAtHome ? '在家' : '通勤'}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: cSatColor }}>★{c.satisfaction}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+    </div>
+  )
+}
+
+// ─── Building panel ───────────────────────────────────────────────────────────
+
+function BuildingPanel() {
+  const { state, selectBuilding, selectCitizen, setMarketConfig, upgradeBuilding } = useSimulation()
+  const b = state.buildings.find(x => x.id === state.selectedBuildingId)
+  if (!b) return null
+
+  const isHouse    = b.type === 'house' || b.type === 'manor'
+
+  // House uses dedicated dark-themed panel
+  if (isHouse) return <HouseInfoPanel />
+
+  const isMarket   = b.type === 'market'
+  const isGranary  = b.type === 'granary'
+
+  // 升级信息（含前置条件）
+  const UPGRADE_INFO: Partial<Record<string, {
+    maxLevel: number
+    levelNames: string[]
+    costs: number[]
+    /** prereqs[i] = 升到 i+2 级所需的前置建筑类型列表（含显示标签） */
+    prereqs?: { buildingType: string; label: string; hint: string }[][]
+  }>> = {
+    market:  { maxLevel: 2, levelNames: ['草市', '牙市'],   costs: [800] },
+    granary: {
+      maxLevel: 2,
+      levelNames: ['常平仓', '太仓'],
+      costs: [600],
+      prereqs: [[
+        {
+          buildingType: 'academy',
+          label: '书院',
+          hint: '太仓须有书院中会算账的文吏协助管理，方可建立完备的粮册账目。',
+        },
+      ]],
+    },
+  }
+  const upgradeInfo  = UPGRADE_INFO[b.type]
+  const curLevel     = b.level ?? 1
+  const buildingName = upgradeInfo ? (upgradeInfo.levelNames[curLevel - 1] ?? BUILDING_LABEL[b.type]) : (BUILDING_LABEL[b.type] ?? b.type)
+  const canUpgrade   = upgradeInfo && curLevel < upgradeInfo.maxLevel
+  const upgradeCost  = canUpgrade ? upgradeInfo!.costs[curLevel - 1] : 0
+  const nextName     = canUpgrade ? upgradeInfo!.levelNames[curLevel] : ''
+  // 检查前置条件（每项：是否在城中已建）
+  const upgradePrereqChecks = canUpgrade
+    ? (upgradeInfo!.prereqs?.[curLevel - 1] ?? []).map(p => ({
+        ...p,
+        met: state.buildings.some(bd => (bd.type as string) === p.buildingType),
+      }))
+    : []
+  const upgradePrereqsMet = upgradePrereqChecks.every(p => p.met)
+  const isBlacksmith = b.type === 'blacksmith'
+  const isMine       = b.type === 'mine'
+  const isLumbercamp = (b.type as string) === 'lumbercamp'
+  const residents  = isHouse ? state.citizens.filter(c => c.houseId === b.id) : []
+  const workers    = !isHouse ? state.citizens.filter(c => c.workplaceId === b.id) : []
+  const houseFood    = b.residentData?.food ?? 0
+  const houseSavings = b.residentData?.savings ?? 0
+  const houseCrops   = b.residentData?.crops
+  const dietVarietyCount = houseCrops ? Object.values(houseCrops).filter(v => v > 0.1).length : 0
+
+  const mines            = state.buildings.filter(b2 => b2.type === 'mine')
+  const smithBuildings   = state.buildings.filter(b2 => b2.type === 'blacksmith')
+  const mineCapacity     = mines.length * 60
+  const smithCapacity    = smithBuildings.length * 20
+  const smithInventory   = getAggregateBldgUnit(smithBuildings, 'ironTools')
+  const mineInventory    = getAggregateBldgUnit(mines, 'ironOre')
+  const mineOreFillPct   = mineCapacity   > 0 ? Math.min(100, (mineInventory  / mineCapacity)  * 100) : 0
+  const smithToolFillPct = smithCapacity  > 0 ? Math.min(100, (smithInventory / smithCapacity) * 100) : 0
+  const granaries       = state.buildings.filter(b2 => b2.type === 'granary')
+  const granaryCapacity = granaries.reduce((sum, g) => sum + GRANARY_CAPACITY_PER * (g.level ?? 1), 0)
+  const granaryInventory= getAggregateCrops(granaries)
+  const granaryTotalB   = inventoryTotal(granaryInventory)
+  const granaryFillPct  = granaryCapacity > 0 ? Math.min(100, (granaryTotalB / granaryCapacity) * 100) : 0
+  const myOxCarts       = b.agents.filter(a => a.kind === 'oxcart')
+
+  // 集市容量 = 坐贾数 × MARKET_CAP_PER_SHOP
+  const markets          = state.buildings.filter(b2 => b2.type === 'market')
+  const marketCfg: MarketConfig = b.marketConfig ?? DEFAULT_MARKET_CFG
+  const marketCapacity   = markets.reduce((sum, m) => {
+    const cfg = m.marketConfig ?? DEFAULT_MARKET_CFG
+    return sum + cfg.shopkeepers * MARKET_CAP_PER_SHOP
+  }, 0)
+  const marketInvAgg     = getAggregateCrops(markets)
+  const marketTotal      = inventoryTotal(marketInvAgg)
+  const marketFillPct    = marketCapacity > 0 ? Math.min(100, (marketTotal / marketCapacity) * 100) : 0
+  const myMarketBuyers   = b.agents.filter(a => a.kind === 'marketbuyer')
+  const myPeddlers       = state.citizens
+    .filter(c => c.peddlerState?.marketId === b.id)
+    .map(c => ({ id: c.id, citizenId: c.id, ...c.peddlerState! }))
+
+  // Deterministic role designation: sort workers by id, last cfg.peddlers = 行商, rest = 坐贾
+  // This matches the morningCommute selection (.slice from tail) so display = behaviour.
+  const workersSortedById = isMarket ? [...workers].sort((a, b2) => a.id.localeCompare(b2.id)) : workers
+  const peddlerWorkerIds  = isMarket
+    ? new Set(workersSortedById.slice(workersSortedById.length - marketCfg.peddlers).map(w => w.id))
+    : new Set<string>()
+
+
+  const hasRoadAccess = (() => {
+    const bw = b.w ?? 1, bh = b.h ?? 1
+    for (let dx = 0; dx < bw; dx++) {
+      for (let dy = 0; dy < bh; dy++) {
+        const tx = b.x + dx, ty = b.y + dy
+        for (const [ddx, ddy] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+          const nx = tx + ddx, ny = ty + ddy
+          // skip tiles that are inside the building's own footprint
+          if (nx >= b.x && nx < b.x + bw && ny >= b.y && ny < b.y + bh) continue
+          if (state.roads.some(r => r.x === nx && r.y === ny)) return true
+        }
+      }
+    }
+    return false
+  })()
+
+  const CROP_NAME: Record<CropType, string> = { rice: '稻米', millet: '粟米', wheat: '麦子', soybean: '黄豆', vegetable: '蔬菜', tea: '茶叶' }
+
+  return (
+    <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Space size={6}>
+          <Typography.Text strong style={{ fontSize: 15 }}>
+            {buildingName}
+          </Typography.Text>
+          {curLevel >= 2 && <Tag color="gold">已升级</Tag>}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>({b.x}, {b.y})</Typography.Text>
+        </Space>
+        <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => selectBuilding(null)} />
+      </div>
+
+      {/* 升级按钮 */}
+      {upgradeInfo && (
+        canUpgrade
+          ? (
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              {/* 前置条件尚未满足 → 锁定提示 */}
+              {upgradePrereqChecks.length > 0 && upgradePrereqChecks.map(p => (
+                !p.met && (
+                  <Alert
+                    key={p.buildingType}
+                    type="warning"
+                    showIcon
+                    icon={<span>🎓</span>}
+                    message={<span style={{ fontWeight: 600 }}>升级受阻：缺少【{p.label}】</span>}
+                    description={<span style={{ fontSize: 11 }}>{p.hint}</span>}
+                    style={{ borderRadius: 8, fontSize: 12 }}
+                  />
+                )
+              ))}
+              <Tooltip title={upgradePrereqsMet ? `升级为【${nextName}】，容纳更多人员与货物` : `需先建造前置建筑方可升级`}>
+                <Button
+                  size="small" type="primary" block
+                  disabled={state.money < upgradeCost || !upgradePrereqsMet}
+                  onClick={() => upgradeBuilding(b.id)}
+                  style={upgradePrereqsMet ? { background: '#d4b106', borderColor: '#a88a04' } : {}}
+                >
+                  {upgradePrereqsMet
+                    ? `升级为【${nextName}】 · ¥${upgradeCost}`
+                    : `🔒 升级为【${nextName}】 · ¥${upgradeCost}`}
+                </Button>
+              </Tooltip>
+            </Space>
+          )
+          : <Tag color="gold" style={{ textAlign: 'center', width: '100%' }}>已达最高等级（{buildingName}）</Tag>
+      )}
+
+      {/* Tags */}
+      <Space size={6} wrap>
+        <Tag>造价 ¥{b.cost}</Tag>
+        {isHouse
+          ? <Tag color="blue">住户 {residents.length}/{b.capacity}</Tag>
+          : <Tag color="purple">
+              {isMarket
+                ? `在岗 ${workers.length}/${MARKET_TOTAL_SLOTS}`
+                : `仓丁 ${workers.length}/${b.workerSlots}`}
+            </Tag>}
+        {isHouse && <Tag color="gold">💰 积蓄 ¥{houseSavings.toFixed(2)}</Tag>}
+        {isHouse && dietVarietyCount > 0 && (
+          <Tag color={dietVarietyInfo(dietVarietyCount).color}>
+            🍽 {dietVarietyInfo(dietVarietyCount).label}（{dietVarietyCount}种）
+          </Tag>
+        )}
+        <span data-testid="selected-building-label" style={{ display: 'none' }}>{BUILDING_LABEL[b.type]}</span>
+        {isHouse && <span data-testid="selected-building-type" style={{ display: 'none' }}>Type: {b.type}</span>}
+      </Space>
+
+      {!hasRoadAccess && (
+        <Alert type="warning" showIcon message="未与道路相连"
+          description="此建筑尚未接通道路，居民无法通勤，迁入率和满意度将受影响。"
+          style={{ fontSize: 12, borderRadius: 8 }} />
+      )}
+
+      {/* ── 疫病警示 ── */}
+      {isHouse && (() => {
+        const sickCount = residents.filter(c => c.isSick).length
+        const deadCount = b.residentData?.dead ?? 0
+        if (sickCount === 0 && deadCount === 0) return null
+        return (
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {sickCount > 0 && (
+              <Alert
+                type="error"
+                showIcon
+                icon={<MedicineBoxOutlined />}
+                message={<span style={{ fontWeight: 600 }}>⚠ 疫情：{sickCount} 人病倒</span>}
+                description={
+                  <span style={{ fontSize: 11 }}>
+                    长期缺粮或疫病传染所致。久病不愈（约3个月）将导致死亡。
+                    请确保粮食充足，远离病死积聚的邻居。
+                  </span>
+                }
+                style={{ borderRadius: 8 }}
+              />
+            )}
+            {deadCount > 0 && (
+              <Alert
+                type="error"
+                showIcon
+                message={<span style={{ fontWeight: 600 }}>💀 此处有 {deadCount} 具亡者未清</span>}
+                description={
+                  <span style={{ fontSize: 11 }}>
+                    亡者积累（≥2具）会向{DEAD_SPREAD_RADIUS_HUD}格内邻居传播疫病！
+                    亡者将随时间自然减少，或拆除重建以清除。
+                  </span>
+                }
+                style={{ borderRadius: 8, marginTop: 2 }}
+              />
+            )}
+          </Space>
+        )
+      })()}
+
+      {/* ── 粮仓：库存与牛车 ── */}
+      {isGranary && (
+        <Card size="small" title="🏚 粮仓库存" style={{ borderRadius: 8 }}>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {/* 总存量 / 容量 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography.Text style={{ fontSize: 12 }}>
+                全城合计：<b>{granaryTotalB.toFixed(1)}</b> / {granaryCapacity} 担
+              </Typography.Text>
+              <Tag color={granaryFillPct >= 90 ? 'error' : granaryFillPct >= 60 ? 'warning' : 'success'}>
+                {granaryFillPct.toFixed(0)}% 满
+              </Tag>
+            </div>
+            <Progress
+              percent={granaryFillPct}
+              size="small" showInfo={false}
+              strokeColor={granaryFillPct >= 90 ? '#ff4d4f' : granaryFillPct >= 60 ? '#faad14' : '#52c41a'}
+            />
+            <Divider style={{ margin: '4px 0', borderColor: '#f0f0f0' }} />
+            {/* 各类粮食 */}
+            {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
+              const amt = granaryInventory[crop]
+              const pct = granaryCapacity > 0 ? (amt / granaryCapacity) * 100 : 0
+              return (
+                <div key={crop}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                    <Typography.Text style={{ fontSize: 12, opacity: amt > 0.1 ? 1 : 0.4 }}>{CROP_LABEL[crop]}</Typography.Text>
+                    <Typography.Text strong style={{ fontSize: 12, color: amt > 0.1 ? '#52c41a' : '#999' }}>
+                      {amt.toFixed(1)} 担
+                    </Typography.Text>
+                  </div>
+                  <Progress percent={pct} size="small" showInfo={false}
+                    strokeColor="#52c41a" style={{ marginBottom: 0 }} />
+                </div>
+              )
+            })}
+            {granaryFillPct >= 95 && (
+              <Alert type="warning" showIcon message="粮仓将满！可增建粮仓扩容。"
+                style={{ padding: '2px 8px', fontSize: 11, marginTop: 4 }} />
+            )}
+          </Space>
+        </Card>
+      )}
+
+      {/* ── 粮仓：在途牛车 ── */}
+      {isGranary && (
+        <Card size="small"
+          title={<Space size={4}><span>🐂 在途牛车</span><Tag color="blue">{myOxCarts.length}</Tag></Space>}
+          style={{ borderRadius: 8 }}
+        >
+          {myOxCarts.length === 0
+            ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无牛车出发</Typography.Text>
+            : (
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                {myOxCarts.map(cart => {
+                  const isReturn = cart.pickedUp
+                  return (
+                    <div key={cart.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
+                      <Space size={4}>
+                        <span style={{ fontSize: 14 }}>🐂</span>
+                        <div>
+                          <Typography.Text style={{ fontSize: 12 }}>
+                            {isReturn
+                              ? `回仓中·载 ${cart.cargoAmount.toFixed(1)}担 ${CROP_NAME[cart.cargoType]}`
+                              : '前往农田取粮…'}
+                          </Typography.Text>
+                        </div>
+                      </Space>
+                      <Tag color={isReturn ? 'success' : 'processing'} style={{ fontSize: 10 }}>
+                        {isReturn ? '满载返回' : '去程'}
+                      </Tag>
+                    </div>
+                  )
+                })}
+              </Space>
+            )}
+        </Card>
+      )}
+
+      {/* ── 矿山：铁矿石库存 + 矿脉储量 ── */}
+      {isMine && (() => {
+        const tileKey = `${b.x},${b.y}`
+        const oreHealth = state.terrainResources['ore']?.[tileKey] ?? ORE_VEIN_INITIAL_HEALTH
+        const oreHealthPct = Math.round(oreHealth / ORE_VEIN_INITIAL_HEALTH * 100)
+        return (
+          <Card size="small" title="⛏ 铁矿石存量" style={{ borderRadius: 8 }}>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  全城存矿：<b>{mineInventory.toFixed(1)}</b> / {mineCapacity} 担
+                </Typography.Text>
+                <Tag color={mineOreFillPct >= 90 ? 'error' : mineOreFillPct >= 60 ? 'warning' : 'success'}>
+                  {mineOreFillPct.toFixed(0)}% 满
+                </Tag>
+              </div>
+              <Progress percent={mineOreFillPct} size="small" showInfo={false}
+                strokeColor={mineOreFillPct >= 90 ? '#ff4d4f' : '#52c41a'} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#888' }}>
+                <span>每矿工每日产出 3 担</span>
+                <span>在岗 {workers.length} 人</span>
+              </div>
+              {/* 矿脉储量 */}
+              <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Typography.Text style={{ fontSize: 12 }}>🪨 本格矿脉剩余储量</Typography.Text>
+                  <Tag color={oreHealthPct > 60 ? 'green' : oreHealthPct > 20 ? 'orange' : oreHealthPct > 0 ? 'red' : 'default'}>
+                    {oreHealthPct > 0 ? `${oreHealthPct}%` : '已枯竭'}
+                  </Tag>
+                </div>
+                <Progress percent={oreHealthPct} size="small" showInfo={false}
+                  strokeColor={oreHealthPct > 60 ? '#52c41a' : oreHealthPct > 20 ? '#fa8c16' : '#ff4d4f'} />
+                <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                  {oreHealth.toFixed(0)} / 600 担 · 选中矿坑时地图显示各矿脉颜色
+                </Typography.Text>
+              </div>
+              {workers.length === 0 && <MineNoWorkerHint />}
+            </Space>
+          </Card>
+        )
+      })()}
+
+      {/* ── 采木场：周边林木储量 ── */}
+      {isLumbercamp && (() => {
+        const FOREST_MAX = FOREST_TILE_INITIAL_HEALTH
+        const HARVEST_R  = 6
+        // 从 state.terrainResources['forest'] 统计在岗半径内的格子
+        const nearbyKeys = Object.entries(state.terrainResources['forest'] ?? {}).filter(([key]) => {
+          const [fx, fy] = key.split(',').map(Number)
+          return Math.max(Math.abs(fx - b.x), Math.abs(fy - b.y)) <= HARVEST_R
+        })
+        const totalRemain = nearbyKeys.reduce((s, [, v]) => s + v, 0)
+        const totalMax    = nearbyKeys.length * FOREST_MAX
+        const forestPct   = totalMax > 0 ? Math.round(totalRemain / totalMax * 100) : 0
+        return (
+          <Card size="small" title="🌲 周边林木储量" style={{ borderRadius: 8 }}>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  全城木料库存：<b>{getAggregateBldgUnit(state.buildings.filter(b2 => (b2.type as string) === 'lumbercamp'), 'timber').toFixed(0)}</b> 担
+                </Typography.Text>
+                <Tag color={forestPct > 60 ? 'green' : forestPct > 20 ? 'orange' : forestPct > 0 ? 'red' : 'default'}>
+                  {forestPct > 0 ? `${forestPct}% 剩余` : '周边已伐尽'}
+                </Tag>
+              </div>
+              <Progress percent={forestPct} size="small" showInfo={false}
+                strokeColor={forestPct > 60 ? '#52c41a' : forestPct > 20 ? '#fa8c16' : '#ff4d4f'} />
+              <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                周边 {HARVEST_R} 格内：{nearbyKeys.length} 块林地 · 总储量 {totalRemain.toFixed(0)}/{totalMax} 担
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 10 }}>
+                选中采木场时，地图上各林地格以绿/黄/红标示剩余储量
+              </Typography.Text>
+              {workers.length === 0 && (
+                <Alert type="warning" showIcon message="无在岗伐木工，请安排居民前来务工" style={{ padding: '2px 8px', fontSize: 11 }} />
+              )}
+            </Space>
+          </Card>
+        )
+      })()}
+
+      {/* ── 铁匠铺：农具库存 ── */}
+      {isBlacksmith && (
+        <Card size="small" title="🔨 铁制农具存量" style={{ borderRadius: 8 }}>
+          <Space direction="vertical" size={6} style={{ width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography.Text style={{ fontSize: 12 }}>
+                全城存货：<b>{smithInventory}</b> / {smithCapacity} 件
+              </Typography.Text>
+              <Tag color={smithToolFillPct >= 90 ? 'error' : smithInventory > 0 ? 'success' : 'default'}>
+                {smithInventory > 0 ? `${smithToolFillPct.toFixed(0)}% 充盈` : '无存货'}
+              </Tag>
+            </div>
+            <Progress percent={smithToolFillPct} size="small" showInfo={false}
+              strokeColor={smithInventory > 0 ? '#52c41a' : '#d9d9d9'} />
+            {/* 宋代农具清单 */}
+            <div style={{ background: '#fafafa', borderRadius: 6, padding: '6px 8px' }}>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>宋代铁制农具（轮流打制）：</Typography.Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                {[
+                  { label: '曲辕犁', tip: '翻土耕田，效率极高' },
+                  { label: '铁锄',   tip: '锄草松土' },
+                  { label: '铁镰',   tip: '收割稻麦' },
+                  { label: '铁耙',   tip: '碎土整地' },
+                  { label: '铁铲',   tip: '开渠起垄' },
+                ].map(({ label, tip }) => (
+                  <Tooltip key={label} title={tip}>
+                    <Tag style={{ cursor: 'default', fontSize: 11 }}>{label}</Tag>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+            <Space direction="vertical" size={2} style={{ fontSize: 11, color: '#888', width: '100%' }}>
+              <div>🔨 每铁匠每日打制：1件农具（消耗矿石2担）</div>
+              <div>⛏ 当前矿石库存：{mineInventory.toFixed(1)}担
+                {mineInventory < 2 && <Tag color="error" style={{ marginLeft: 6, fontSize: 10 }}>矿石不足</Tag>}
+              </div>
+              <div>💰 农具售价：{FARM_TOOL_PRICE}文/套 · 农夫持有后产量 +{Math.round((TOOL_EFFICIENCY_BONUS - 1) * 100)}%</div>
+            </Space>
+            {workers.length === 0 && (
+              <Alert type="warning" showIcon message="铁匠铺无铁匠，无法锻造农具。"
+                style={{ padding: '2px 8px', fontSize: 11 }} />
+            )}
+            {mines.length === 0 && (
+              <Alert type="info" showIcon message="尚未建造矿山，无铁矿石原料。"
+                style={{ padding: '2px 8px', fontSize: 11 }} />
+            )}
+          </Space>
+        </Card>
+      )}
+
+      {/* ── 集市：货物与容量 ── */}
+      {isMarket && (
+        <Card size="small" style={{ borderRadius: 8 }}>
+          {/* 坐贾/行商人员分配 */}
+          <div style={{ padding: '8px 12px 4px', borderBottom: '1px solid #f0f0f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Typography.Text style={{ fontSize: 12 }}>
+                坐贾 <b>{marketCfg.shopkeepers}</b> 人 · 行商 <b>{marketCfg.peddlers}</b> 人
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 10 }}>总名额 {MARKET_TOTAL_SLOTS} 人</Typography.Text>
+            </div>
+            <Slider
+              min={0} max={MARKET_TOTAL_SLOTS} step={1}
+              value={marketCfg.peddlers}
+              onChange={v => setMarketConfig(b.id, { peddlers: v, shopkeepers: MARKET_TOTAL_SLOTS - v })}
+              tooltip={{ formatter: v => `行商 ${v} 人 / 坐贾 ${MARKET_TOTAL_SLOTS - (v??0)} 人` }}
+              marks={{ 0: '全坐贾', 2: '默认', [MARKET_TOTAL_SLOTS]: '全行商' }}
+              style={{ marginBottom: 4 }}
+            />
+            {marketCfg.shopkeepers === 0 && (
+              <Typography.Text type="secondary" style={{ fontSize: 10, color: '#ff4d4f' }}>
+                ⚠ 无坐贾时货架容量为 0，集市无法存货
+              </Typography.Text>
+            )}
+          </div>
+          <Tabs size="small" defaultActiveKey="food" items={[
+            {
+              key: 'food',
+              label: <span>🌾 粮食</span>,
+              children: (
+                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography.Text style={{ fontSize: 12 }}>
+                      货架：<b>{marketTotal.toFixed(1)}</b> / {marketCapacity} 担
+                    </Typography.Text>
+                    <Tag color={marketFillPct < 20 ? 'error' : marketFillPct < 50 ? 'warning' : 'success'}>
+                      {marketFillPct.toFixed(0)}% 充盈
+                    </Tag>
+                  </div>
+                  <Progress percent={marketFillPct} size="small" showInfo={false}
+                    strokeColor={marketFillPct < 20 ? '#ff4d4f' : marketFillPct < 50 ? '#faad14' : '#52c41a'} />
+                  <Divider style={{ margin: '4px 0', borderColor: '#f0f0f0' }} />
+                  {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
+                    const amt = marketInvAgg[crop]
+                    return (
+                      <div key={crop} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: amt > 0 ? 1 : 0.38 }}>
+                        <Typography.Text style={{ fontSize: 12 }}>{CROP_LABEL[crop]}</Typography.Text>
+                        <Space size={3}>
+                          <Typography.Text strong style={{ fontSize: 12, color: amt > 0 ? '#52c41a' : undefined }}>
+                            {amt.toFixed(1)}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 11 }}>担</Typography.Text>
+                          {amt <= 0 && <Tag style={{ fontSize: 10, padding: '0 3px' }}>缺货</Tag>}
+                        </Space>
+                      </div>
+                    )
+                  })}
+                </Space>
+              ),
+            },
+            {
+              key: 'tools',
+              label: <span>🔧 农具 <Tag color={smithInventory > 0 ? 'green' : 'default'} style={{ fontSize: 10 }}>{smithInventory}件</Tag></span>,
+              children: (() => {
+                const smithWorkerCount = smithBuildings.reduce((n, sb) =>
+                  n + state.citizens.filter(c => c.workplaceId === sb.id && !c.isSick).length, 0)
+                return (
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography.Text style={{ fontSize: 12 }}>
+                        货架：<b>{smithInventory}</b> / {smithCapacity} 件
+                      </Typography.Text>
+                      <Tag color={smithToolFillPct >= 90 ? 'error' : smithInventory > 0 ? 'success' : 'default'}>
+                        {smithInventory > 0 ? `${smithToolFillPct.toFixed(0)}% 充盈` : '无存货'}
+                      </Tag>
+                    </div>
+                    <Progress percent={smithToolFillPct} size="small" showInfo={false}
+                        strokeColor={smithInventory > 0 ? '#52c41a' : '#d9d9d9'} />
+                    <div style={{ background: '#fafafa', borderRadius: 6, padding: '6px 8px' }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>宋代铁制农具（轮流打制）：</Typography.Text>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                        {[
+                          { label: '曲辕犁', tip: '翻土耕田，效率极高' },
+                          { label: '铁锄', tip: '锄草松土' },
+                          { label: '铁镰', tip: '收割稻麦' },
+                          { label: '铁耙', tip: '碎土整地' },
+                          { label: '铁铲', tip: '开渠起垄' },
+                        ].map(({ label, tip }) => (
+                          <Tooltip key={label} title={tip}>
+                            <Tag style={{ cursor: 'default', fontSize: 11 }}>{label}</Tag>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                    <Space direction="vertical" size={2} style={{ fontSize: 11, color: '#888', width: '100%' }}>
+                      <div>🔨 铁匠铺在岗：{smithWorkerCount} 人 · ⛏ 矿石：{mineInventory.toFixed(1)} 担
+                        {mineInventory < 2 && <Tag color="error" style={{ marginLeft: 6, fontSize: 10 }}>矿石不足</Tag>}
+                      </div>
+                      <div>💰 售价：{FARM_TOOL_PRICE} 文/套 · 行商沿途或居民来集市均可购</div>
+                    </Space>
+                    {smithBuildings.length === 0 && (
+                      <Alert type="info" showIcon message="尚未建造铁匠铺，集市无农具可售。" style={{ padding: '2px 8px', fontSize: 11 }} />
+                    )}
+                  </Space>
+                )
+              })(),
+            },
+            {
+              key: 'logistics',
+              label: (
+                <span>
+                  🛺 物流
+                  {(myMarketBuyers.length + myPeddlers.length) > 0 &&
+                    <Tag color="blue" style={{ fontSize: 10, marginLeft: 3 }}>{myMarketBuyers.length + myPeddlers.length}</Tag>}
+                </span>
+              ),
+              children: (
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  {/* 独轮车（进货） */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <Typography.Text style={{ fontSize: 12 }}>独轮车（粮仓进货）</Typography.Text>
+                    <Tag color="blue">{myMarketBuyers.length}</Tag>
+                  </div>
+                  {myMarketBuyers.map(mb => {
+                    const isReturn = mb.pickedUp
+                    const granaryB = state.buildings.find(g => g.id === mb.srcGranaryId)
+                    return (
+                      <div key={mb.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0' }}>
+                        <Space size={4}>
+                          <span>🛺</span>
+                          <Typography.Text style={{ fontSize: 11 }}>
+                            {isReturn ? `回市·载 ${mb.cargoAmount.toFixed(1)}担 ${CROP_NAME[mb.cargoType]}` : `往粮仓${granaryB ? `(${granaryB.x},${granaryB.y})` : ''}…`}
+                          </Typography.Text>
+                        </Space>
+                        <Tag color={isReturn ? 'success' : 'processing'} style={{ fontSize: 10 }}>{isReturn ? '返回' : '去程'}</Tag>
+                      </div>
+                    )
+                  })}
+
+                  <Divider style={{ margin: '2px 0', borderColor: '#f0f0f0' }} />
+
+                  {/* 行商（送货上门） */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <Typography.Text style={{ fontSize: 12 }}>行商（走街串巷）</Typography.Text>
+                    <Tag color="purple">{myPeddlers.length} / {marketCfg.peddlers}</Tag>
+                  </div>
+                  {myPeddlers.length === 0
+                    ? <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        {marketCfg.peddlers === 0 ? '未配置行商' : '行商已归市，明日清晨出发'}
+                      </Typography.Text>
+                    : myPeddlers.map(p => {
+                        const foodAmt = Object.values(p.cargo.crops).reduce((s, v) => s + v, 0)
+                        return (
+                          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0' }}>
+                            <Space size={4}>
+                              <span>🧺</span>
+                              <Typography.Text style={{ fontSize: 11 }}>
+                                {p.phase === 'outbound'
+                                  ? `出行中 剩${p.stepsLeft}步 · 粮${foodAmt.toFixed(1)}担 铁器×${p.cargo.ironTools}`
+                                  : `折返中 · 剩余粮${foodAmt.toFixed(1)}担 铁器×${p.cargo.ironTools}`}
+                              </Typography.Text>
+                            </Space>
+                            <Tag color={p.phase === 'outbound' ? 'purple' : 'default'} style={{ fontSize: 10 }}>
+                              {p.phase === 'outbound' ? '出行' : '返回'}
+                            </Tag>
+                          </div>
+                        )
+                      })}
+                  <Typography.Text type="secondary" style={{ fontSize: 10, marginTop: 2 }}>
+                    行商最多走 30 格后 A* 折返；沿途向民居/农田按需售货
+                  </Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              key: 'peddler_stats',
+              label: <span>📊 行商统计</span>,
+              children: (() => {
+                const tripLog   = b.tripLog ?? []
+                const activePeddlers = myPeddlers
+                return (
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    {/* ── 在途行商实时进度 ── */}
+                    {activePeddlers.length > 0 && (
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 12 }}>🧺 本轮出行中</Typography.Text>
+                        {activePeddlers.map(p => {
+                          const citizen = p.citizenId ? state.citizens.find(c => c.id === p.citizenId) : null
+                          const cargoLeft = Object.values(p.cargo.crops).reduce((s, v) => s + v, 0)
+                          return (
+                            <div key={p.id} style={{ background: '#f9f0ff', borderRadius: 6, padding: '6px 8px', marginTop: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography.Text strong style={{ fontSize: 12 }}>
+                                  {citizen?.name ?? '行商'} · {p.phase === 'outbound' ? `剩 ${p.stepsLeft} 步` : '折返中'}
+                                </Typography.Text>
+                                <Tag color="purple" style={{ fontSize: 10 }}>{p.phase === 'outbound' ? '出行' : '返回'}</Tag>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                                出发带货：{p.statsCargoAtStart.toFixed(1)} 担 ·
+                                剩余：{cargoLeft.toFixed(1)} 担 ·
+                                铁器×{p.cargo.ironTools}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#52c41a', marginTop: 1 }}>
+                                ✅ 已服务 {p.statsHousesServed} 户 ·
+                                售粮 {p.statsFoodSold.toFixed(1)} 担 ·
+                                收入 {p.statsRevenue.toFixed(1)} 文
+                                {p.statsToolsSold > 0 && ` · 售器×${p.statsToolsSold}`}
+                              </div>
+                              {p.statsCargoAtStart < 0.1 && (
+                                <div style={{ fontSize: 11, color: '#ff4d4f', marginTop: 1 }}>
+                                  ⚠ 出发时市场无粮，空手出行
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* ── 历史行程记录 ── */}
+                    {tripLog.length > 0 && (
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 12 }}>📋 近期行程记录</Typography.Text>
+                        {[...tripLog].reverse().map((t, i) => {
+                          const citizen = t.citizenId ? state.citizens.find(c => c.id === t.citizenId) : null
+                          return (
+                            <div key={i} style={{ background: '#f6ffed', borderRadius: 6, padding: '6px 8px', marginTop: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography.Text strong style={{ fontSize: 12 }}>
+                                  {citizen?.name ?? t.citizenId?.slice(-4) ?? '行商'} · 第 {t.dayCount} 天
+                                </Typography.Text>
+                                <Tag color={t.housesServed > 0 ? 'success' : 'default'} style={{ fontSize: 10 }}>
+                                  {t.housesServed > 0 ? `售货 ${t.housesServed} 户` : '零成交'}
+                                </Tag>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+                                出发带货：{t.cargoAtStart.toFixed(1)} 担
+                                {t.cargoAtStart < 0.1 && <Tag color="error" style={{ fontSize: 10, marginLeft: 4 }}>市场空仓</Tag>}
+                              </div>
+                              {t.housesServed > 0
+                                ? <div style={{ fontSize: 11, color: '#52c41a', marginTop: 1 }}>
+                                    ✅ 售粮 {t.foodSold.toFixed(1)} 担 · 收入 {t.revenue.toFixed(1)} 文
+                                    {t.toolsSold > 0 && ` · 售农器×${t.toolsSold}`}
+                                  </div>
+                                : <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
+                                    未售出（见下方条件说明）
+                                  </div>
+                              }
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {activePeddlers.length === 0 && tripLog.length === 0 && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        行商今日尚未出发，明晨清晨（6:00）自动派出
+                      </Typography.Text>
+                    )}
+
+                    {/* ── 卖货条件说明 ── */}
+                    <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 6, padding: '8px 10px', fontSize: 11 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>📌 行商卖货条件（全部满足才成交）</div>
+                      <div>① 行商携带粮食 &gt; 0.1 担（市场出发时有库存）</div>
+                      <div>② 民居在行商当前格<b>上下左右 1 格</b>之内（斜对角无效）</div>
+                      <div>③ 民居粮食 &lt; <b>10 担</b>（已满仓则跳过）</div>
+                      <div>④ 民居积蓄 &gt; 0（无钱则仅施舍 1 担，不收费）</div>
+                      <div style={{ marginTop: 4, color: '#888' }}>
+                        常见零成交原因：市场空仓出发 / 民居粮食充足 / 民居积蓄不足
+                      </div>
+                    </div>
+                  </Space>
+                )
+              })(),
+            },
+          ]} />
+        </Card>
+      )}
+
+      {/* ── House: inventory ── */}
+      {isHouse && (
+        <Card size="small" title={<span>📦 仓储 · 饮食</span>} style={{ borderRadius: 8 }}>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {/* Diet variety tag */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>饮食丰俭</Typography.Text>
+              <Tag color={dietVarietyInfo(dietVarietyCount).color}>
+                {dietVarietyInfo(dietVarietyCount).label}（{dietVarietyCount}种）
+              </Tag>
+            </div>
+            <Divider style={{ margin: '2px 0', borderColor: '#f0f0f0' }} />
+
+            {/* All crop types */}
+            {(Object.keys(CROP_LABEL) as CropType[]).map(crop => {
+              const amt = houseCrops ? (houseCrops[crop] ?? 0) : (crop === 'rice' ? houseFood : 0)
+              const barColor2 = amt <= 1 ? '#ff4d4f' : amt < 5 ? '#faad14' : '#52c41a'
+              const isMain = crop === 'rice'
+              return (
+                <div key={crop}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMain ? 3 : 0 }}>
+                    <Typography.Text style={{ fontSize: 12, opacity: amt > 0.1 ? 1 : 0.4 }}>{CROP_LABEL[crop]}</Typography.Text>
+                    <Space size={3}>
+                      <Typography.Text strong style={{ color: amt > 0.1 ? barColor2 : undefined, fontSize: 12 }}>{amt.toFixed(1)}</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>担</Typography.Text>
+                    </Space>
+                  </div>
+                  {isMain && amt > 0 && (
+                    <div className="food-bar-bg">
+                      <div className="food-bar-fill" style={{ width: `${Math.min(100,(amt/30)*100)}%`, background: barColor2 }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {houseFood <= 1 && (
+              <Alert type="warning" showIcon message="粮食告急！" style={{ padding: '2px 8px', fontSize: 12, marginTop: 4 }} />
+            )}
+          </Space>
+        </Card>
+      )}
+
+      {/* ── House: resident list ── */}
+      {isHouse && (
+        <Card
+          size="small"
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{b.type === 'manor' ? '🏯 宅邸住户' : '🏠 住户列表'}</span>
+              {residents.length > 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
+                  点击查看详情
+                </Typography.Text>
+              )}
+            </div>
+          }
+          style={{ borderRadius: 8 }}
+          styles={{ body: { padding: residents.length === 0 ? '8px' : '4px 0' } }}
+        >
+          {residents.length === 0
+            ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无住户</Typography.Text>
+            : residents.map(c => {
+                const profLabel = c.profession
+                  ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
+                  : c.workplaceId
+                    ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
+                    : '待业'
+                const cTier = c.residentTier
+                const tierTag = cTier === 'gentry'
+                  ? <Tag color="gold" style={{ fontSize: 10, padding: '0 4px' }}>贵族</Tag>
+                  : cTier === 'servant'
+                    ? <Tag color="blue" style={{ fontSize: 10, padding: '0 4px' }}>仆役</Tag>
+                    : null
+                const cSatColor = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
+                return (
+                  <div key={c.id} className="info-panel-citizen-row"
+                    onClick={() => selectCitizen(c.id)}>
+                    <Space size={4}>
+                      <UserOutlined style={{ color: '#888' }} />
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 13 }}>{c.name}</Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>{c.age}岁 · {profLabel}</Typography.Text>
+                      </div>
+                    </Space>
+                    <Space size={3}>
+                      {tierTag}
+                      {c.isSick && <Tag color="error" style={{ fontSize: 10, padding: '0 4px' }}>病</Tag>}
+                      <Tag color={c.isAtHome ? 'default' : 'processing'} style={{ fontSize: 10, padding: '0 4px' }}>
+                        {c.isAtHome ? '在家' : '通勤'}
+                      </Tag>
+                      <Tag style={{ fontSize: 10, padding: '0 4px', color: cSatColor, borderColor: cSatColor }}>
+                        ★{c.satisfaction}
+                      </Tag>
+                    </Space>
+                  </div>
+                )
+              })}
+        </Card>
+      )}
+
+      {/* ── 宅邸专属：贵族/仆役信息 ── */}
+      {b.type === 'manor' && residents.length > 0 && (() => {
+        const gentryList  = residents.filter(c => c.residentTier === 'gentry')
+        const servantList = residents.filter(c => c.residentTier === 'servant')
+        const avgGentryS  = gentryList.length > 0
+          ? Math.round(gentryList.reduce((s, c) => s + c.satisfaction, 0) / gentryList.length)
+          : 0
+        return (
+          <Card size="small" title="🏯 宅邸内部" style={{ borderRadius: 8, borderColor: '#d4b106', background: '#fffbe6' }}>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography.Text style={{ fontSize: 12 }}>🎎 贵族住户</Typography.Text>
+                <Space size={4}>
+                  <Tag color="gold">{gentryList.length} 人</Tag>
+                  {gentryList.length > 0 && (
+                    <Tag color={avgGentryS >= 70 ? 'success' : avgGentryS >= 40 ? 'warning' : 'error'}>
+                      均安乐 {avgGentryS}
+                    </Tag>
+                  )}
+                </Space>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography.Text style={{ fontSize: 12 }}>👘 丫鬟仆役</Typography.Text>
+                <Space size={4}>
+                  <Tag color={servantList.length >= 2 ? 'blue' : 'orange'}>
+                    {servantList.length} / {b.workerSlots} 人
+                  </Tag>
+                  {servantList.length < 2 && gentryList.length > 0 && (
+                    <Tag color="error" style={{ fontSize: 10 }}>侍从不足</Tag>
+                  )}
+                </Space>
+              </div>
+              {servantList.length < 2 && gentryList.length > 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  💡 贵族需要至少 2 名仆役服侍，方可满足「侍从服务」需求。
+                </Typography.Text>
+              )}
+            </Space>
+          </Card>
+        )
+      })()}
+
+      {/* ── Non-house: worker list ── */}
+      {!isHouse && workers.length > 0 && (
+        <Card
+          size="small"
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>👷 在岗人员</span>
+              <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>点击查看详情</Typography.Text>
+            </div>
+          }
+          style={{ borderRadius: 8 }}
+          styles={{ body: { padding: '4px 0' } }}
+        >
+          {workers.map(c => {
+            const profLabel = c.profession
+              ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
+              : c.workplaceId
+                ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
+                : '待业'
+            const satColor    = c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'
+            const isPeddlerRole   = peddlerWorkerIds.has(c.id)
+            const isOutPeddling   = isPeddlerRole && state.citizens.some(c2 => c2.id === c.id && c2.peddlerState !== null)
+            return (
+              <div key={c.id} className="info-panel-citizen-row" onClick={() => selectCitizen(c.id)}>
+                <Space size={4}>
+                  <UserOutlined style={{ color: '#888' }} />
+                  <div>
+                    <Typography.Text strong style={{ fontSize: 13 }}>{c.name}</Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+                      {c.age}岁 · {profLabel}
+                      {isGranary && myOxCarts.length > 0 && ' · 运粮'}
+                    </Typography.Text>
+                  </div>
+                </Space>
+                <Space size={3}>
+                  <Tag color={c.isSick ? 'error' : 'green'} style={{ fontSize: 10, padding: '0 4px' }}>
+                    {c.isSick ? '生病' : '健康'}
+                  </Tag>
+                  {!c.isAtHome && isGranary && <Tag color="orange" style={{ fontSize: 10, padding: '0 4px' }}>🐂出勤</Tag>}
+                  {isMarket && (
+                    isPeddlerRole
+                      ? <Tag color="purple" style={{ fontSize: 10, padding: '0 4px' }}>
+                          🧺行商{isOutPeddling ? ' · 出行中' : ''}
+                        </Tag>
+                      : <Tag color="cyan" style={{ fontSize: 10, padding: '0 4px' }}>🏪坐贾</Tag>
+                  )}
+                  <Tag style={{ fontSize: 10, padding: '0 4px', color: satColor, borderColor: satColor }}>
+                    ★{c.satisfaction}
+                  </Tag>
+                </Space>
+              </div>
+            )
+          })}
+        </Card>
+      )}
+      {!isHouse && workers.length === 0 && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无工匠入驻</Typography.Text>
+      )}
+
+      {/* Action buttons */}
+      <Space size={6}>
+        <Button size="small" data-testid="btn-place-road-here"
+          onClick={() => (window as any).__TEST_API__?.placeRoad(b.x, b.y)}>
+          在此放路
+        </Button>
+        <Button size="small" danger data-testid="btn-bulldoze-selected"
+          onClick={() => (window as any).__TEST_API__?.selectTool('bulldoze')}>
+          拆除
+        </Button>
+      </Space>
+    </Space>
+  )
+}
+
+// ─── Citizen panel ────────────────────────────────────────────────────────────
+
+function CitizenPanel() {
+  const { state, selectCitizen, selectBuilding } = useSimulation()
+  const c = state.citizens.find(x => x.id === state.selectedCitizenId)
+  if (!c) return null
+
+  const house = state.buildings.find(x => x.id === c.houseId)
+  const workplace = c.workplaceId ? state.buildings.find(x => x.id === c.workplaceId) : null
+  const houseRd   = house?.residentData
+  const houseFood = houseRd?.food ?? 0
+  const foodPct = Math.min(100, (houseFood / 30) * 100)
+  const barColor = houseFood <= 1 ? '#ff4d4f' : houseFood < 5 ? '#faad14' : '#52c41a'
+
+  const thought = (() => {
+    if (houseFood <= 0.1) return configData.citizensThoughts.starving
+    if (c.isSick) return configData.citizensThoughts.sick
+    // 下班顺路买粮中
+    if (c.status === 'shopping')   return (configData.citizensThoughts as any).shopping   ?? '家里粮食快见底了，下班顺路去集市买些回来。'
+    if (c.status === 'returning')  return (configData.citizensThoughts as any).returning  ?? '货买好了，挑着担子赶紧回家，今晚不会断炊了。'
+    // 农夫：田里有积压粮食
+    if (c.farmZoneId) {
+      const farmZone = state.farmZones.find(z => z.id === c.farmZoneId)
+      const pile = farmZone?.piles.find(p => p.zoneId === c.farmZoneId)
+      if (pile && pile.age > 20) return '粮食堆在田里，运不出去，白忙活了！盼着粮仓赶紧来人收粮。'
+    }
+    // 宅邸贵族专属
+    if (c.residentTier === 'gentry') {
+      if (c.satisfaction < 40) return '家中仆役不足，茶水冷了也无人续，这日子实在难熬。'
+      if (c.satisfaction < 65) return '城里缺些雅趣，书院、茶坊都不近，委实无聊。'
+      return '家资丰厚，茶香四溢，倒也颇为惬意。'
+    }
+    // 宅邸仆役专属
+    if (c.residentTier === 'servant') return '在宅邸当差，虽然辛苦，好歹衣食不愁。'
+    if (!c.workplaceId && !c.farmZoneId) return configData.citizensThoughts.unemployed
+    if (c.needs.safety < 0.35) return configData.citizensThoughts.unsafety
+    if (c.needs.culture < 0.35) return configData.citizensThoughts.lowCulture
+    if (c.needs.food < 0.45) return configData.citizensThoughts.lowFood
+    return c.isAtHome ? configData.citizensThoughts.atHomeHappy : configData.citizensThoughts.atWorkFocused
+  })()
+
+  const profLabel = c.profession
+    ? (JOB_REGISTRY[c.profession]?.label ?? c.profession)
+    : c.workplaceId
+      ? (BUILDING_LABEL[state.buildings.find(b => b.id === c.workplaceId)?.type ?? ''] ?? '工坊') + '工'
+      : '待业'
+
+  // Back button: if we came from a house or manor, go back to it
+  const canGoBack = Boolean(house && state.buildings.some(b => b.id === c.houseId && (b.type === 'house' || b.type === 'manor')))
+
+  const tierTag = c.residentTier === 'gentry'
+    ? <Tag color="gold" style={{ fontSize: 11 }}>宅邸贵族</Tag>
+    : c.residentTier === 'servant'
+      ? <Tag color="blue" style={{ fontSize: 11 }}>宅邸仆役</Tag>
+      : null
+
+  return (
+    <Space direction="vertical" size={10} style={{ width: '100%', paddingBottom: 12 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Space size={6}>
+          <Typography.Text strong style={{ fontSize: 15, color: 'rgba(240,215,160,1)' }} data-testid="selected-citizen-name">
+            {c.name}
+          </Typography.Text>
+          {tierTag}
+          <Tag color={c.isSick ? 'error' : 'success'} style={{ fontSize: 11 }}>
+            {c.isSick ? '生病' : '健康'}
+          </Tag>
+        </Space>
+        <Space size={4}>
+          {canGoBack && (
+            <Button size="small" type="text" icon={<HomeOutlined />} title="返回住宅"
+              style={{ color: 'rgba(220,195,145,0.9)' }}
+              onClick={() => { selectBuilding(c.houseId); selectCitizen(null) }} />
+          )}
+          <Button size="small" type="text" icon={<CloseOutlined />}
+            style={{ color: 'rgba(220,195,145,0.9)' }}
+            onClick={() => selectCitizen(null)} />
+        </Space>
+      </div>
+
+      {/* Basic info */}
+      <Card size="small" style={{ borderRadius: 8 }}>
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          <Row gutter={8}>
+            <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>年龄</Typography.Text><div style={{ fontWeight: 600 }}>{c.age} 岁</div></Col>
+            <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>性别</Typography.Text><div style={{ fontWeight: 600 }}>{GENDER_LABEL[c.gender] ?? c.gender}</div></Col>
+          </Row>
+          <Row gutter={8}>
+            <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>职业</Typography.Text><div style={{ fontWeight: 600 }}>{profLabel}</div></Col>
+            <Col span={12}><Typography.Text type="secondary" style={{ fontSize: 11 }}>状态</Typography.Text>
+              <div style={{ fontWeight: 600, color: c.status === 'shopping' ? '#1677ff' : c.status === 'returning' ? '#52c41a' : undefined }}>
+                {STATUS_LABEL[c.status] ?? (c.isAtHome ? '在家' : '通勤中')}
+              </div>
+            </Col>
+          </Row>
+          {workplace && (
+            <div>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>工作场所</Typography.Text>
+              <div style={{ fontWeight: 600 }}>{BUILDING_LABEL[workplace.type] ?? workplace.type} ({workplace.x},{workplace.y})</div>
+            </div>
+          )}
+        </Space>
+      </Card>
+
+      {/* Farmer complaint: pile stuck */}
+      {c.farmZoneId && (() => {
+        const farmZone = state.farmZones.find(z => z.id === c.farmZoneId)
+        const pile = farmZone?.piles.find(p => p.zoneId === c.farmZoneId)
+        if (!pile || pile.age <= 20) return null
+        return (
+          <Alert
+            type="warning" showIcon
+            message="粮食无法运出！"
+            description={`田间堆积 ${pile.amount.toFixed(1)} 担${pile.cropType === 'rice' ? '稻米' : '粮食'}，无人来运，农田已停产。`}
+            style={{ fontSize: 12, borderRadius: 8 }}
+          />
+        )
+      })()}
+
+      {/* Shopping activity card: shows when heading to / returning from market */}
+      {(c.status === 'shopping' || c.status === 'returning') && (() => {
+        const motion = c.motion
+        const targetMarket = motion?.targetId ? state.buildings.find(b => b.id === motion.targetId) : null
+        return (
+          <Alert
+            type={c.status === 'returning' ? 'success' : 'info'}
+            showIcon
+            message={
+              <span style={{ fontSize: 12 }}>
+                {c.status === 'shopping'
+                  ? `🛒 前往集市${targetMarket ? `（${targetMarket.x}, ${targetMarket.y}）` : ''}买粮`
+                  : '🏠 买完粮食，正挑担回家'}
+              </span>
+            }
+            description={
+              <span style={{ fontSize: 11 }}>
+                家中余粮 <b>{houseFood.toFixed(1)}</b> 担 — 下班顺路补货
+              </span>
+            }
+            style={{ borderRadius: 8 }}
+          />
+        )
+      })()}
+
+      {/* Needs — detailed ladder */}
+      <Card size="small" title="需求层次" style={{ borderRadius: 8 }}>
+        <Space direction="vertical" size={3} style={{ width: '100%' }}>
+          {(() => {
+            const hc = house?.residentData?.crops
+            const food = houseRd?.food ?? 0
+            const savings = houseRd?.savings ?? 0
+            const dietVarietyHere = hc ? Object.values(hc).filter(v => v > 0.1).length : 0
+            const hasTea = hc ? (hc.tea ?? 0) > 0.1 : false
+            const house2 = state.buildings.find(b => b.id === c.houseId)
+            const hx = house2?.x ?? 0, hy = house2?.y ?? 0
+            const cheb = (bx: number, by: number) => Math.max(Math.abs(bx - hx), Math.abs(by - hy))
+            const nearMarket = state.buildings.some(b => b.type === 'market' && cheb(b.x, b.y) <= 10)
+            const nearAcademy = dietVarietyHere >= 2 && state.buildings.some(b => (b.type as string) === 'academy' && cheb(b.x, b.y) <= 15)
+            const nearEntertainment = state.buildings.some(b =>
+              ((b.type as string) === 'tavern' || (b.type as string) === 'teahouse') && cheb(b.x, b.y) <= 8)
+            const nearTemple = state.buildings.some(b => (b.type as string) === 'temple' && cheb(b.x, b.y) <= 12)
+            const nearCulturalVenue = state.buildings.some(b =>
+              ((b.type as string) === 'academy' || (b.type as string) === 'papermill') && cheb(b.x, b.y) <= 15)
+            const isGentry = c.residentTier === 'gentry'
+            const servantCount = house2 && (house2.type as string) === 'manor'
+              ? state.citizens.filter(x => x.houseId === house2.id && x.workplaceId === house2.id).length
+              : 0
+            const hasJob = Boolean(c.workplaceId || c.farmZoneId)
+            const hasRoad = state.roads.some(r =>
+              (Math.abs(r.x - hx) === 1 && r.y === hy) ||
+              (Math.abs(r.y - hy) === 1 && r.x === hx))
+            const needRows: { label: string; met: boolean; tier: number; gentry?: boolean }[] = [
+              { tier: 1, label: '🍚 温饱',    met: food >= 2 },
+              { tier: 2, label: '🌾 粮足',    met: food >= 8 },
+              { tier: 2, label: '🛣 道路通达', met: hasRoad },
+              { tier: 3, label: '💼 有业可从', met: hasJob },
+              { tier: 3, label: '🍱 饮食多样', met: dietVarietyHere >= 2 },
+              { tier: 3, label: '💰 积蓄盈余', met: savings >= 20 },
+              { tier: 4, label: '🎨 食多味美', met: dietVarietyHere >= 3 },
+              { tier: 4, label: '🏪 市场便利', met: nearMarket },
+              { tier: 5, label: '📚 文教兴旺', met: nearAcademy },
+              { tier: 5, label: '🎭 娱乐休闲', met: nearEntertainment },
+              { tier: 6, label: '🎉 节庆热闹', met: nearEntertainment && nearTemple },
+              { tier: 6, label: '📖 书香雅物', met: nearCulturalVenue },
+              { tier: 7, label: '👘 侍从服务', met: isGentry && servantCount >= 2, gentry: true },
+              { tier: 7, label: '🍜 精馔佳肴', met: isGentry && food >= 20 && hasTea && dietVarietyHere >= 4, gentry: true },
+            ]
+            const visibleRows = needRows.filter(r => !r.gentry || isGentry)
+            return visibleRows.map(({ label, met, tier, gentry }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Space size={4}>
+                  <Tag style={{ fontSize: 9, padding: '0 3px', opacity: 0.7 }}>T{tier}</Tag>
+                  <Typography.Text style={{ fontSize: 12, color: gentry ? '#d48806' : undefined }}>{label}</Typography.Text>
+                </Space>
+                <Tag color={met ? 'success' : 'error'} style={{ fontSize: 10, padding: '0 4px' }}>
+                  {met ? '✓ 已满足' : '✗ 未满足'}
+                </Tag>
+              </div>
+            ))
+          })()}
+        </Space>
+      </Card>
+
+      {/* House food */}
+      {house && (
+        <Card size="small" title="🌾 家中粮食" style={{ borderRadius: 8 }}>
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography.Text style={{ fontSize: 12 }}>{CROP_LABEL.rice}</Typography.Text>
+              <Typography.Text strong style={{ color: barColor, fontSize: 12 }}>
+                {houseFood.toFixed(1)} 担
+              </Typography.Text>
+            </div>
+            <div className="food-bar-bg">
+              <div className="food-bar-fill" style={{ width: `${foodPct}%`, background: barColor }} />
+            </div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              所住: {house.x}, {house.y}
+            </Typography.Text>
+          </Space>
+        </Card>
+      )}
+
+      {/* Thought bubble */}
+      <Alert showIcon type={houseFood <= 0.1 || c.isSick ? 'warning' : 'info'}
+        message={<span style={{ fontSize: 12 }}>💬 {thought}</span>}
+        style={{ padding: '4px 10px', borderRadius: 8 }} />
+
+      {/* Satisfaction → 安乐度 */}
+      <div style={{ textAlign: 'center' }}>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>安乐度</Typography.Text>
+        <Progress type="circle" percent={c.satisfaction} size={60}
+          strokeColor={c.satisfaction >= 70 ? '#52c41a' : c.satisfaction >= 40 ? '#faad14' : '#ff4d4f'} />
+        {(() => {
+          const hc = house?.residentData?.crops
+          const dietCount = hc ? Object.values(hc).filter(v => v > 0.1).length : 0
+          const info = dietVarietyInfo(dietCount)
+          return (
+            <div style={{ marginTop: 4 }}>
+              <Tag color={info.color} style={{ fontSize: 11 }}>
+                🍽 饮食：{info.label}（{dietCount}种）
+              </Tag>
+              {dietCount >= 3 && (
+                <div style={{ fontSize: 11, color: '#52c41a', marginTop: 2 }}>✨ 饮食多样·安乐加成</div>
+              )}
+            </div>
+          )
+        })()}
+      </div>
+    </Space>
+  )
+}

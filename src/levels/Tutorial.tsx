@@ -50,11 +50,13 @@ type StepId =
   | 'start'
   | 'waiting-resident' | 'house-entry-road' | 'waiting-resident-2'
   | 'resident-settle' | 'resident-inspect'
-  | 'farmzone-select' | 'farmzone-place'
-  | 'connect-road'
-  | 'granary-open' | 'granary-select'
-  | 'market-open' | 'market-select'
   | 'done'
+
+// ─── Commented-out future steps ───────────────────────────────────────────────
+// | 'farmzone-select' | 'farmzone-place'
+// | 'connect-road'
+// | 'granary-open' | 'granary-select'
+// | 'market-open' | 'market-select'
 
 interface TutStep {
   id: StepId
@@ -146,56 +148,51 @@ const STEPS: TutStep[] = [
   {
     id: 'resident-inspect', emoji: '📋', title: '宅邸详情', manual: true,
     targetId: 'house-info-panel',
-    hideSpotlight: () => true,   // panel is already open; no spotlight overlay needed
+    hideSpotlight: () => true,
     body:      '右侧面板即为宅邸详情，汝可于此察看：\n\n🏠 住户 — 已入住人口 / 最大容纳数\n💰 积蓄 — 此户人家现存钱财，用于购粮、纳税\n🍽 饮食多样 — 食粮种类愈丰，百姓愈是安乐\n❤ 满意度 — 此乃民心所向，满意度低则百姓离城\n\n——民者，邦之本也。万般治政，皆为黎庶温饱而设。\n\n察看完毕后，点击【继续】。',
     bodyTouch: '下方即为宅邸详情：\n\n🏠 住户 — 入住/容纳\n💰 积蓄 — 家中钱财\n🍽 饮食 — 食粮种类\n❤ 满意度 — 民心所向\n\n察看后点击【继续】。',
   },
   {
-    id: 'farmzone-select', emoji: '🌾', title: '第四步：选择农田工具', targetId: 'farmzone-tool',
-    body:      '点击底部工具栏中的【🌾粮田】按钮。只有河流附近的土地才能耕种，选中后地图会亮出绿色可耕区域。',
-    bodyTouch: '点击底部工具栏中的【🌾粮田】按钮。只有河流附近的土地才能耕种。',
-    hideSpotlight: (s) => s.selectedTool === 'farmZone',
-  },
-  {
-    id: 'farmzone-place', emoji: '🌊', title: '第五步：河边开荒',
-    body:      '地图上绿点即可耕之地。点击绿点放置粮田——只有河流五格以内的平地，才能引水灌溉、五谷丰登。',
-    bodyTouch: '地图上绿点即可耕之地。点击（或拖动）绿点放置粮田——只有河流附近的平地才能耕种。',
-  },
-  {
-    id: 'connect-road', emoji: '🔗', title: '第六步：道路连通农田', targetId: 'road-tool',
-    body:      '粮田孤立无援，无法运粮！选择【道路】工具，将道路延伸至紧邻粮田的格子。只有道路相连，牛车才能运粮出田。',
-    bodyTouch: '粮田孤立无援！选择【道路】工具，将道路延伸至紧邻粮田的格子，牛车才能运粮。',
-    hideSpotlight: (s) => s.selectedTool === 'road',
-  },
-  {
-    id: 'granary-open', emoji: '🏗', title: '第七步：打开建筑面板', targetId: 'building-btn',
-    body:      '粮食需要仓储！点击底部工具栏的【🏗 建筑】按钮，打开建筑选择面板。',
-    bodyTouch: '粮食需要仓储！点击底部工具栏的【🏗 建筑】按钮，打开建筑选择面板。',
-  },
-  {
-    id: 'granary-select', emoji: '🏚', title: '第七步：建造粮仓',
-    targetId: 'storage-tab', fallbackTargetId: 'granary-tool',
-    body:      '① 点击【仓储】标签\n② 选择【常平仓】\n③ 点击空地放置，牛车将把田间粮食运入仓中。',
-    bodyTouch: '① 点击【仓储】标签\n② 选择【常平仓】\n③ 点击空地放置。',
-    hideSpotlight: (s, uf) => uf && s.selectedTool === 'granary',
-  },
-  {
-    id: 'market-open', emoji: '🏗', title: '第八步：打开建筑面板', targetId: 'building-btn',
-    body:      '民以食为天，粮食需要流通！点击【🏗 建筑】按钮，准备建造集市。',
-    bodyTouch: '民以食为天！点击【🏗 建筑】按钮，准备建造集市。',
-  },
-  {
-    id: 'market-select', emoji: '🛒', title: '第八步：建造集市',
-    targetId: 'commercial-tab', fallbackTargetId: 'market-tool',
-    body:      '① 点击【商业】标签\n② 选择【草市】\n③ 点击空地放置，百姓每十天来此购粮。',
-    bodyTouch: '① 点击【商业】标签\n② 选择【草市】\n③ 点击空地放置。',
-    hideSpotlight: (s, uf) => uf && (s.selectedTool as string) === 'market',
-  },
-  {
-    id: 'done', emoji: '🎉', title: '大功告成！',
-    body: '完整的生产循环已然建立：\n🌾 农田丰收 → 🐂 牛车运粮 → 🏚 粮仓储存 → 🏪 集市售卖 → 🍚 百姓温饱\n\n这座新城，已生气勃勃！愿君治世，国泰民安。',
+    id: 'done', emoji: '🎉', title: '初城已成！',
+    body: '恭喜！你已完成新手引导：\n\n🛣 修路通衢 → 🏠 建居安民 → 🚶 移民入城\n\n这座新城，已有了第一批百姓。\n\n接下来你可以自由探索——开荒农田、兴建粮仓、设立集市，让城市欣欣向荣！',
   },
 ]
+
+// ─── Commented-out farming tutorial steps ────────────────────────────────────
+// {
+//   id: 'farmzone-select', emoji: '🌾', title: '第四步：选择农田工具', targetId: 'farmzone-tool',
+//   body: '点击底部工具栏中的【🌾粮田】按钮。只有河流附近的土地才能耕种，选中后地图会亮出绿色可耕区域。',
+//   hideSpotlight: (s) => s.selectedTool === 'farmZone',
+// },
+// {
+//   id: 'farmzone-place', emoji: '🌊', title: '第五步：河边开荒',
+//   body: '地图上绿点即可耕之地。点击绿点放置粮田——只有河流五格以内的平地，才能引水灌溉、五谷丰登。',
+// },
+// {
+//   id: 'connect-road', emoji: '🔗', title: '第六步：道路连通农田', targetId: 'road-tool',
+//   body: '粮田孤立无援，无法运粮！选择【道路】工具，将道路延伸至紧邻粮田的格子。只有道路相连，牛车才能运粮出田。',
+//   hideSpotlight: (s) => s.selectedTool === 'road',
+// },
+// {
+//   id: 'granary-open', emoji: '🏗', title: '第七步：打开建筑面板', targetId: 'building-btn',
+//   body: '粮食需要仓储！点击底部工具栏的【🏗 建筑】按钮，打开建筑选择面板。',
+// },
+// {
+//   id: 'granary-select', emoji: '🏚', title: '第七步：建造粮仓',
+//   targetId: 'storage-tab', fallbackTargetId: 'granary-tool',
+//   body: '① 点击【仓储】标签\n② 选择【常平仓】\n③ 点击空地放置，牛车将把田间粮食运入仓中。',
+//   hideSpotlight: (s, uf) => uf && s.selectedTool === 'granary',
+// },
+// {
+//   id: 'market-open', emoji: '🏗', title: '第八步：打开建筑面板', targetId: 'building-btn',
+//   body: '民以食为天，粮食需要流通！点击【🏗 建筑】按钮，准备建造集市。',
+// },
+// {
+//   id: 'market-select', emoji: '🛒', title: '第八步：建造集市',
+//   targetId: 'commercial-tab', fallbackTargetId: 'market-tool',
+//   body: '① 点击【商业】标签\n② 选择【草市】\n③ 点击空地放置，百姓每十天来此购粮。',
+//   hideSpotlight: (s, uf) => uf && (s.selectedTool as string) === 'market',
+// },
 
 // ─── 3D→2D beacon: projects a world tile position to screen coords ────────────
 
@@ -225,7 +222,6 @@ function projectTileToScreen(tileX: number, tileY: number): BeaconScreenPos | nu
     sx > MARGIN && sx < sw - MARGIN &&
     sy > MARGIN && sy < sh - MARGIN
 
-  // angle from screen center
   const angle = Math.atan2(sy - sh / 2, sx - sw / 2)
 
   return { x: sx, y: sy, onScreen, angle }
@@ -488,7 +484,6 @@ export default function Tutorial({ onDismiss }: Props) {
   const [beaconRect, setBeaconRect] = React.useState<DOMRect | null>(null)
   const [usingFallback, setUsingFallback] = React.useState(false)
 
-  // House beacon target — set when resident-settle step activates
   const [beaconHouse, setBeaconHouse] = React.useState<{ id: string; x: number; y: number } | null>(null)
 
   // ── Camera-interaction detection ─────────────────────────────────────────
@@ -539,13 +534,10 @@ export default function Tutorial({ onDismiss }: Props) {
         const dy    = e.touches[0].clientY - e.touches[1].clientY
         const dist  = Math.hypot(dx, dy)
         const angle = Math.atan2(dy, dx)
-        // Zoom: 与捏合开始时的距离相差 > 30px 才算完成
         if (Math.abs(dist - pinchStartDist) > 30) setZoomDone(true)
-        // Rotate: angular change > ~5° (0.09 rad) between the two fingers
         const raw = Math.abs(angle - lastPinchAngle)
         const angDiff = Math.min(raw, Math.PI * 2 - raw)
         if (angDiff > 0.09) setRotateDone(true)
-        // Any two-finger move of ≥ 8 px also counts as rotate attempt
         if (dist > 8 || Math.hypot(dx, dy) > 8) setRotateDone(true)
         lastPinchDist  = dist
         lastPinchAngle = angle
@@ -580,12 +572,12 @@ export default function Tutorial({ onDismiss }: Props) {
   const step = STEPS[Math.min(stepIdx, STEPS.length - 1)]
 
   // ── Building drawer auto-open/close ──────────────────────────────────────
-  const DRAWER_STEPS = new Set<StepId>(['house-select', 'granary-select', 'market-select'])
+  const DRAWER_STEPS = new Set<StepId>(['house-select'])
   React.useEffect(() => {
     if (DRAWER_STEPS.has(step.id)) {
       const open = (window as any).__OPEN_BUILDING_DRAWER__
       if (typeof open === 'function') open()
-    } else if (!['house-open', 'granary-open', 'market-open'].includes(step.id)) {
+    } else if (step.id !== 'house-open') {
       const close = (window as any).__CLOSE_BUILDING_DRAWER__
       if (typeof close === 'function') close()
     }
@@ -607,7 +599,6 @@ export default function Tutorial({ onDismiss }: Props) {
     else if (id === 'house-open')      done = drawerOpen
     else if (id === 'house-select')    done = state.buildings.filter(b => b.type === 'house').length > init.houses
     else if (id === 'house-road') {
-      // Pass immediately if any house already has an adjacent road; otherwise wait for one
       done = state.buildings
         .filter(b => b.type === 'house' || b.type === 'manor')
         .some(b =>
@@ -618,37 +609,15 @@ export default function Tutorial({ onDismiss }: Props) {
     }
     else if (id === 'start')           done = state.running
     else if (id === 'waiting-resident') {
-      // If houses exist but aren't reachable from entry → advance to house-entry-road step
       const houses = state.buildings.filter(b => b.type === 'house' || b.type === 'manor')
       done = houses.length > 0 && !housesReachableFromEntry(state.roads, houses)
     }
     else if (id === 'house-entry-road') {
-      // Road network now reaches a house → advance to waiting-resident-2
       const houses = state.buildings.filter(b => b.type === 'house' || b.type === 'manor')
       done = housesReachableFromEntry(state.roads, houses)
     }
-    // waiting-resident-2: no auto-advance; residentSettledRef handles the jump to resident-settle
+    // waiting-resident-2: no auto-advance; residentSettledRef handles jump to resident-settle
     else if (id === 'resident-settle') done = beaconHouse !== null && state.selectedBuildingId === beaconHouse.id
-    else if (id === 'farmzone-select') done = state.selectedTool === 'farmZone'
-    else if (id === 'farmzone-place')  done = state.farmZones.length > 0
-    else if (id === 'connect-road') {
-      done = state.farmZones.some(z => {
-        const tiles = [
-          { x: z.x, y: z.y }, { x: z.x + 1, y: z.y },
-          { x: z.x, y: z.y + 1 }, { x: z.x + 1, y: z.y + 1 },
-        ]
-        return tiles.some(t =>
-          state.roads.some(r =>
-            (Math.abs(r.x - t.x) === 1 && r.y === t.y) ||
-            (r.x === t.x && Math.abs(r.y - t.y) === 1),
-          ),
-        )
-      })
-    }
-    else if (id === 'granary-open')   done = drawerOpen
-    else if (id === 'granary-select') done = state.buildings.some(b => b.type === 'granary')
-    else if (id === 'market-open')    done = drawerOpen
-    else if (id === 'market-select')  done = state.buildings.some(b => (b.type as string) === 'market')
 
     if (!done) return
 
@@ -681,38 +650,26 @@ export default function Tutorial({ onDismiss }: Props) {
   React.useEffect(() => {
     if (step.id === 'resident-settle') {
       selectTool('pan')
-      // Fly camera to the newly settled house
       if (beaconHouse) {
         ;(window as any).__ORE_COMPASS_TARGET__ = { id: Date.now(), x: beaconHouse.x, y: beaconHouse.y }
       }
     }
   }, [step.id]) // eslint-disable-line
 
-  // Clear beacon when leaving resident-settle step
-  React.useEffect(() => {
-    if (step.id !== 'resident-settle' && step.id !== 'resident-inspect') {
-      // keep beacon visible during inspect too; clear after
-    }
-    if (step.id !== 'resident-settle' && step.id !== 'resident-inspect') return
-  }, [step.id])
-
   // ── Tutorial camera follow: track first migrant during waiting steps ──────
   const MIGRANT_FOLLOW_STEPS = new Set<StepId>(['waiting-resident', 'house-entry-road', 'waiting-resident-2'])
   const isMigrantFollowStep = MIGRANT_FOLLOW_STEPS.has(step.id)
-  // Compute current migrant position (tile-space) from simulation state
   const firstMigrant = isMigrantFollowStep ? (state.migrants[0] ?? null) : null
   const migrantPos = firstMigrant ? logicalMigrantPos(firstMigrant) : null
 
-  // Drive camera follow via window global (picked up by MapScene useFrame)
   React.useEffect(() => {
     if (migrantPos) {
       ;(window as any).__TUTORIAL_CAM_FOLLOW__ = { x: migrantPos.x, y: migrantPos.y }
     } else {
       ;(window as any).__TUTORIAL_CAM_FOLLOW__ = null
     }
-  })  // runs every render when migrantPos changes
+  })
 
-  // Clear camera follow on unmount or when step leaves
   React.useEffect(() => {
     if (!isMigrantFollowStep) {
       ;(window as any).__TUTORIAL_CAM_FOLLOW__ = null
@@ -803,7 +760,6 @@ export default function Tutorial({ onDismiss }: Props) {
   const showHouseBeacon = step.id === 'resident-settle' && beaconHouse !== null
   const showMigrantBeacon = isMigrantFollowStep && migrantPos !== null
 
-  // ── Mobile compact bar for resident-inspect (bottom sheet takes 55vh) ───
   const mobileCompact = isTouch && step.id === 'resident-inspect'
 
   return (
@@ -866,7 +822,6 @@ export default function Tutorial({ onDismiss }: Props) {
 
       {/* ── Instruction panel ── */}
       {mobileCompact ? (
-        /* Mobile compact bar: sits just below top bar, won't overlap bottom sheet */
         <div style={{
           position: 'fixed',
           top: 56, left: 8, right: 8,
@@ -951,19 +906,32 @@ export default function Tutorial({ onDismiss }: Props) {
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(90,180,60,0.5)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'rgba(80,160,50,0.35)')}
               >🎊 开始大展宏图</button>
-            ) : isManual ? (
-              <button onClick={advance} style={{
-                background: 'rgba(130,95,25,0.4)', border: '1px solid rgba(220,175,70,0.75)',
-                borderRadius: 4, padding: '7px 28px', color: '#f5e090',
-                fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.25em', cursor: 'pointer',
-              }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(160,115,35,0.6)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(130,95,25,0.4)')}
-              >继续 →</button>
             ) : (
-              <span style={{ fontSize: 11, color: 'rgba(160,130,70,0.4)', letterSpacing: '0.08em' }}>
-                完成操作后自动进入下一步…
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {isManual && (
+                  <button onClick={advance} style={{
+                    background: 'rgba(130,95,25,0.4)', border: '1px solid rgba(220,175,70,0.75)',
+                    borderRadius: 4, padding: '7px 28px', color: '#f5e090',
+                    fontFamily: '"Noto Serif SC", serif', fontSize: 13, letterSpacing: '0.25em', cursor: 'pointer',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(160,115,35,0.6)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(130,95,25,0.4)')}
+                  >继续 →</button>
+                )}
+                {!isManual && (
+                  <span style={{ fontSize: 11, color: 'rgba(160,130,70,0.4)', letterSpacing: '0.08em' }}>
+                    完成操作后自动进入下一步…
+                  </span>
+                )}
+                <button onClick={advance} style={{
+                  background: 'transparent', border: '1px solid rgba(160,130,60,0.28)',
+                  borderRadius: 3, padding: '4px 12px', color: 'rgba(180,150,80,0.55)',
+                  fontFamily: '"Noto Serif SC", serif', fontSize: 11, letterSpacing: '0.1em', cursor: 'pointer',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'rgba(220,185,100,0.85)'; e.currentTarget.style.borderColor = 'rgba(200,160,70,0.5)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'rgba(180,150,80,0.55)'; e.currentTarget.style.borderColor = 'rgba(160,130,60,0.28)' }}
+                >略过此步</button>
+              </div>
             )}
             <button onClick={handleDismiss} style={{
               background: 'transparent', border: '1px solid rgba(140,110,55,0.22)',
