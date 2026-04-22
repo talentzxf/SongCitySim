@@ -341,6 +341,13 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const handleDismiss = React.useCallback(() => { setDismissed(true); onDismiss?.() }, [onDismiss])
   const handleDone    = React.useCallback(() => { setDismissed(true); onDismiss?.() }, [onDismiss])
 
+  // ── Test hooks ────────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    if (!activeSeq || !step) return
+    ;(window as any).__EVT_TUTORIAL_STATE__   = { stepId: step.id, stepIdx, total: activeSeq.length }
+    ;(window as any).__EVT_TUTORIAL_ADVANCE__ = () => advance()
+  })
+
   if (!activeSeq || dismissed || !step) return null
 
   const isDone   = step.id === 'done-farming'
@@ -379,7 +386,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
       {showFlashSpotlight && <FlashSpotlight targetId={step.targetId!} />}
 
       {/* ── Instruction panel ── */}
-      <div style={{
+      <div data-evt-tutorial-panel style={{
         position: 'fixed',
         ...panelStyle,
         zIndex: 9410,

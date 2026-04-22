@@ -44,7 +44,8 @@ export default function LoadingScreen({ visible, onEnter }: Props) {
       position: 'fixed', inset: 0, zIndex: 9999,
       opacity: fading ? 0 : 1,
       transition: 'opacity 0.8s ease',
-      pointerEvents: fading ? 'none' : 'auto',
+      // When not showing interactive buttons (fading or not visible), pass all events through
+      pointerEvents: (fading || !visible) ? 'none' : 'auto',
     }}>
       {/* Cover image */}
       <div style={{

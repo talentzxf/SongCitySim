@@ -160,6 +160,15 @@ export default function App() {
     return () => clearTimeout(id)
   }, [])
 
+  // ── E2E test navigation bridge ────────────────────────────────────────────
+  React.useEffect(() => {
+    ;(window as any).__TEST_NAVIGATE__ = (opts: { screen?: string; levelId?: string }) => {
+      if (opts.levelId !== undefined) setActiveLevelId(opts.levelId)
+      if (opts.screen) setScreen(opts.screen as Screen)
+    }
+    return () => { delete (window as any).__TEST_NAVIGATE__ }
+  }, [])
+
   const handleMode = (mode: 'campaign' | 'sandbox' | 'load') => {
     if (mode === 'campaign') {
       setScreen('level-select')

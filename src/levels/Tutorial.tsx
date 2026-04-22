@@ -733,6 +733,13 @@ export default function Tutorial({ onDismiss }: Props) {
     onDismiss()
   }, [onDismiss])
 
+  // ── Test hooks ────────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    ;(window as any).__TUTORIAL_STATE__   = { stepId: step.id, stepIdx, total: STEPS.length }
+    ;(window as any).__TUTORIAL_ADVANCE__ = () => advance()
+    ;(window as any).__TUTORIAL_DISMISS__ = () => handleDismiss()
+  })
+
   if (dismissed) return null
 
   const isDone   = step.id === 'done'
@@ -844,7 +851,7 @@ export default function Tutorial({ onDismiss }: Props) {
 
       {/* ── Instruction panel ── */}
       {mobileCompact ? (
-        <div style={{
+        <div data-tutorial-panel style={{
           position: 'fixed',
           top: 56, left: 8, right: 8,
           zIndex: 9510,
@@ -870,7 +877,7 @@ export default function Tutorial({ onDismiss }: Props) {
           }}>继续 →</button>
         </div>
       ) : (
-        <div style={{
+        <div data-tutorial-panel style={{
           position: 'fixed',
           ...(panelPos === 'top-center'
             ? isTouch
