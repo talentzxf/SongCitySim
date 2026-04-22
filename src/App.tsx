@@ -10,6 +10,7 @@ import LoadingScreen from './ui/LoadingScreen'
 import LevelSelect from './levels/LevelSelect'
 import LevelIntro from './levels/LevelIntro'
 import Tutorial from './levels/Tutorial'
+import EventTutorial from './levels/EventTutorial'
 import LEVELS from './levels/levelsData'
 import { LevelProvider } from './levels/LevelContext'
 import type { MapBounds } from './levels/levelsData'
@@ -146,6 +147,8 @@ export default function App() {
 
   const [tutorialDone, setTutorialDone] = React.useState(false)
   const showTutorial = screen === 'game' && activeLevelId === 'l01' && !tutorialDone
+  // EventTutorial fires after main tutorial is done (or when playing non-l01 levels / sandbox)
+  const showEventTutorial = screen === 'game' && tutorialDone
 
   const activeLevel = React.useMemo(
     () => activeLevelId ? (LEVELS.find(l => l.id === activeLevelId) ?? null) : null,
@@ -209,6 +212,7 @@ export default function App() {
               <div className="app-root" style={{ opacity: screen === 'game' ? 1 : 0, transition: 'opacity 0.6s ease 0.1s', pointerEvents: screen === 'game' ? 'auto' : 'none' }}>
                 <HUD />
                 {showTutorial && <Tutorial onDismiss={() => setTutorialDone(true)} />}
+                {showEventTutorial && <EventTutorial mainDone={tutorialDone} />}
                 <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
                 <MapScene />
                 <ControlsBridge controlsRef={controlsRef} bounds={bounds} />

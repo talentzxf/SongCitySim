@@ -464,6 +464,7 @@ function BuildingDrawer({ open, onClose, paletteGroups }: {
               <span data-tutorial={
                 group.category === 'storage'     ? 'storage-tab'    :
                 group.category === 'commercial'  ? 'commercial-tab' :
+                group.category === 'farming'     ? 'farming-tab'    :
                 group.category === 'residential' ? 'residential-tab': undefined
               }>
                 {group.label}
@@ -484,9 +485,10 @@ function BuildingDrawer({ open, onClose, paletteGroups }: {
                         size="small"
                         type={isSelected ? 'primary' : 'default'}
                         data-tutorial={
-                          b.id === 'house'   ? 'house-tool'   :
-                          b.id === 'granary' ? 'granary-tool' :
-                          b.id === 'market'  ? 'market-tool'  : undefined
+                          b.id === 'house'     ? 'house-tool'    :
+                          b.id === 'granary'   ? 'granary-tool'  :
+                          b.id === 'market'    ? 'market-tool'   :
+                          b.id === 'farmZone'  ? 'farmzone-tool' : undefined
                         }
                         onClick={() => { if (active) { selectTool(b.id as BuildingType); onClose() } }}
                         style={{ textAlign: 'left', width: '100%', opacity: active ? 1 : 0.35, cursor: active ? 'pointer' : 'not-allowed' }}
@@ -952,11 +954,11 @@ function AdvicePanel() {
   const top = advice[0]
 
     return (
-    <Collapse size="small" items={[{
+    <Collapse size="small" data-tutorial="advice-panel" items={[{
       key: 'advice',
       label: (
         <Space size={4}>
-          <span style={{ fontSize: 12 }}>📋 上奏</span>
+          <span style={{ fontSize: 12 }} data-tutorial="advice-label">📋 上奏</span>
           <Tag color={top.severity === 'error' ? 'error' : top.severity === 'warning' ? 'warning' : 'success'}
             style={{ fontSize: 10, padding: '0 4px' }}>
             {advice.filter(a => a.severity === 'error').length > 0
