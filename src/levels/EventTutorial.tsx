@@ -351,14 +351,23 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const showFlashSpotlight = step.flash && step.targetId
 
   // Panel placement:
-  //  • Building drawer open → center (don't block the drawer)
+  //  • Stats-related steps (notice-badge, open-advice, flash-advice, close-stats):
+  //    spotlight is on the LEFT (stats panel / stats-toggle) → panel goes top-right
+  //  • Building drawer open → top-right (don't cover the drawer)
   //  • Bottom-toolbar target (midY > 52%) → top-center
+  //  • done-farming / manual steps → center
   //  • Everything else → center
+  const STATS_STEPS = new Set(['notice-badge', 'open-advice', 'flash-advice', 'close-stats'])
   const buildingDrawerOpen = !!(window as any).__BUILDING_DRAWER_OPEN__
-  const panelAtTop = !buildingDrawerOpen && !!targetRect &&
+  const panelAtTopRight = STATS_STEPS.has(step.id) || buildingDrawerOpen
+  const panelAtTop = !panelAtTopRight && !!targetRect &&
     (targetRect.top + targetRect.height / 2) > window.innerHeight * 0.52
 
-  const panelStyle: React.CSSProperties = panelAtTop
+  const panelStyle: React.CSSProperties = panelAtTopRight
+    ? isTouch
+      ? { top: 8, right: 8 }
+      : { top: 24, right: 24 }
+    : panelAtTop
     ? isTouch
       ? { top: 8,  left: 8, right: 8,  transform: 'none' }
       : { top: 24, left: '50%', transform: 'translateX(-50%)' }

@@ -754,19 +754,35 @@ export default function Tutorial({ onDismiss }: Props) {
   const isManual = step.manual === true
   const PAD = 8
 
-  // Smart panel placement: if spotlight target is in the lower half → panel goes to top so it
-  // doesn't block the target (e.g. bottom toolbar buttons). Default is center.
-  // Panel placement rules:
-  //  • Building drawer open → center (don't block the drawer)
-  //  • resident-settle / resident-inspect → bottom-left (property panel is on the right)
-  //  • Bottom-toolbar spotlight (beaconRect midY > 52%) → top-center (don't block the button)
-  //  • Everything else → center
-  const panelSide: 'top' | 'bottom' | 'center' = (() => {
-    if (drawerOpen) return 'center'
-    if (step.id === 'resident-settle' || step.id === 'resident-inspect') return 'bottom'
+  // Smart panel placement — each step's panel goes where it won't block the player's
+  // visual focus or the UI element they need to interact with.
+  //
+  //  top-right   — map-interaction steps (pan/zoom/rotate) and "waiting" steps where the
+  //                player watches the migrant walk in; also steps whose spotlight is on the
+  //                left side (stats-toggle) so the panel stays out of that area
+  //  top-center  — steps whose spotlight is on the bottom toolbar
+  //  bottom-left — resident-settle / resident-inspect (property panel is on the right)
+  //  bottom-right— start step (spotlight is at the top bar, panel at bottom-right corner)
+  //  center      — fallback / done screen
+  type PanelPos = 'top-center' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+
+  const panelPos: PanelPos = (() => {
+    // Map-interaction training steps: stay in top-right corner, leave the whole map free
+    if (['pan-drag', 'pan-rotate', 'pan-zoom'].includes(step.id)) return 'top-right'
+    // Watching the migrant walk in: top-right so the camera follow-view isn't blocked
+    if (step.id === 'waiting-resident' || step.id === 'waiting-resident-2') return 'top-right'
+    // Building drawer open: anchor to top-right so the drawer (right or bottom) isn't blocked
+    if (drawerOpen) return 'top-right'
+    // resident panels: bottom-left — property panel is on the right
+    if (step.id === 'resident-settle' || step.id === 'resident-inspect') return 'bottom-left'
+    // start button is at the top bar: panel goes to bottom-right
+    if (step.id === 'start') return 'bottom-right'
+    // city-stats steps: spotlight is on the left → panel goes to top-right
+    if (step.id === 'city-stats-open' || step.id === 'city-stats-close') return 'top-right'
+    // Bottom-toolbar spotlight (midY > 52%) → top-center so the spotlight is visible
     if (beaconRect) {
       const midY = beaconRect.top + beaconRect.height / 2
-      return midY > window.innerHeight * 0.52 ? 'top' : 'center'
+      return midY > window.innerHeight * 0.52 ? 'top-center' : 'center'
     }
     return 'center'
   })()
@@ -873,14 +889,22 @@ export default function Tutorial({ onDismiss }: Props) {
       ) : (
         <div style={{
           position: 'fixed',
-          ...(panelSide === 'top'
+          ...(panelPos === 'top-center'
             ? isTouch
-              ? { top: 8, left: 8, right: 8, transform: 'none' }
-              : { top: 24, left: 16, right: 16, transform: 'none' }
-            : panelSide === 'bottom'
+              ? { top: 8,  left: 8, right: 8, transform: 'none' }
+              : { top: 24, left: '50%', transform: 'translateX(-50%)' }
+            : panelPos === 'top-right'
+            ? isTouch
+              ? { top: 8,  right: 8, transform: 'none' }
+              : { top: 24, right: 24, transform: 'none' }
+            : panelPos === 'bottom-left'
             ? isTouch
               ? { bottom: 60, left: 8, right: 8, transform: 'none' }
               : { bottom: 24, left: 16, top: 'auto', transform: 'none' }
+            : panelPos === 'bottom-right'
+            ? isTouch
+              ? { bottom: 60, left: 8, right: 8, transform: 'none' }
+              : { bottom: 24, right: 24, top: 'auto', transform: 'none' }
             : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }),
           zIndex: 9510,
           width: isTouch ? 'min(92vw, 480px)' : 'clamp(300px, 46vw, 560px)',
