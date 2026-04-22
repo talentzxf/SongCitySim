@@ -213,6 +213,7 @@ function StatsPanel({
         className={`stats-toggle-btn${collapsed ? '' : ' open'}`}
         onClick={() => setCollapsed(v => !v)}
         title={collapsed ? '展开面板' : '收起面板'}
+        data-tutorial="stats-toggle"
       >
         {collapsed ? '▶' : '◀'}
       </button>
