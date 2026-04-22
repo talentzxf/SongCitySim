@@ -76,29 +76,6 @@ export default function LoadingScreen({ visible, onEnter }: Props) {
         gap: 0,
       }}>
 
-        {/* Title — two-line stacked */}
-        <div style={{
-          fontFamily: '"Noto Serif SC", "Source Han Serif", "SimSun", serif',
-          textAlign: 'center',
-          marginBottom: '0.6em',
-        }}>
-          <div style={{
-            fontSize: 'clamp(38px, 5.5vw, 68px)',
-            fontWeight: 900,
-            letterSpacing: '0.35em',
-            color: '#f5e4be',
-            textShadow: '0 0 50px rgba(210,160,60,0.65), 0 2px 10px rgba(0,0,0,0.95)',
-            lineHeight: 1.15,
-          }}>永宋千秋</div>
-          <div style={{
-            fontSize: 'clamp(22px, 3vw, 40px)',
-            fontWeight: 700,
-            letterSpacing: '0.5em',
-            color: '#d4a85a',
-            textShadow: '0 0 30px rgba(190,140,50,0.5), 0 2px 8px rgba(0,0,0,0.9)',
-            lineHeight: 1.4,
-          }}>城筑天下</div>
-        </div>
 
         {/* Flavor quote */}
         <div style={{

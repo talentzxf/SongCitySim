@@ -49,7 +49,6 @@ type StepId =
   | 'start'
   | 'waiting-resident' | 'house-entry-road' | 'waiting-resident-2'
   | 'resident-settle' | 'resident-inspect'
-  | 'city-stats-open' | 'city-stats-close'
   | 'done'
 
 // ─── Commented-out future steps ───────────────────────────────────────────────
@@ -145,18 +144,6 @@ const STEPS: TutStep[] = [
     hideSpotlight: () => true,
     body:      '右侧面板即为宅邸详情，汝可于此察看：\n\n🏠 住户 — 已入住人口 / 最大容纳数\n💰 积蓄 — 此户人家现存钱财，用于购粮、纳税\n🍽 饮食多样 — 食粮种类愈丰，百姓愈是安乐\n❤ 满意度 — 此乃民心所向，满意度低则百姓离城\n\n——民者，邦之本也。万般治政，皆为黎庶温饱而设。\n\n察看完毕后，点击【继续】。',
     bodyTouch: '下方即为宅邸详情：\n\n🏠 住户 — 入住/容纳\n💰 积蓄 — 家中钱财\n🍽 饮食 — 食粮种类\n❤ 满意度 — 民心所向\n\n察看后点击【继续】。',
-  },
-  {
-    id: 'city-stats-open', emoji: '📊', title: '城市概览', targetId: 'stats-toggle',
-    body:      '左侧有一个【城市概览】面板，汇聚全城一览：人口、钱粮、粮仓存量、税收等。\n\n点击左侧的 ▶ 按钮，将面板展开。',
-    bodyTouch: '左侧有一个【城市概览】面板。\n点击 ▶ 按钮将它展开，查看全城数据。',
-    hideSpotlight: (s) => !document.querySelector('.stats-panel.collapsed'),
-  },
-  {
-    id: 'city-stats-close', emoji: '◀', title: '收起面板', targetId: 'stats-toggle',
-    body:      '面板已展开——你可以在这里随时查看城市运转状况。\n\n查看完毕后，点击 ◀ 按钮将面板收起，腾出更多地图视野。',
-    bodyTouch: '面板已展开，随时可在此查看城市状况。\n查看后点击 ◀ 按钮收起面板。',
-    hideSpotlight: (s) => !!document.querySelector('.stats-panel.collapsed'),
   },
   {
     id: 'done', emoji: '🎉', title: '初城已成！',
@@ -623,8 +610,6 @@ export default function Tutorial({ onDismiss }: Props) {
     }
     // waiting-resident-2: no auto-advance; residentSettledRef handles jump to resident-settle
     else if (id === 'resident-settle') done = beaconHouse !== null && state.selectedBuildingId === beaconHouse.id
-    else if (id === 'city-stats-open')  done = !document.querySelector('.stats-panel.collapsed')
-    else if (id === 'city-stats-close') done = !!document.querySelector('.stats-panel.collapsed')
 
     if (!done) return
 
@@ -777,8 +762,6 @@ export default function Tutorial({ onDismiss }: Props) {
     if (step.id === 'resident-settle' || step.id === 'resident-inspect') return 'bottom-left'
     // start button is at the top bar: panel goes to bottom-right
     if (step.id === 'start') return 'bottom-right'
-    // city-stats steps: spotlight is on the left → panel goes to top-right
-    if (step.id === 'city-stats-open' || step.id === 'city-stats-close') return 'top-right'
     // Bottom-toolbar spotlight (midY > 52%) → top-center so the spotlight is visible
     if (beaconRect) {
       const midY = beaconRect.top + beaconRect.height / 2
