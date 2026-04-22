@@ -79,6 +79,15 @@ export default function GameHints() {
     setQueue(q => q.filter(h => h.id !== id))
   }
 
+  // Clear hints whenever a property panel opens
+  React.useEffect(() => {
+    const hasSelection = Boolean(
+      state.selectedBuildingId || state.selectedCitizenId ||
+      state.selectedFarmZoneId || state.selectedTerrainTile,
+    )
+    if (hasSelection) setQueue([])
+  }, [state.selectedBuildingId, state.selectedCitizenId, state.selectedFarmZoneId, state.selectedTerrainTile]) // eslint-disable-line
+
   // ── Trigger: first migrant on the road ──────────────────────────────────
   React.useEffect(() => {
     if (state.migrants.length > 0) {

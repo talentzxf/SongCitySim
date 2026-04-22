@@ -9,6 +9,7 @@ import {
 import { useSimulation, ALL_BUILDING_TYPES, type BuildingType, type Tool, type CropType, type MarketConfig, GRANARY_CAPACITY_PER, MARKET_TOTAL_SLOTS, MARKET_CAP_PER_SHOP, FARM_TOOL_PRICE, TOOL_EFFICIENCY_BONUS, TOOL_DURABILITY_MAX, TOOL_DURABILITY_LOW, ORE_VEIN_INITIAL_HEALTH, FOREST_TILE_INITIAL_HEALTH, GRASSLAND_TILE_INITIAL_HEALTH, ORE_VEIN_TILES, getAggregateCrops, getAggregateBldgUnit, inventoryTotal, createEmptyInventory, DEFAULT_MARKET_CFG } from '../state/simulation'
 import { downloadSave, applySaveFile } from '../state/save'
 import GameHints from './GameHints'
+import GameToast from './GameToast'
 import configData from '../config/buildings-and-citizens.json'
 import { BUILDING_REGISTRY } from '../config/buildings/_loader'
 import { JOB_REGISTRY } from '../config/jobs/_loader'
@@ -207,6 +208,15 @@ function StatsPanel({
   const isShopDay    = state.dayCount % 10 === 0
   const nextShopIn   = 10 - (state.dayCount % 10)
 
+  // Urgent advice count for red badge on the toggle button
+  const { errorCount, warnCount } = React.useMemo(() => {
+    const advice = computeAdvice(state)
+    return {
+      errorCount: advice.filter(a => a.severity === 'error').length,
+      warnCount:  advice.filter(a => a.severity === 'warning').length,
+    }
+  }, [state.citizens, state.buildings, state.roads, state.taxRates]) // eslint-disable-line
+
   return (
     <>
       <button
@@ -216,6 +226,46 @@ function StatsPanel({
         data-tutorial="stats-toggle"
       >
         {collapsed ? '▶' : '◀'}
+        {collapsed && errorCount > 0 && (
+          <span style={{
+            position: 'absolute',
+            top: 2, right: 1,
+            minWidth: 16, height: 16,
+            borderRadius: 8,
+            background: '#ff4d4f',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 700,
+            lineHeight: '16px',
+            textAlign: 'center',
+            padding: '0 3px',
+            pointerEvents: 'none',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+            animation: 'badge-pulse 1.8s ease-in-out infinite',
+          }}>
+            {errorCount}
+          </span>
+        )}
+        {collapsed && errorCount === 0 && warnCount > 0 && (
+          <span style={{
+            position: 'absolute',
+            top: 2, right: 1,
+            minWidth: 16, height: 16,
+            borderRadius: 8,
+            background: '#faad14',
+            color: '#1a1000',
+            fontSize: 10,
+            fontWeight: 700,
+            lineHeight: '16px',
+            textAlign: 'center',
+            padding: '0 3px',
+            pointerEvents: 'none',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+            animation: 'badge-pulse 2.4s ease-in-out infinite',
+          }}>
+            {warnCount}
+          </span>
+        )}
       </button>
       <div className={`stats-panel${collapsed ? ' collapsed' : ''}`}>
 
@@ -518,18 +568,18 @@ export default function HUD() {
   const [compassIdx,   setCompassIdx]     = React.useState(0)
   const [messageApi,   messageCtx]        = message.useMessage()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
-  const isTouch = React.useMemo(() =>
-    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
 
-  // On mobile: dismiss all pending toasts whenever a property panel opens
+  // Dismiss all toasts whenever a property panel opens (all devices)
   React.useEffect(() => {
-    if (!isTouch) return
     const hasSelection = Boolean(
       state.selectedBuildingId || state.selectedCitizenId ||
       state.selectedFarmZoneId || state.selectedTerrainTile,
     )
-    if (hasSelection) messageApi.destroy()
-  }, [isTouch, state.selectedBuildingId, state.selectedCitizenId, state.selectedFarmZoneId, state.selectedTerrainTile]) // eslint-disable-line
+    if (hasSelection) {
+      messageApi.destroy()
+      ;(window as any).__GAME_TOAST__?.clear()
+    }
+  }, [state.selectedBuildingId, state.selectedCitizenId, state.selectedFarmZoneId, state.selectedTerrainTile]) // eslint-disable-line
 
   // Close building drawer when non-building tool is selected
   React.useEffect(() => {
@@ -572,8 +622,8 @@ export default function HUD() {
   function handleSave() {
     stop()
     downloadSave(state)
-    .then(() => messageApi.success(`存档已下载：第 ${state.dayCount} 天`, 3))
-    .catch((e: any) => messageApi.error(`存档失败：${e?.message ?? '未知错误'}`, 4))
+    .then(() => (window as any).__GAME_TOAST__?.({ type: 'success', text: `存档已下载：第 ${state.dayCount} 天` }))
+    .catch((e: any) => (window as any).__GAME_TOAST__?.({ type: 'error', text: `存档失败：${e?.message ?? '未知错误'}`, duration: 4000 }))
   }
   function handleLoadClick() { fileInputRef.current?.click() }
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -583,10 +633,10 @@ export default function HUD() {
       try {
         const buf = ev.target?.result as ArrayBuffer
         const result = await applySaveFile(buf)
-        if (result === 'redirecting') { messageApi.loading('地图种子不同，正在重新生成地图……', 4); return }
+        if (result === 'redirecting') { (window as any).__GAME_TOAST__?.({ type: 'info', text: '地图种子不同，正在重新生成地图……', duration: 4000 }); return }
         loadSave(result)
-        messageApi.success(`读档成功：第 ${result.state.dayCount} 天（月 ${result.state.month}）`, 3)
-      } catch (err: any) { messageApi.error(`读档失败：${err?.message ?? '未知错误'}`, 4) }
+        ;(window as any).__GAME_TOAST__?.({ type: 'success', text: `读档成功：第 ${result.state.dayCount} 天（月 ${result.state.month}）` })
+      } catch (err: any) { (window as any).__GAME_TOAST__?.({ type: 'error', text: `读档失败：${err?.message ?? '未知错误'}`, duration: 4000 }) }
     }
     reader.readAsArrayBuffer(file); e.target.value = ''
   }
@@ -609,12 +659,18 @@ export default function HUD() {
       'no-shangmai': `商脉不足（${state.cityShangmai}/100，需≥30）。`,
     }
     const msg = reasonMap[attempt.reason] ?? attempt.reason
-    if (msg) messageApi.warning(msg, 3)
+    // Skip warning if a property panel just opened (same-tick tap on existing building)
+    const hasSelection = Boolean(
+      state.selectedBuildingId || state.selectedCitizenId ||
+      state.selectedFarmZoneId || state.selectedTerrainTile,
+    )
+    if (msg && !hasSelection) (window as any).__GAME_TOAST__?.({ type: 'warning', text: msg })
   }, [attempt]) // eslint-disable-line
 
   return (
     <>
       {messageCtx}
+      <GameToast />
       <input ref={fileInputRef} type="file" accept=".citysave,.json" onChange={handleFileChange} style={{ display: 'none' }} />
 
       {/* ── Top bar ───────────────────────────────── */}
