@@ -753,7 +753,17 @@ export default function Tutorial({ onDismiss }: Props) {
   const isDone   = step.id === 'done'
   const isManual = step.manual === true
   const PAD = 8
-  const panelAtBottomLeft = step.id === 'resident-settle' || step.id === 'resident-inspect' || isMigrantFollowStep
+
+  // Smart panel placement: if spotlight target is in the lower half → panel goes to top so it
+  // doesn't block the target (e.g. bottom toolbar buttons). Map-view steps stay bottom-left.
+  const panelSide: 'top' | 'bottom' | 'center' = (() => {
+    if (isMigrantFollowStep || step.id === 'resident-settle' || step.id === 'resident-inspect') return 'bottom'
+    if (beaconRect) {
+      const midY = beaconRect.top + beaconRect.height / 2
+      return midY > window.innerHeight * 0.52 ? 'top' : 'bottom'
+    }
+    return 'center'
+  })()
 
   const stepBody  = (isTouch && step.bodyTouch) ? step.bodyTouch : step.body
   const stepTitle = isTouch ? (
@@ -857,9 +867,13 @@ export default function Tutorial({ onDismiss }: Props) {
       ) : (
         <div style={{
           position: 'fixed',
-          ...(panelAtBottomLeft
+          ...(panelSide === 'top'
             ? isTouch
-              ? { top: 60, left: 8, bottom: 'auto', transform: 'none' }
+              ? { top: 8, left: 8, right: 8, transform: 'none' }
+              : { top: 24, left: 16, right: 16, transform: 'none' }
+            : panelSide === 'bottom'
+            ? isTouch
+              ? { bottom: 60, left: 8, right: 8, transform: 'none' }
               : { bottom: 24, left: 16, top: 'auto', transform: 'none' }
             : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }),
           zIndex: 9510,
