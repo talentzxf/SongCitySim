@@ -131,20 +131,15 @@ function Spotlight({ targetId }: { targetId: string }) {
 
   return (
     <>
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9401, pointerEvents: 'none',
-        background: 'rgba(0,0,0,0.55)',
-        WebkitMaskImage: `radial-gradient(ellipse ${rect.width + PAD * 2 + 20}px ${rect.height + PAD * 2 + 20}px at ${rect.left + rect.width / 2}px ${rect.top + rect.height / 2}px, transparent 60%, black 90%)`,
-        maskImage: `radial-gradient(ellipse ${rect.width + PAD * 2 + 20}px ${rect.height + PAD * 2 + 20}px at ${rect.left + rect.width / 2}px ${rect.top + rect.height / 2}px, transparent 60%, black 90%)`,
-      }} />
+      {/* Box-shadow dim overlay — compatible with WeChat X5 / old WebKit (no mask-image needed) */}
       <div style={{
         position: 'fixed',
         left: rect.left - PAD, top: rect.top - PAD,
         width: rect.width + PAD * 2, height: rect.height + PAD * 2,
         borderRadius: 8,
+        boxShadow: `0 0 0 9999px rgba(0,0,0,0.55), 0 0 0 ${PAD + 2}px rgba(255,215,0,0.25)`,
         border: '2px solid rgba(255,215,0,0.9)',
-        boxShadow: `0 0 0 ${PAD + 2}px rgba(255,215,0,0.25)`,
-        pointerEvents: 'none', zIndex: 9402,
+        pointerEvents: 'none', zIndex: 9401,
       }} />
       {([0, 0.5, 1.0] as const).map((delay, i) => (
         <div key={i} style={{
@@ -198,21 +193,15 @@ function FlashSpotlight({ targetId }: { targetId: string }) {
 
   return (
     <>
-      {/* Dim overlay — lighter so content is readable */}
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9401, pointerEvents: 'none',
-        background: 'rgba(0,0,0,0.45)',
-        WebkitMaskImage: `radial-gradient(ellipse ${rect.width + 60}px ${rect.height + 60}px at ${rect.left + rect.width / 2}px ${rect.top + rect.height / 2}px, transparent 50%, black 85%)`,
-        maskImage: `radial-gradient(ellipse ${rect.width + 60}px ${rect.height + 60}px at ${rect.left + rect.width / 2}px ${rect.top + rect.height / 2}px, transparent 50%, black 85%)`,
-      }} />
-      {/* 3-pulse border */}
+      {/* Box-shadow dim overlay — WeChat/X5 compatible */}
       <div style={{
         position: 'fixed',
         left: rect.left - PAD, top: rect.top - PAD,
         width: rect.width + PAD * 2, height: rect.height + PAD * 2,
         borderRadius: 8,
+        boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
         border: '3px solid rgba(255,220,60,0.9)',
-        pointerEvents: 'none', zIndex: 9402,
+        pointerEvents: 'none', zIndex: 9401,
         animation: 'evt-tut-3pulse 2.4s ease-in-out forwards',
       }} />
       {/* Attention label */}
@@ -306,7 +295,7 @@ function FarmBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
       <>
         {/* soft vignette hole */}
         <div style={{
-          position: 'fixed', inset: 0, zIndex: 9490, pointerEvents: 'none',
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9490, pointerEvents: 'none',
           background: `radial-gradient(circle 90px at ${pos.x}px ${pos.y}px, transparent 58px, rgba(0,0,0,0.4) 88px)`,
         }} />
         {/* pulsing green rings */}
