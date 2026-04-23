@@ -164,10 +164,11 @@ export default function App() {
 
   const [tutorialDone, setTutorialDone] = React.useState(false)
   const showTutorial = screen === 'game' && activeLevelId === 'l01' && !tutorialDone
-  // EventTutorial fires:
-  //  • after l01 main tutorial is dismissed (tutorialDone=true)
-  //  • immediately for l02-l09 and sandbox (no main tutorial there)
-  const showEventTutorial = screen === 'game' && (tutorialDone || activeLevelId !== 'l01')
+// EventTutorial fires:
+//  • after l01 main tutorial is dismissed (tutorialDone=true)
+//  • for l02-l09 campaign levels (no main tutorial there)
+//  • NOT in sandbox (activeLevelId === null) — free-build needs no guidance
+const showEventTutorial = screen === 'game' && activeLevelId !== null && (tutorialDone || activeLevelId !== 'l01')
 
   const activeLevel = React.useMemo(
     () => activeLevelId ? (LEVELS.find(l => l.id === activeLevelId) ?? null) : null,

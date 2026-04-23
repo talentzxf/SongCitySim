@@ -781,47 +781,7 @@ export default function HUD() {
 // ─── Mobile building placement bar ───────────────────────────────────────────
 // Shown on touch devices when a building type tool is active.
 // Lets user drag ghost on the map, then tap "放置" to confirm.
-
-/** 4 directional pan buttons shown while dragging a building ghost on mobile.
- *  When the ghost shadow enters one of these zones the camera pans in that direction.
- *  Detection is done in MapScene.tsx onTouchMove via data-pan-dir attribute lookup. */
-function BuildingPanButtons({ activePanDir }: { activePanDir: string | null }) {
-  const BTN_SIZE = 48
-  const style = (dir: string): React.CSSProperties => {
-    const active = activePanDir === dir
-    const base: React.CSSProperties = {
-      position: 'fixed',
-      zIndex: 8490,
-      width: BTN_SIZE, height: BTN_SIZE,
-      borderRadius: '50%',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 22,
-      pointerEvents: 'none',
-      transition: 'background 0.12s, box-shadow 0.12s, transform 0.12s',
-      background: active ? 'rgba(200,160,50,0.55)' : 'rgba(10,6,2,0.55)',
-      border: active ? '2px solid rgba(255,210,70,0.9)' : '1.5px solid rgba(200,160,55,0.35)',
-      boxShadow: active ? '0 0 20px rgba(255,200,50,0.5)' : '0 2px 12px rgba(0,0,0,0.5)',
-      color: active ? '#ffe880' : 'rgba(210,175,90,0.7)',
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      transform: active ? 'scale(1.18)' : 'scale(1)',
-    }
-    if (dir === 'up')    return { ...base, top: 72,  left: '50%', marginLeft: -BTN_SIZE/2 }
-    if (dir === 'down')  return { ...base, bottom: 168, left: '50%', marginLeft: -BTN_SIZE/2 }
-    if (dir === 'left')  return { ...base, left: 12, top: '50%', marginTop: -BTN_SIZE/2 }
-    if (dir === 'right') return { ...base, right: 12, top: '50%', marginTop: -BTN_SIZE/2 }
-    return base
-  }
-  return (
-    <>
-      {(['up','down','left','right'] as const).map(dir => (
-        <div key={dir} data-pan-dir={dir} style={style(dir)}>
-          {dir === 'up' ? '▲' : dir === 'down' ? '▼' : dir === 'left' ? '◀' : '▶'}
-        </div>
-      ))}
-    </>
-  )
-}
+// Edge-scroll (pan while dragging to screen edge) is handled in MapScene.tsx useFrame.
 
 function MobileBuildingBar() {
   const { state, selectTool } = useSimulation()
@@ -830,15 +790,12 @@ function MobileBuildingBar() {
 
   // All hooks must be before any early return (Rules of Hooks)
   const [canPlace, setCanPlace] = React.useState(true)
-  const [activePanDir, setActivePanDir] = React.useState<string | null>(null)
   React.useEffect(() => {
     if (!isTouch) return
     let raf: number
     const poll = () => {
       const t = (window as any).__MOBILE_PLACEMENT_TILE__
       setCanPlace(t ? t.canPlace !== false : true)
-      const pan = (window as any).__MOBILE_BTN_PAN__
-      setActivePanDir(pan ? pan.ex === -1 ? 'left' : pan.ex === 1 ? 'right' : pan.ez === -1 ? 'up' : 'down' : null)
       raf = requestAnimationFrame(poll)
     }
     raf = requestAnimationFrame(poll)
@@ -863,9 +820,7 @@ function MobileBuildingBar() {
   }
 
   return (
-    <>
-      <BuildingPanButtons activePanDir={activePanDir} />
-      <div style={{
+    <div style={{
       position: 'fixed',
       bottom: 90,
       left: '50%',
@@ -926,7 +881,6 @@ function MobileBuildingBar() {
         transition: 'all 0.15s',
       }}>✓ 放置</button>
     </div>
-    </>
   )
 }
 

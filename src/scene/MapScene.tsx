@@ -625,14 +625,18 @@ export default function MapScene() {
   const hitRef       = React.useRef(new THREE.Vector3())
 
   useFrame((_, delta) => {
-    // --- Edge-scroll: auto-pan when cursor is near canvas edge during placement ----
+    // --- Edge-scroll: auto-pan when cursor/finger is near canvas edge during placement ----
     const edgeTool = stateRef.current.selectedTool
     const isPlacementTool = edgeTool !== 'pan' && edgeTool !== 'bulldoze'
-    if (isPlacementTool && mouseOnCanvasRef.current && !isTouch) {
+    // Desktop: any placement tool + mouse on canvas
+    // Mobile:  building ghost drag active (mobilePlacementActiveRef)
+    const doEdgeScroll = isPlacementTool && mouseOnCanvasRef.current &&
+      (!isTouch || mobilePlacementActiveRef.current)
+    if (doEdgeScroll) {
       const ndx = mouseNDCRef.current.x   // -1..1  (right = +1)
       const ndy = mouseNDCRef.current.y   // -1..1  (top  = +1)
-      const EDGE_ZONE  = 0.82   // NDC threshold: within 9% of edge
-      const EDGE_SPEED = 10     // world-units per second at full edge
+      const EDGE_ZONE  = 0.75   // slightly wider zone on mobile for easier thumb reach
+      const EDGE_SPEED = 12
       let ex = 0, ez = 0
       if (ndx >  EDGE_ZONE) ex =  (ndx - EDGE_ZONE) / (1 - EDGE_ZONE)
       if (ndx < -EDGE_ZONE) ex = -((-ndx - EDGE_ZONE) / (1 - EDGE_ZONE))
@@ -655,25 +659,6 @@ export default function MapScene() {
           ctrl.object.position.x += dx; ctrl.object.position.z += dz
           if (typeof ctrl.update === 'function') ctrl.update()
         }
-      }
-    }
-    // --- Mobile building placement button pan --------------------------------
-    const mobileBtnPan = (window as any).__MOBILE_BTN_PAN__
-    if (mobileBtnPan && mobilePlacementActiveRef.current) {
-      const SPEED = 12
-      const ctrl = (window as any).__THREE_CONTROLS__
-      if (ctrl?.target && ctrl.object) {
-        const camRight = new THREE.Vector3()
-        camRight.setFromMatrixColumn((ctrl.object as THREE.Camera).matrixWorld, 0)
-        camRight.y = 0; camRight.normalize()
-        const camFwd = new THREE.Vector3()
-        camFwd.setFromMatrixColumn((ctrl.object as THREE.Camera).matrixWorld, 2)
-        camFwd.y = 0; camFwd.normalize()
-        const dx = (camRight.x * mobileBtnPan.ex - camFwd.x * mobileBtnPan.ez) * SPEED * delta
-        const dz = (camRight.z * mobileBtnPan.ex - camFwd.z * mobileBtnPan.ez) * SPEED * delta
-        ctrl.target.x += dx; ctrl.target.z += dz
-        ctrl.object.position.x += dx; ctrl.object.position.z += dz
-        if (typeof ctrl.update === 'function') ctrl.update()
       }
     }
     // --- Mobile building placement: track current ghost tile every frame ------
@@ -1052,28 +1037,12 @@ export default function MapScene() {
         const path = astarRoad(start, t, !endOnMtn && !startOnMtn, blockedTiles)
         setRoadPreview(path); roadPreviewRef.current = path
       } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
-        // Keep ghost following finger
+        // Keep ghost following finger — NDC update also drives edge-scroll in useFrame
         updateNDCFromTouch(touch.clientX, touch.clientY)
-        // Check if finger is over a pan-direction button
-        const cx = touch.clientX, cy = touch.clientY
-        let panEx = 0, panEz = 0
-        document.querySelectorAll<HTMLElement>('[data-pan-dir]').forEach(el => {
-          const r = el.getBoundingClientRect()
-          if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-            const dir = el.dataset.panDir
-            if (dir === 'up')    panEz = -1
-            if (dir === 'down')  panEz =  1
-            if (dir === 'left')  panEx = -1
-            if (dir === 'right') panEx =  1
-          }
-        })
-        ;(window as any).__MOBILE_BTN_PAN__ = (panEx !== 0 || panEz !== 0) ? { ex: panEx, ez: panEz } : null
-        ;(window as any).__MOBILE_BTN_PAN_POS__ = { x: cx, y: cy }
       }
     }
 
     function onTouchEnd(e: TouchEvent) {
-      ;(window as any).__MOBILE_BTN_PAN__ = null
       const tool = stateRef.current.selectedTool
       if (tool === 'pan') return
 
