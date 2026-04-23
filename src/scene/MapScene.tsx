@@ -657,6 +657,25 @@ export default function MapScene() {
         }
       }
     }
+    // --- Mobile building placement button pan --------------------------------
+    const mobileBtnPan = (window as any).__MOBILE_BTN_PAN__
+    if (mobileBtnPan && mobilePlacementActiveRef.current) {
+      const SPEED = 12
+      const ctrl = (window as any).__THREE_CONTROLS__
+      if (ctrl?.target && ctrl.object) {
+        const camRight = new THREE.Vector3()
+        camRight.setFromMatrixColumn((ctrl.object as THREE.Camera).matrixWorld, 0)
+        camRight.y = 0; camRight.normalize()
+        const camFwd = new THREE.Vector3()
+        camFwd.setFromMatrixColumn((ctrl.object as THREE.Camera).matrixWorld, 2)
+        camFwd.y = 0; camFwd.normalize()
+        const dx = (camRight.x * mobileBtnPan.ex - camFwd.x * mobileBtnPan.ez) * SPEED * delta
+        const dz = (camRight.z * mobileBtnPan.ex - camFwd.z * mobileBtnPan.ez) * SPEED * delta
+        ctrl.target.x += dx; ctrl.target.z += dz
+        ctrl.object.position.x += dx; ctrl.object.position.z += dz
+        if (typeof ctrl.update === 'function') ctrl.update()
+      }
+    }
     // --- Mobile building placement: track current ghost tile every frame ------
     if (mobilePlacementActiveRef.current) {
       mobileRaycaster.current.setFromCamera(mouseNDCRef.current as any, camera as THREE.PerspectiveCamera)
@@ -1035,10 +1054,26 @@ export default function MapScene() {
       } else if (ALL_BUILDING_TYPES.includes(tool as BuildingType) || tool === 'bulldoze') {
         // Keep ghost following finger
         updateNDCFromTouch(touch.clientX, touch.clientY)
+        // Check if finger is over a pan-direction button
+        const cx = touch.clientX, cy = touch.clientY
+        let panEx = 0, panEz = 0
+        document.querySelectorAll<HTMLElement>('[data-pan-dir]').forEach(el => {
+          const r = el.getBoundingClientRect()
+          if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+            const dir = el.dataset.panDir
+            if (dir === 'up')    panEz = -1
+            if (dir === 'down')  panEz =  1
+            if (dir === 'left')  panEx = -1
+            if (dir === 'right') panEx =  1
+          }
+        })
+        ;(window as any).__MOBILE_BTN_PAN__ = (panEx !== 0 || panEz !== 0) ? { ex: panEx, ez: panEz } : null
+        ;(window as any).__MOBILE_BTN_PAN_POS__ = { x: cx, y: cy }
       }
     }
 
     function onTouchEnd(e: TouchEvent) {
+      ;(window as any).__MOBILE_BTN_PAN__ = null
       const tool = stateRef.current.selectedTool
       if (tool === 'pan') return
 
