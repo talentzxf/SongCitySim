@@ -112,6 +112,23 @@ function ControlsBridge({ controlsRef, bounds }: { controlsRef: React.MutableRef
     if (typeof ctrl.update === 'function') ctrl.update()
   }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY]) // eslint-disable-line
 
+  // Expose reset-view to HUD button
+  React.useEffect(() => {
+    ;(window as any).__RESET_VIEW__ = () => {
+      const ctrl = controlsRef.current
+      if (!ctrl) return
+      const cx = (bounds.minX + bounds.maxX) / 2
+      const cz = (bounds.minY + bounds.maxY) / 2
+      const span  = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
+      const camH  = Math.max(6, span * 0.22)
+      const camOff = camH * 2.2
+      ctrl.target.set(cx, 0, cz)
+      if (ctrl.object) ctrl.object.position.set(cx + camOff, camH, cz + camOff)
+      if (typeof ctrl.update === 'function') ctrl.update()
+    }
+    return () => { delete (window as any).__RESET_VIEW__ }
+  }, [bounds]) // eslint-disable-line
+
   const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
   return (
     <OrbitControls

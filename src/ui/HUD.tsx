@@ -179,6 +179,13 @@ function TopBar({
         <Tooltip title="读档（加载）">
           <button className="tb-icon-btn tb-hide-mobile" onClick={onLoadClick} title="读档">📂</button>
         </Tooltip>
+        <Tooltip title="重置视角">
+          <button
+            className="tb-icon-btn"
+            onClick={() => (window as any).__RESET_VIEW__?.()}
+            title="重置视角"
+          >🏠</button>
+        </Tooltip>
       </div>
     </div>
   )
