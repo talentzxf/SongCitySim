@@ -339,7 +339,7 @@ function FarmBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
           boxShadow: '0 2px 12px rgba(0,0,0,0.7)',
           animation: 'evt-farm-float 1.0s ease-in-out infinite',
         }}>
-          🌾 在这里种地
+          🌾 此处可辟良田
           <span style={{
             position: 'absolute', bottom: -7, left: '50%', transform: 'translateX(-50%)',
             width: 0, height: 0,
