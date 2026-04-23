@@ -5,7 +5,7 @@ import React from 'react'
 import * as THREE from 'three'
 import { useSimulation } from '../state/simulation'
 import { useLevelContext } from '../levels/LevelContext'
-import { GRASSLAND_TILES, isNearRiverFive, isMountainAt } from '../state/worldgen'
+import { GRASSLAND_TILES, isNearRiverFive, isMountainAt, isRiverAt } from '../state/worldgen'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,15 +193,23 @@ function FlashSpotlight({ targetId }: { targetId: string }) {
 
   return (
     <>
-      {/* Box-shadow dim overlay — WeChat/X5 compatible */}
+      {/* 9999px dim overlay — separate from animation so box-shadow isn't overridden */}
       <div style={{
         position: 'fixed',
         left: rect.left - PAD, top: rect.top - PAD,
         width: rect.width + PAD * 2, height: rect.height + PAD * 2,
         borderRadius: 8,
         boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
-        border: '3px solid rgba(255,220,60,0.9)',
         pointerEvents: 'none', zIndex: 9401,
+      }} />
+      {/* Pulsing border — animates box-shadow glow only */}
+      <div style={{
+        position: 'fixed',
+        left: rect.left - PAD, top: rect.top - PAD,
+        width: rect.width + PAD * 2, height: rect.height + PAD * 2,
+        borderRadius: 8,
+        border: '3px solid rgba(255,220,60,0.9)',
+        pointerEvents: 'none', zIndex: 9402,
         animation: 'evt-tut-3pulse 2.4s ease-in-out forwards',
       }} />
       {/* Attention label */}
@@ -242,7 +250,7 @@ function findSuggestedFarmTile(
     ...farmZones.flatMap(z => [`${z.x},${z.y}`, `${z.x+1},${z.y}`, `${z.x},${z.y+1}`, `${z.x+1},${z.y+1}`]),
   ])
   const ok = (x: number, y: number) =>
-    isNearRiverFive(x, y) && !isMountainAt(x, y) && !occupied.has(`${x},${y}`)
+    isNearRiverFive(x, y) && !isMountainAt(x, y) && !isRiverAt(x, y) && !occupied.has(`${x},${y}`)
 
   // Build set of all valid individual tiles for quick lookup
   const arableSet = new Set(

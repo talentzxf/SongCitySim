@@ -640,8 +640,8 @@ export default function MapScene() {
       let ex = 0, ez = 0
       if (ndx >  EDGE_ZONE) ex =  (ndx - EDGE_ZONE) / (1 - EDGE_ZONE)
       if (ndx < -EDGE_ZONE) ex = -((-ndx - EDGE_ZONE) / (1 - EDGE_ZONE))
-      if (ndy >  EDGE_ZONE) ez = -(ndy - EDGE_ZONE) / (1 - EDGE_ZONE)
-      if (ndy < -EDGE_ZONE) ez =  ((-ndy - EDGE_ZONE) / (1 - EDGE_ZONE))
+      if (ndy >  EDGE_ZONE) ez =  (ndy - EDGE_ZONE) / (1 - EDGE_ZONE)
+      if (ndy < -EDGE_ZONE) ez = -((-ndy - EDGE_ZONE) / (1 - EDGE_ZONE))
       if (ex !== 0 || ez !== 0) {
         const ctrl = (window as any).__THREE_CONTROLS__
         if (ctrl?.target && ctrl.object) {
