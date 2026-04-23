@@ -407,6 +407,12 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const [stepIdx,   setStepIdx]   = React.useState(0)
   const [dismissed, setDismissed] = React.useState(false)
   const firedRef = React.useRef<Set<string>>(new Set())
+  // Snapshot of farmzone IDs that existed BEFORE the place-farm step became active —
+  // so "place-farm" and "connect-farm-road" only react to zones added by the player.
+  // NOTE: We snapshot at the moment the place-farm step first activates (not at trigger time)
+  // to avoid capturing a stale/empty state that could cause immediate false-positive completion.
+  const initFarmZoneIdsRef = React.useRef<Set<string>>(new Set())
+  const farmSnapshotTakenRef = React.useRef(false)
 
   const advance = React.useCallback(() => {
     setStepIdx(i => (!activeSeq ? i : Math.min(i + 1, activeSeq.length - 1)))
@@ -421,6 +427,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId).length
     if (idleCount === 0) return
     firedRef.current.add('unemployment-farming')
+    farmSnapshotTakenRef.current = false   // reset so snapshot is taken fresh when place-farm step activates
     setActiveSeq(UNEMPLOY_SEQ)
     setStepIdx(0)
     setDismissed(false)
@@ -457,17 +464,21 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
       const el = document.querySelector('[data-tutorial="farmzone-tool"]') as HTMLElement | null
       done = !!el && el.offsetParent !== null
     }
-    else if (id === 'place-farm')
-      done = state.farmZones.length > 0
-    else if (id === 'connect-farm-road')
-      // farmZone is 2×2; check all 4 tiles and their 4-directional neighbours
-      done = state.farmZones.some(z =>
+    else if (id === 'place-farm') {
+      // only count zones placed AFTER the tutorial started
+      done = state.farmZones.some(z => !initFarmZoneIdsRef.current.has(z.id))
+    }
+    else if (id === 'connect-farm-road') {
+      // only count road access on zones placed AFTER the tutorial started
+      const newZones = state.farmZones.filter(z => !initFarmZoneIdsRef.current.has(z.id))
+      done = newZones.some(z =>
         [[0,0],[1,0],[0,1],[1,1]].some(([tx,ty]) =>
           [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) =>
             state.roads.some(r => r.x === z.x + tx + dx && r.y === z.y + ty + dy)
           )
         )
       )
+    }
 
     if (!done) return
     scheduledRef.current = stepIdx
@@ -481,6 +492,14 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
 
   React.useEffect(() => { scheduledRef.current = -1; flashStartRef.current = null }, [stepIdx])
   React.useEffect(() => () => { if (advTimerRef.current) clearTimeout(advTimerRef.current) }, [])
+
+  // ── Snapshot farm zones the moment place-farm step becomes active ─────────
+  React.useEffect(() => {
+    if (step?.id === 'place-farm' && !farmSnapshotTakenRef.current) {
+      initFarmZoneIdsRef.current = new Set(state.farmZones.map(z => z.id))
+      farmSnapshotTakenRef.current = true
+    }
+  }, [step?.id]) // eslint-disable-line
 
   // ── Pan tool for connect-farm-road ────────────────────────────────────────
   const step = activeSeq?.[stepIdx] ?? null
@@ -510,7 +529,8 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const suggestedFarmTile = React.useMemo(() => {
     if (step?.id !== 'place-farm') return null
     if (state.selectedTool !== 'farmZone') return null
-    if (state.farmZones.length > 0) return null
+    // hide beacon once the player has placed a NEW zone (not pre-existing ones)
+    if (state.farmZones.some(z => !initFarmZoneIdsRef.current.has(z.id))) return null
     return findSuggestedFarmTile(state.roads, state.buildings, state.farmZones)
   }, [step?.id, state.selectedTool, state.farmZones, state.roads, state.buildings])
 
