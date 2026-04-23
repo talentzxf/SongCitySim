@@ -5,7 +5,7 @@ import React from 'react'
 import * as THREE from 'three'
 import { useSimulation } from '../state/simulation'
 import { useLevelContext } from '../levels/LevelContext'
-import { GRASSLAND_TILES, isNearRiverFive, isMountainAt, isRiverAt } from '../state/worldgen'
+import { GRASSLAND_TILES, isNearRiverFive, isMountainAt, isRiverAt, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -261,6 +261,8 @@ function findSuggestedFarmTile(
   let best: { x: number; y: number } | null = null
   let bestDist = Infinity
   for (const { x, y } of GRASSLAND_TILES) {
+    // The block occupies (x,y)..(x+1,y+1) — ensure all 4 tiles are within map bounds
+    if (x + 1 >= MAP_SIZE_X || y + 1 >= MAP_SIZE_Y) continue
     if (
       arableSet.has(`${x},${y}`) && arableSet.has(`${x+1},${y}`) &&
       arableSet.has(`${x},${y+1}`) && arableSet.has(`${x+1},${y+1}`)
