@@ -3,6 +3,7 @@
  */
 import React from 'react'
 import { useSimulation } from '../state/simulation'
+import { useLevelContext } from '../levels/LevelContext'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ const UNEMPLOY_SEQ: SeqStep[] = [
     id: 'select-farm-tab',
     emoji: '🌾', title: '切换到农业标签',
     targetId: 'farming-tab',
-    body: '在建造面板中，点击【农业】标签。',
+    body: '在建造面板中，已为你切换到【农业】标签。\n\n点击【农业】标签（若未自动切换，请手动点击）。',
     hideSpotlight: (s) => s.selectedTool === 'farmZone' || s.selectedTool === 'teaZone',
   },
   {
@@ -242,9 +243,18 @@ interface Props {
 
 export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const { state, selectTool } = useSimulation()
+  const { level } = useLevelContext()
 
   const isTouch = React.useMemo(() =>
     typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
+
+  // Is farmZone available in this level? (sandbox = no restriction = available)
+  const farmingAvailable = React.useMemo(() => {
+    if (!level) return true  // sandbox: all tools available
+    const allowed = (level as any).allowedBuildings as string[] | undefined
+    if (!allowed) return true
+    return allowed.includes('farmZone') || allowed.includes('teaZone')
+  }, [level])
 
   const [activeSeq, setActiveSeq] = React.useState<SeqStep[] | null>(null)
   const [stepIdx,   setStepIdx]   = React.useState(0)
@@ -258,6 +268,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   // ── Trigger: first unemployment after main tutorial ───────────────────────
   React.useEffect(() => {
     if (!mainDone) return
+    if (!farmingAvailable) return           // no farmZone in this level → skip farming tutorial
     if (firedRef.current.has('unemployment-farming')) return
     if (state.citizens.length === 0) return
     const idleCount = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId).length
@@ -266,7 +277,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     setActiveSeq(UNEMPLOY_SEQ)
     setStepIdx(0)
     setDismissed(false)
-  }, [mainDone, state.citizens]) // eslint-disable-line
+  }, [mainDone, farmingAvailable, state.citizens]) // eslint-disable-line
 
   // ── Auto-advance + flash timer ────────────────────────────────────────────
   const advTimerRef   = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -324,6 +335,16 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     if (step?.id === 'connect-farm-road') selectTool('pan')
   }, [step?.id]) // eslint-disable-line
 
+  // ── Auto-switch building drawer to farming tab for select-farm-tab step ──
+  React.useEffect(() => {
+    if (step?.id !== 'select-farm-tab') return
+    // Give the drawer a moment to finish its open animation before switching tab
+    const tid = setTimeout(() => {
+      ;(window as any).__SET_BUILDING_TAB__?.('farming')
+    }, 200)
+    return () => clearTimeout(tid)
+  }, [step?.id])
+
   // ── Track target rect for smart panel positioning ─────────────────────────
   const [targetRect, setTargetRect] = React.useState<DOMRect | null>(null)
   React.useEffect(() => {
@@ -358,27 +379,46 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const showFlashSpotlight = step.flash && step.targetId
 
   // Panel placement:
-  //  • Stats-related steps (notice-badge, open-advice, flash-advice, close-stats):
-  //    spotlight is on the LEFT (stats panel / stats-toggle) → panel goes top-right
-  //  • Building drawer open → top-right (don't cover the drawer)
+  //  • Stats-related steps: spotlight is on the LEFT side (stats panel / toggle).
+  //    – Desktop: panel goes top-right (right side), no conflict with left stats panel.
+  //    – Mobile:  when stats panel is OPEN the toggle shifts to x≈294 which falls inside
+  //               the 92vw wide "top-right" panel → BLOCKED. Use BOTTOM position instead,
+  //               leaving the entire top area (where toggle lives) free.
+  //  • Building drawer open → top (leave the bottom drawer free)
   //  • Bottom-toolbar target (midY > 52%) → top-center
   //  • done-farming / manual steps → center
-  //  • Everything else → center
+
   const STATS_STEPS = new Set(['notice-badge', 'open-advice', 'flash-advice', 'close-stats'])
   const buildingDrawerOpen = !!(window as any).__BUILDING_DRAWER_OPEN__
-  const panelAtTopRight = STATS_STEPS.has(step.id) || buildingDrawerOpen
-  const panelAtTop = !panelAtTopRight && !!targetRect &&
+  const isStatsStep   = STATS_STEPS.has(step.id)
+  const panelAtTopRight = (isStatsStep || buildingDrawerOpen) && !isTouch
+  const panelAtTop = !panelAtTopRight && !isStatsStep && !!targetRect &&
     (targetRect.top + targetRect.height / 2) > window.innerHeight * 0.52
 
-  const panelStyle: React.CSSProperties = panelAtTopRight
-    ? isTouch
-      ? { top: 52, right: 8 }   // below 48px mobile top-bar
-      : { top: 58, right: 24 }  // below 52px desktop top-bar
-    : panelAtTop
-    ? isTouch
-      ? { top: 52, left: 8, right: 8,  transform: 'none' }  // below mobile top-bar
-      : { top: 58, left: '50%', transform: 'translateX(-50%)' }
-    : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+  const panelStyle: React.CSSProperties = (() => {
+    // Mobile stats steps → bottom: keeps the full left column (stats panel + toggle) clear
+    if (isTouch && isStatsStep) {
+      return { bottom: 60, left: 8, right: 8, transform: 'none' }
+    }
+    // Mobile building-drawer-open steps → top (drawer is at bottom)
+    if (isTouch && buildingDrawerOpen) {
+      return { top: 52, left: 8, right: 8, transform: 'none' }
+    }
+    if (panelAtTopRight) {
+      // On narrow desktops (<700px) the card can overlap the stats-toggle that moves to x≈294
+      // when the panel is open → fall back to bottom placement in that case.
+      if (typeof window !== 'undefined' && window.innerWidth < 700) {
+        return { bottom: 60, left: 8, right: 8, transform: 'none' }
+      }
+      return { top: 58, right: 24 }  // desktop only: top-right, stats panel is on the left
+    }
+    if (panelAtTop) {
+      return isTouch
+        ? { top: 52, left: 8, right: 8, transform: 'none' }
+        : { top: 58, left: '50%', transform: 'translateX(-50%)' }
+    }
+    return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+  })()
 
   return (
     <>

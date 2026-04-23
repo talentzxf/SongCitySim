@@ -410,6 +410,21 @@ function BuildingDrawer({ open, onClose, paletteGroups }: {
   const isTouch = React.useMemo(() =>
     typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0), [])
 
+  // Controlled active tab — allows tutorial to switch tabs programmatically
+  const [activeTab, setActiveTab] = React.useState<string>(() => paletteGroups[0]?.category ?? '')
+  // Keep activeTab valid when paletteGroups changes (level switch)
+  React.useEffect(() => {
+    if (!paletteGroups.find(g => g.category === activeTab)) {
+      setActiveTab(paletteGroups[0]?.category ?? '')
+    }
+  }, [paletteGroups]) // eslint-disable-line
+
+  // Expose tab-switcher to Tutorial so it can navigate without user having to scroll
+  React.useEffect(() => {
+    ;(window as any).__SET_BUILDING_TAB__ = (cat: string) => setActiveTab(cat)
+    return () => { delete (window as any).__SET_BUILDING_TAB__ }
+  }, [])
+
   // Detect whether the tab nav overflows (more tabs than visible)
   const tabsWrapRef = React.useRef<HTMLDivElement>(null)
   const [showScrollHint, setShowScrollHint] = React.useState(false)
@@ -456,8 +471,8 @@ function BuildingDrawer({ open, onClose, paletteGroups }: {
         <div ref={tabsWrapRef} style={{ position: 'relative' }}>
           <Tabs
             size="small"
-            defaultActiveKey={PALETTE_GROUPS[0]?.category}
-            onChange={() => setShowScrollHint(false)}
+            activeKey={activeTab}
+            onChange={k => { setActiveTab(k); setShowScrollHint(false) }}
             items={paletteGroups.map(group => ({
             key: group.category,
             label: (
