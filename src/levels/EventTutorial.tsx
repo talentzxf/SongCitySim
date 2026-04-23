@@ -310,9 +310,12 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     else if (id === 'place-farm')
       done = state.farmZones.length > 0
     else if (id === 'connect-farm-road')
+      // farmZone is 2×2; check all 4 tiles and their 4-directional neighbours
       done = state.farmZones.some(z =>
-        [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) =>
-          state.roads.some(r => r.x === z.x + dx && r.y === z.y + dy)
+        [[0,0],[1,0],[0,1],[1,1]].some(([tx,ty]) =>
+          [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) =>
+            state.roads.some(r => r.x === z.x + tx + dx && r.y === z.y + ty + dy)
+          )
         )
       )
 

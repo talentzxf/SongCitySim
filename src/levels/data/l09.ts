@@ -15,6 +15,7 @@ const l09: LevelDef = {
     'house', 'manor', 'granary', 'market',
     'blacksmith', 'mine', 'lumbercamp',
     'academy', 'papermill', 'watchpost',
+    'farmZone', 'teaZone',
   ],
 
   objectives: [

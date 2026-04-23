@@ -19,10 +19,12 @@ const HINT_DURATION_MS = 7000
 
 // ── Individual hint bubble ─────────────────────────────────────────────────
 function HintBubble({ hint, onClose }: { hint: Hint; onClose: () => void }) {
+  const onCloseRef = React.useRef(onClose)
+  onCloseRef.current = onClose
   React.useEffect(() => {
-    const t = setTimeout(onClose, HINT_DURATION_MS)
+    const t = setTimeout(() => onCloseRef.current(), HINT_DURATION_MS)
     return () => clearTimeout(t)
-  }, [onClose])
+  }, []) // eslint-disable-line
 
   const accent = hint.color ?? '#c8a040'
 

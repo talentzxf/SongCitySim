@@ -11,7 +11,7 @@ const l08: LevelDef = {
 
   mapBounds: { minX: -35, maxX: 34, minY: -35, maxY: 34 },
 
-  allowedBuildings: ['house', 'manor', 'granary', 'market', 'academy', 'papermill', 'blacksmith', 'watchpost'],
+  allowedBuildings: ['house', 'manor', 'granary', 'market', 'academy', 'papermill', 'blacksmith', 'watchpost', 'farmZone', 'teaZone'],
 
   objectives: [
     { kind: 'satisfaction', target: 85 },

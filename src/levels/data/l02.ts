@@ -11,7 +11,7 @@ const l02: LevelDef = {
 
   mapBounds: { minX: -20, maxX: 19, minY: -20, maxY: 19 },
 
-  allowedBuildings: ['house', 'granary', 'market', 'lumbercamp'],
+  allowedBuildings: ['house', 'granary', 'market', 'lumbercamp', 'farmZone', 'teaZone'],
 
   objectives: [
     { kind: 'population', target: 200 },

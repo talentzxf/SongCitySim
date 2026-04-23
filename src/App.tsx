@@ -147,8 +147,10 @@ export default function App() {
 
   const [tutorialDone, setTutorialDone] = React.useState(false)
   const showTutorial = screen === 'game' && activeLevelId === 'l01' && !tutorialDone
-  // EventTutorial fires after main tutorial is done (or when playing non-l01 levels / sandbox)
-  const showEventTutorial = screen === 'game' && tutorialDone
+  // EventTutorial fires:
+  //  • after l01 main tutorial is dismissed (tutorialDone=true)
+  //  • immediately for l02-l09 and sandbox (no main tutorial there)
+  const showEventTutorial = screen === 'game' && (tutorialDone || activeLevelId !== 'l01')
 
   const activeLevel = React.useMemo(
     () => activeLevelId ? (LEVELS.find(l => l.id === activeLevelId) ?? null) : null,
@@ -221,7 +223,7 @@ export default function App() {
               <div className="app-root" style={{ opacity: screen === 'game' ? 1 : 0, transition: 'opacity 0.6s ease 0.1s', pointerEvents: screen === 'game' ? 'auto' : 'none' }}>
                 <HUD />
                 {showTutorial && <Tutorial onDismiss={() => setTutorialDone(true)} />}
-                {showEventTutorial && <EventTutorial mainDone={tutorialDone} />}
+                {showEventTutorial && <EventTutorial mainDone={tutorialDone || activeLevelId !== 'l01'} />}
                 <Canvas shadows camera={{ position: [25, 25, 25], fov: 60, near: 0.01 }}>
                 <MapScene />
                 <ControlsBridge controlsRef={controlsRef} bounds={bounds} />

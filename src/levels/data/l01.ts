@@ -14,7 +14,7 @@ const l01: LevelDef = {
   mapBounds: { minX: -15, maxX: 14, minY: -15, maxY: 14 },
 
   // 初来乍到，只能建最基础的民生设施
-  allowedBuildings: ['house', 'granary', 'market'],
+  allowedBuildings: ['house', 'granary', 'market', 'farmZone', 'teaZone'],
 
   objectives: [
     { kind: 'population', target: 100 }, // 达到百人县治规模
