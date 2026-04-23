@@ -3,7 +3,7 @@ import type { TickRoutine } from './types'
 import { adjacentHasRoad, buildingHasRoadAccess, BUILDING_DEFS, PROFESSION_BY_BUILDING } from '../helpers'
 export const farmAssignmentRoutine: TickRoutine = (ctx) => {
   const { s } = ctx
-  const assigned = new Set<string>()
+  const assigned = new Map<string, number>()  // zoneId → worker count
   let citizens = ctx.citizens.map(c => {
     if (c.workplaceId) {
       // clear farmZoneId if citizen has a building job
@@ -21,20 +21,26 @@ export const farmAssignmentRoutine: TickRoutine = (ctx) => {
     if (c.farmZoneId) {
       const zone = ctx.farmZones.find(z => z.id === c.farmZoneId)
       if (!zone) return { ...c, farmZoneId: null, profession: null }
-      assigned.add(c.farmZoneId)
+      assigned.set(c.farmZoneId, (assigned.get(c.farmZoneId) ?? 0) + 1)
       return { ...c, profession: 'farmer' as const }
     }
     return c
   })
 
-  // ── 1. Fill vacant farm zones ─────────────────────────────────────────────
-  const vacantZones = ctx.farmZones.filter(z => {
-    if (assigned.has(z.id)) return false
-    for (let dx = 0; dx <= 1; dx++)
-      for (let dy = 0; dy <= 1; dy++)
-        if (adjacentHasRoad(s.roads, z.x + dx, z.y + dy)) return true
-    return false
-  })
+  // ── 1. Fill vacant farm zones (up to 3 workers each) ─────────────────────
+  const FARM_MAX_WORKERS = 3
+  const vacantZones: typeof ctx.farmZones = []
+  for (const z of ctx.farmZones) {
+    const count = assigned.get(z.id) ?? 0
+    if (count >= FARM_MAX_WORKERS) continue
+    let hasRoad = false
+    for (let dx = 0; dx <= 1 && !hasRoad; dx++)
+      for (let dy = 0; dy <= 1 && !hasRoad; dy++)
+        if (adjacentHasRoad(s.roads, z.x + dx, z.y + dy)) hasRoad = true
+    if (!hasRoad) continue
+    // push one slot per missing worker
+    for (let n = count; n < FARM_MAX_WORKERS; n++) vacantZones.push(z)
+  }
   let idleWorkers = citizens.filter(c => !c.workplaceId && !c.farmZoneId)
   for (let i = 0; i < Math.min(vacantZones.length, idleWorkers.length); i++) {
     const idx = citizens.findIndex(c => c.id === idleWorkers[i].id)

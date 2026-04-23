@@ -119,6 +119,9 @@ function TopBar({
           </div>
           <div style={{ fontSize: 10, color: 'rgba(200,170,90,0.55)', letterSpacing: '0.03em' }}>
             月 {state.month} · {dayTimeLabel(state.dayTime).split('（')[0]}
+            <span style={{ marginLeft: 3, color: hour < 12 ? 'rgba(180,210,255,0.75)' : hour === 12 ? 'rgba(255,230,120,0.85)' : 'rgba(255,180,100,0.75)', fontWeight: 600 }}>
+              {hour < 12 ? '午前' : hour === 12 ? '正午' : '午后'}
+            </span>
           </div>
         </div>
         <div className="tb-divider tb-hide-mobile" style={{ marginLeft: 2 }} />
@@ -142,6 +145,7 @@ function TopBar({
         {([0.25, 1, 2] as const).map(s => (
           <button key={s} className={`tb-speed-btn${state.simSpeed === s ? ' active' : ''}`}
             onClick={() => setSimSpeed(s)}
+            data-tutorial={s === 2 ? 'speed-2x-btn' : undefined}
             title={s === 0.25 ? '慢放（¼速）' : s === 1 ? '正常速度' : '快进（2倍）'}>
             {s === 0.25 ? '¼×' : s === 1 ? '1×' : '2×'}
           </button>

@@ -46,7 +46,7 @@ function housesReachableFromEntry(
 type StepId =
   | 'pan-intro' | 'pan-drag' | 'pan-rotate' | 'pan-zoom'
   | 'house-open' | 'house-select' | 'house-road'
-  | 'start'
+  | 'start' | 'speed-up'
   | 'waiting-resident' | 'house-entry-road' | 'waiting-resident-2'
   | 'resident-settle' | 'resident-inspect'
   | 'done'
@@ -114,8 +114,14 @@ const STEPS: TutStep[] = [
   },
   {
     id: 'start', emoji: '▶', title: '第三步：开启时光', targetId: 'start-btn',
-    body:      '城已初具，万事俱备！点击顶部的【▶ 开始】按钮（可调慢/1×/2×速度），让时间流转，等待移民入城。',
+    body:      '城已初具，万事俱备！点击顶部的【▶ 开始】按钮，让时间流转，等待移民入城。',
     bodyTouch: '城已初具！点击顶部的【▶ 开始】按钮，让时间流转，等待移民入城。',
+  },
+  {
+    id: 'speed-up', emoji: '⏩', title: '调节时光流速', targetId: 'speed-2x-btn',
+    body:      '时间已开始流转！\n\n顶部中央有三个速度按钮：¼× 慢放、1× 正常、2× 快进。\n\n点击【2×】按钮，加快时光流速——让移民更快赶到。',
+    bodyTouch: '顶部有速度按钮：¼×慢放 / 1×正常 / 2×快进。\n点击【2×】加速时光。',
+    hideSpotlight: (s) => s.simSpeed === 2,
   },
   {
     id: 'waiting-resident', emoji: '⏳', title: '静候移民叩门',
@@ -600,6 +606,7 @@ export default function Tutorial({ onDismiss }: Props) {
         )
     }
     else if (id === 'start')           done = state.running
+    else if (id === 'speed-up')        done = state.simSpeed === 2
     else if (id === 'waiting-resident') {
       const houses = state.buildings.filter(b => b.type === 'house' || b.type === 'manor')
       done = houses.length > 0 && !housesReachableFromEntry(state.roads, houses)
@@ -626,7 +633,7 @@ export default function Tutorial({ onDismiss }: Props) {
   const residentSettledRef = React.useRef(false)
   React.useEffect(() => {
     if (residentSettledRef.current) return
-    const startIdx = STEPS.findIndex(s => s.id === 'start')
+    const startIdx = STEPS.findIndex(s => s.id === 'speed-up')
     if (stepIdx <= startIdx) return
     const settler = state.citizens.find(c => c.houseId)
     if (!settler) return

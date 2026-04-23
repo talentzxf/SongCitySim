@@ -24,10 +24,11 @@ export const farmGrowthRoutine: TickRoutine = (ctx) => {
           if (adjacentHasRoad(s.roads, zone.x + dx, zone.y + dy)) return true
       return false
     })()
-    const farmer = zoneHasRoad
-      ? ctx.citizens.find(c => c.farmZoneId === zone.id && !c.isSick)
-      : undefined
-    if (!farmer) return zone
+    const farmers = zoneHasRoad
+      ? ctx.citizens.filter(c => c.farmZoneId === zone.id && !c.isSick)
+      : []
+    if (farmers.length === 0) return zone
+    const farmer = farmers[0]  // use first farmer for tools/satisfaction
     // apply pending crop-type change at the start of a new growth cycle
     const eff: FarmZone = (zone.growthProgress === 0 && zone.pendingCropType)
       ? { ...zone, cropType: zone.pendingCropType, pendingCropType: undefined }
@@ -40,9 +41,11 @@ export const farmGrowthRoutine: TickRoutine = (ctx) => {
     const farmerTools = getResidentData(ctx.buildings, farmer.houseId).tools
     const toolMult   = farmerTools > 0 ? TOOL_EFFICIENCY_BONUS : 1.0
     const efficiency = Math.max(0.5, Math.min(1.5, 0.5 + farmer.satisfaction / 100)) * toolMult
-    const newProgress = eff.growthProgress + (1 / FARM_CYCLE_TICKS) * efficiency
+    // Each additional worker beyond the first adds 40% productivity (diminishing after 3rd)
+    const workerMult = 1 + (farmers.length - 1) * 0.4
+    const newProgress = eff.growthProgress + (1 / FARM_CYCLE_TICKS) * efficiency * workerMult
     if (newProgress >= 1) {
-      const yieldAmt = clampCrop(HARVEST_YIELD_BASE * fertility * (cropCfg?.cropData?.fertilityWeight ?? 1))
+      const yieldAmt = clampCrop(HARVEST_YIELD_BASE * fertility * workerMult * (cropCfg?.cropData?.fertilityWeight ?? 1))
       // Add pile directly to farmZone.piles
       const newPile = {
         id: `pile-${nextTick}-${eff.id.slice(-5)}`,

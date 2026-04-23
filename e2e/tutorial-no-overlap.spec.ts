@@ -132,6 +132,7 @@ const TUTORIAL_STEPS: Array<{
   { id: 'house-select',        targetId: 'house-tool'     },
   { id: 'house-road',          targetId: 'road-tool'      },
   { id: 'start',               targetId: 'start-btn'      },
+  { id: 'speed-up',            targetId: 'speed-2x-btn'   },
   { id: 'waiting-resident',                                  mapStep: true },
   // house-entry-road only shows when road is disconnected; skip in happy-path
   { id: 'waiting-resident-2',                                mapStep: true },
