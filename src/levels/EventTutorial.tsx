@@ -2,8 +2,10 @@
  * EventTutorial — event-driven contextual tutorial sequences.
  */
 import React from 'react'
+import * as THREE from 'three'
 import { useSimulation } from '../state/simulation'
 import { useLevelContext } from '../levels/LevelContext'
+import { GRASSLAND_TILES, isNearRiverFive, isMountainAt } from '../state/worldgen'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,15 +77,18 @@ const UNEMPLOY_SEQ: SeqStep[] = [
     id: 'select-farm-tab',
     emoji: '🌾', title: '切换到农业标签',
     targetId: 'farming-tab',
-    body: '在建造面板中，已为你切换到【农业】标签。\n\n点击【农业】标签（若未自动切换，请手动点击）。',
-    hideSpotlight: (s) => s.selectedTool === 'farmZone' || s.selectedTool === 'teaZone',
+    body: '在建造面板中，点击【农业】标签。',
+    hideSpotlight: () => {
+      const el = document.querySelector('[data-tutorial="farmzone-tool"]') as HTMLElement | null
+      return !!el && el.offsetParent !== null  // farming tab is now active
+    },
   },
   {
     id: 'place-farm',
-    emoji: '🌊', title: '在河边放置粮田',
+    emoji: '🌊', title: '选择粮田，放在河边',
     targetId: 'farmzone-tool',
-    body: '点击【粮田】按钮，然后在地图上河流附近的绿色可耕区域点击放置。\n\n只有河流五格内的平地才能种粮。',
-    bodyTouch: '点击【粮田】，然后在河边绿色区域放置。',
+    body: '点击【🌾 粮田】按钮选中它。\n\n⚠️ 粮田只能放在河流五格之内的平地——地图上绿色高亮的格子就是可耕区域，找到河边放置。',
+    bodyTouch: '点击【🌾 粮田】选中，再点河边绿色区域放置。\n\n⚠️ 只有河流五格内的平地才能种粮。',
     hideSpotlight: (s) => s.selectedTool === 'farmZone',
   },
   {
@@ -234,6 +239,148 @@ function FlashSpotlight({ targetId }: { targetId: string }) {
   )
 }
 
+// ─── Farm tile beacon ─────────────────────────────────────────────────────────
+
+/** Find the nearest free 2×2 arable block to the map centre. */
+function findSuggestedFarmTile(
+  roads:     { x: number; y: number }[],
+  buildings: { x: number; y: number }[],
+  farmZones: { x: number; y: number }[],
+): { x: number; y: number } | null {
+  const occupied = new Set([
+    ...roads.map(r => `${r.x},${r.y}`),
+    ...buildings.flatMap(b => [`${b.x},${b.y}`, `${b.x+1},${b.y}`, `${b.x},${b.y+1}`, `${b.x+1},${b.y+1}`]),
+    ...farmZones.flatMap(z => [`${z.x},${z.y}`, `${z.x+1},${z.y}`, `${z.x},${z.y+1}`, `${z.x+1},${z.y+1}`]),
+  ])
+  const ok = (x: number, y: number) =>
+    isNearRiverFive(x, y) && !isMountainAt(x, y) && !occupied.has(`${x},${y}`)
+
+  // Build set of all valid individual tiles for quick lookup
+  const arableSet = new Set(
+    GRASSLAND_TILES.filter(t => ok(t.x, t.y)).map(t => `${t.x},${t.y}`)
+  )
+
+  // Find 2×2 blocks where all 4 tiles are arable, sorted by dist from origin
+  let best: { x: number; y: number } | null = null
+  let bestDist = Infinity
+  for (const { x, y } of GRASSLAND_TILES) {
+    if (
+      arableSet.has(`${x},${y}`) && arableSet.has(`${x+1},${y}`) &&
+      arableSet.has(`${x},${y+1}`) && arableSet.has(`${x+1},${y+1}`)
+    ) {
+      const d = Math.hypot(x + 0.5, y + 0.5)
+      if (d < bestDist) { bestDist = d; best = { x, y } }
+    }
+  }
+  return best
+}
+
+/** Projects a 2×2 world tile block centre to screen coords using the live camera. */
+function projectTileToScreen(tileX: number, tileY: number) {
+  const ctrl = (window as any).__THREE_CONTROLS__
+  const camera = ctrl?.object as THREE.Camera | undefined
+  if (!camera) return null
+  // Centre of the 2×2 block
+  const v = new THREE.Vector3(tileX + 1, 0.5, tileY + 1)
+  v.project(camera)
+  const sw = window.innerWidth, sh = window.innerHeight
+  const sx = (v.x * 0.5 + 0.5) * sw
+  const sy = (1 - (v.y * 0.5 + 0.5)) * sh
+  const onScreen = v.z <= 1 && sx > 60 && sx < sw - 60 && sy > 60 && sy < sh - 60
+  const angle = Math.atan2(sy - sh / 2, sx - sw / 2)
+  return { x: sx, y: sy, onScreen, angle }
+}
+
+function FarmBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
+  const [pos, setPos] = React.useState<ReturnType<typeof projectTileToScreen>>(null)
+  React.useEffect(() => {
+    let raf: number
+    const tick = () => { setPos(projectTileToScreen(tileX, tileY)); raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [tileX, tileY])
+  if (!pos) return null
+
+  if (pos.onScreen) {
+    return (
+      <>
+        {/* soft vignette hole */}
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9490, pointerEvents: 'none',
+          background: `radial-gradient(circle 90px at ${pos.x}px ${pos.y}px, transparent 58px, rgba(0,0,0,0.4) 88px)`,
+        }} />
+        {/* pulsing green rings */}
+        {[0, 0.4, 0.8].map((delay, i) => (
+          <div key={i} style={{
+            position: 'fixed', left: pos.x - 40, top: pos.y - 40,
+            width: 80, height: 80, borderRadius: '50%',
+            border: '3px solid rgba(80,210,80,0.85)',
+            pointerEvents: 'none', zIndex: 9492,
+            animation: `evt-farm-ring 1.6s ease-out ${delay}s infinite`,
+          }} />
+        ))}
+        {/* centre dot */}
+        <div style={{
+          position: 'fixed', left: pos.x - 9, top: pos.y - 9,
+          width: 18, height: 18, borderRadius: '50%',
+          background: 'rgba(60,200,60,0.9)',
+          boxShadow: '0 0 14px 5px rgba(60,200,60,0.6)',
+          pointerEvents: 'none', zIndex: 9493,
+        }} />
+        {/* label */}
+        <div style={{
+          position: 'fixed', left: pos.x, top: pos.y - 72,
+          transform: 'translateX(-50%)',
+          background: 'rgba(8,30,8,0.92)', border: '1px solid rgba(80,200,80,0.7)',
+          borderRadius: 6, padding: '4px 12px',
+          fontSize: 12, fontWeight: 700, fontFamily: '"Noto Serif SC", serif',
+          color: '#7dfa7d', whiteSpace: 'nowrap',
+          pointerEvents: 'none', zIndex: 9494,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.7)',
+          animation: 'evt-farm-float 1.0s ease-in-out infinite',
+        }}>
+          🌾 在这里种地
+          <span style={{
+            position: 'absolute', bottom: -7, left: '50%', transform: 'translateX(-50%)',
+            width: 0, height: 0,
+            borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+            borderTop: '7px solid rgba(80,200,80,0.7)',
+          }} />
+        </div>
+      </>
+    )
+  }
+
+  // Off-screen: edge compass arrow pointing toward the tile
+  const sw = window.innerWidth, sh = window.innerHeight
+  const EDGE = 52
+  const clampedX = Math.max(EDGE, Math.min(sw - EDGE,
+    sw / 2 + (pos.x - sw / 2) * Math.min(
+      Math.abs((sh / 2 - EDGE) / (pos.y - sh / 2 + 0.001)),
+      Math.abs((sw / 2 - EDGE) / (pos.x - sw / 2 + 0.001)), 1,
+    )
+  ))
+  const clampedY = Math.max(EDGE, Math.min(sh - EDGE,
+    sh / 2 + (pos.y - sh / 2) * Math.min(
+      Math.abs((sh / 2 - EDGE) / (pos.y - sh / 2 + 0.001)),
+      Math.abs((sw / 2 - EDGE) / (pos.x - sw / 2 + 0.001)), 1,
+    )
+  ))
+  return (
+    <div style={{
+      position: 'fixed', left: clampedX, top: clampedY,
+      transform: `translate(-50%, -50%) rotate(${pos.angle}rad)`,
+      width: 44, height: 44,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(8,30,8,0.88)', border: '2px solid rgba(80,200,80,0.8)',
+      borderRadius: '50%', color: '#7dfa7d', fontSize: 22,
+      pointerEvents: 'none', zIndex: 9494,
+      boxShadow: '0 0 16px rgba(60,200,60,0.5)',
+      animation: 'evt-farm-float 1.0s ease-in-out infinite',
+    }}>➤</div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -305,8 +452,11 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
       done = !!document.querySelector('.stats-panel.collapsed')
     else if (id === 'open-building')
       done = !!(window as any).__BUILDING_DRAWER_OPEN__
-    else if (id === 'select-farm-tab')
-      done = state.selectedTool === 'farmZone' || state.selectedTool === 'teaZone'
+    else if (id === 'select-farm-tab') {
+      // done when the farming tab content is visible (user clicked the tab)
+      const el = document.querySelector('[data-tutorial="farmzone-tool"]') as HTMLElement | null
+      done = !!el && el.offsetParent !== null
+    }
     else if (id === 'place-farm')
       done = state.farmZones.length > 0
     else if (id === 'connect-farm-road')
@@ -338,15 +488,6 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     if (step?.id === 'connect-farm-road') selectTool('pan')
   }, [step?.id]) // eslint-disable-line
 
-  // ── Auto-switch building drawer to farming tab for select-farm-tab step ──
-  React.useEffect(() => {
-    if (step?.id !== 'select-farm-tab') return
-    // Give the drawer a moment to finish its open animation before switching tab
-    const tid = setTimeout(() => {
-      ;(window as any).__SET_BUILDING_TAB__?.('farming')
-    }, 200)
-    return () => clearTimeout(tid)
-  }, [step?.id])
 
   // ── Track target rect for smart panel positioning ─────────────────────────
   const [targetRect, setTargetRect] = React.useState<DOMRect | null>(null)
@@ -364,6 +505,14 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
 
   const handleDismiss = React.useCallback(() => { setDismissed(true); onDismiss?.() }, [onDismiss])
   const handleDone    = React.useCallback(() => { setDismissed(true); onDismiss?.() }, [onDismiss])
+
+  // ── Suggested farm tile beacon ────────────────────────────────────────────
+  const suggestedFarmTile = React.useMemo(() => {
+    if (step?.id !== 'place-farm') return null
+    if (state.selectedTool !== 'farmZone') return null
+    if (state.farmZones.length > 0) return null
+    return findSuggestedFarmTile(state.roads, state.buildings, state.farmZones)
+  }, [step?.id, state.selectedTool, state.farmZones, state.roads, state.buildings])
 
   // ── Test hooks ────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -427,6 +576,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     <>
       {showSpotlight      && <Spotlight      targetId={step.targetId!} />}
       {showFlashSpotlight && <FlashSpotlight targetId={step.targetId!} />}
+      {suggestedFarmTile  && <FarmBeacon tileX={suggestedFarmTile.x} tileY={suggestedFarmTile.y} />}
 
       {/* ── Instruction panel ── */}
       <div data-evt-tutorial-panel style={{
@@ -540,6 +690,14 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
           60%  { border-color: rgba(255,220,60,0.3); box-shadow: 0 0 0 0 rgba(255,200,50,0); }
           76%  { border-color: rgba(255,240,80,1);   box-shadow: 0 0 32px 8px rgba(255,200,50,0.65); }
           100% { border-color: rgba(255,220,60,0.4); box-shadow: 0 0 0 0 rgba(255,200,50,0); }
+        }
+        @keyframes evt-farm-ring {
+          0%   { transform: scale(1);   opacity: 0.9; }
+          100% { transform: scale(2.4); opacity: 0;   }
+        }
+        @keyframes evt-farm-float {
+          0%, 100% { transform: translateX(-50%) translateY(0px);  }
+          50%       { transform: translateX(-50%) translateY(-5px); }
         }
       `}</style>
     </>
