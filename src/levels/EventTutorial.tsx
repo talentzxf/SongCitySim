@@ -493,6 +493,9 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   React.useEffect(() => { scheduledRef.current = -1; flashStartRef.current = null }, [stepIdx])
   React.useEffect(() => () => { if (advTimerRef.current) clearTimeout(advTimerRef.current) }, [])
 
+  // ── Current step (must be declared before any effect that references it) ──
+  const step = activeSeq?.[stepIdx] ?? null
+
   // ── Snapshot farm zones the moment place-farm step becomes active ─────────
   React.useEffect(() => {
     if (step?.id === 'place-farm' && !farmSnapshotTakenRef.current) {
@@ -502,7 +505,6 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   }, [step?.id]) // eslint-disable-line
 
   // ── Pan tool for connect-farm-road ────────────────────────────────────────
-  const step = activeSeq?.[stepIdx] ?? null
   React.useEffect(() => {
     if (step?.id === 'connect-farm-road') selectTool('pan')
   }, [step?.id]) // eslint-disable-line
