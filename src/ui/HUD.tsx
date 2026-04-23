@@ -78,6 +78,43 @@ function dayTimeLabel(t: number) {
   return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`
 }
 
+const CN_ONES = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']
+const CN_MONTH = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二']
+
+/** Convert a positive integer to Chinese numeral string (supports up to 9999). */
+function toChinese(n: number): string {
+  if (n <= 0) return '〇'
+  if (n < 10) return CN_ONES[n]
+  if (n < 20) return '十' + (n > 10 ? CN_ONES[n - 10] : '')
+  if (n < 100) return CN_ONES[Math.floor(n / 10)] + '十' + (n % 10 ? CN_ONES[n % 10] : '')
+  if (n < 1000) {
+    const h = Math.floor(n / 100)
+    const r = n % 100
+    return CN_ONES[h] + '百' + (r === 0 ? '' : r < 10 ? '〇' + CN_ONES[r] : toChinese(r))
+  }
+  const th = Math.floor(n / 1000)
+  const r = n % 1000
+  return CN_ONES[th] + '千' + (r === 0 ? '' : r < 100 ? '〇' + toChinese(r) : toChinese(r))
+}
+
+/** Year label: 元年 for 1, 二年 for 2, etc. */
+function yearLabel(y: number): string {
+  return (y === 1 ? '元' : toChinese(y)) + '年'
+}
+
+/** Day label: 初一 ~ 初十, 十一 ~ 三十 */
+function dayLabel(d: number): string {
+  const day = ((d - 1) % 30) + 1  // wrap into 1-30
+  if (day === 1) return '初一'
+  if (day <= 10) return '初' + CN_ONES[day]
+  return toChinese(day)
+}
+
+/** Month label within year: 正月, 二月 … 十二月 */
+function monthLabel(m: number): string {
+  return (CN_MONTH[((m - 1) % 12)] ?? toChinese(m)) + '月'
+}
+
 function dayPhaseTag(t: number) {
   const phases = Object.values(configData.timePhases) as any[]
   for (const phase of phases) {
@@ -105,6 +142,10 @@ function TopBar({
   const timeIcon = isNight ? '🌙' : hour < 8 ? '🌅' : hour < 17 ? '☀️' : '🌆'
   const net = state.lastMonthlyTax - state.lastMonthlyExpenseBreakdown.total
   const netColor = net >= 0 ? '#95de64' : '#ff7875'
+  const gameYear  = Math.floor((state.month - 1) / 12) + 1
+  const gameMonth = ((state.month - 1) % 12) + 1
+  const ampmLabel = hour < 12 ? '午前' : hour === 12 ? '正午' : '午后'
+  const ampmColor = hour < 12 ? 'rgba(180,210,255,0.8)' : hour === 12 ? 'rgba(255,230,120,0.9)' : 'rgba(255,180,100,0.85)'
 
   return (
     <div className="top-bar">
@@ -113,15 +154,13 @@ function TopBar({
         <span className="top-bar-title tb-hide-mobile">🏯 永宋 · {cityName}</span>
         <div className="tb-divider tb-hide-mobile" />
         <span className="tb-hide-mobile" style={{ fontSize: 16 }}>{timeIcon}</span>
-        <div className="tb-time-detail" style={{ lineHeight: 1.25 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#f0d890', letterSpacing: '0.04em' }}>
-            第 {state.dayCount} 天
+        <div className="tb-time-detail" style={{ lineHeight: 1.2 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#f5e07a', letterSpacing: '0.08em', fontFamily: '"Noto Serif SC", "SimSun", serif' }}>
+            永宋{yearLabel(gameYear)}
           </div>
-          <div style={{ fontSize: 10, color: 'rgba(200,170,90,0.55)', letterSpacing: '0.03em' }}>
-            月 {state.month} · {dayTimeLabel(state.dayTime).split('（')[0]}
-            <span style={{ marginLeft: 3, color: hour < 12 ? 'rgba(180,210,255,0.75)' : hour === 12 ? 'rgba(255,230,120,0.85)' : 'rgba(255,180,100,0.75)', fontWeight: 600 }}>
-              {hour < 12 ? '午前' : hour === 12 ? '正午' : '午后'}
-            </span>
+          <div style={{ fontSize: 10, color: 'rgba(200,170,90,0.65)', letterSpacing: '0.05em', fontFamily: '"Noto Serif SC", "SimSun", serif' }}>
+            {monthLabel(gameMonth)}{dayLabel(state.dayCount)}
+            <span style={{ marginLeft: 4, color: ampmColor, fontWeight: 600 }}>{ampmLabel}</span>
           </div>
         </div>
         <div className="tb-divider tb-hide-mobile" style={{ marginLeft: 2 }} />

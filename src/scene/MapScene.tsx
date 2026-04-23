@@ -625,6 +625,38 @@ export default function MapScene() {
   const hitRef       = React.useRef(new THREE.Vector3())
 
   useFrame((_, delta) => {
+    // --- Edge-scroll: auto-pan when cursor is near canvas edge during placement ----
+    const edgeTool = stateRef.current.selectedTool
+    const isPlacementTool = edgeTool !== 'pan' && edgeTool !== 'bulldoze'
+    if (isPlacementTool && mouseOnCanvasRef.current && !isTouch) {
+      const ndx = mouseNDCRef.current.x   // -1..1  (right = +1)
+      const ndy = mouseNDCRef.current.y   // -1..1  (top  = +1)
+      const EDGE_ZONE  = 0.82   // NDC threshold: within 9% of edge
+      const EDGE_SPEED = 10     // world-units per second at full edge
+      let ex = 0, ez = 0
+      if (ndx >  EDGE_ZONE) ex =  (ndx - EDGE_ZONE) / (1 - EDGE_ZONE)
+      if (ndx < -EDGE_ZONE) ex = -((-ndx - EDGE_ZONE) / (1 - EDGE_ZONE))
+      if (ndy >  EDGE_ZONE) ez = -(ndy - EDGE_ZONE) / (1 - EDGE_ZONE)
+      if (ndy < -EDGE_ZONE) ez =  ((-ndy - EDGE_ZONE) / (1 - EDGE_ZONE))
+      if (ex !== 0 || ez !== 0) {
+        const ctrl = (window as any).__THREE_CONTROLS__
+        if (ctrl?.target && ctrl.object) {
+          // Camera right vector (XZ plane)
+          const camRight = new THREE.Vector3()
+          camRight.setFromMatrixColumn((ctrl.object as THREE.Camera).matrixWorld, 0)
+          camRight.y = 0; camRight.normalize()
+          // Camera forward vector projected onto XZ plane
+          const camFwd = new THREE.Vector3()
+          camFwd.setFromMatrixColumn((ctrl.object as THREE.Camera).matrixWorld, 2)
+          camFwd.y = 0; camFwd.normalize()
+          const dx = (camRight.x * ex - camFwd.x * ez) * EDGE_SPEED * delta
+          const dz = (camRight.z * ex - camFwd.z * ez) * EDGE_SPEED * delta
+          ctrl.target.x += dx; ctrl.target.z += dz
+          ctrl.object.position.x += dx; ctrl.object.position.z += dz
+          if (typeof ctrl.update === 'function') ctrl.update()
+        }
+      }
+    }
     // --- Mobile building placement: track current ghost tile every frame ------
     if (mobilePlacementActiveRef.current) {
       mobileRaycaster.current.setFromCamera(mouseNDCRef.current as any, camera as THREE.PerspectiveCamera)
