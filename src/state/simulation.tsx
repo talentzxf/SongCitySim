@@ -311,6 +311,9 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   function placeFarmZone(x: number, y: number, zoneType: 'grain' | 'tea' = 'grain') {
     setState(s => {
       const footprint = [{ x, y }, { x: x+1, y }, { x, y: y+1 }, { x: x+1, y: y+1 }]
+      // Boundary check — map is centered: valid range [-HALF, HALF-1]
+      const halfX = Math.floor(MAP_SIZE_X / 2), halfY = Math.floor(MAP_SIZE_Y / 2)
+      if (footprint.some(t => t.x < -halfX || t.x >= halfX || t.y < -halfY || t.y >= halfY)) return s
       for (const t of footprint) {
         if (isRiverAt(t.x, t.y)) return s
         if (isBuildingAt(s.buildings, t.x, t.y) || isRoadAt(s.roads, t.x, t.y) || tileInFarmZone(s.farmZones, t.x, t.y)) return s

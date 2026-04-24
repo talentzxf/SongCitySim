@@ -444,16 +444,19 @@ export default function MapScene() {
   }, [selectedBuilding, state.selectedTerrainTile, oreVeinTree, forestTree, cullRect, state.terrainResources])
 
   // 粮田可开垦标记（河流三格内平地，去除道路、山地；仅粮田工具时显示）
-  const visibleArableTiles = React.useMemo(() =>
-    state.selectedTool === 'farmZone'
-      ? visibleTiles
-          .filter(t =>
-            isNearRiverFive(t[0], t[1]) && !isMountainAt(t[0], t[1]) &&
-            !state.roads.some(r => r.x === t[0] && r.y === t[1]))
-          .map(t => ({ x: t[0], y: t[1] }))
-      : [],
-    [visibleTiles, state.roads, state.selectedTool],
-  )
+  const visibleArableTiles = React.useMemo(() => {
+    if (state.selectedTool !== 'farmZone') return []
+    const halfX = Math.floor(MAP_SIZE_X / 2), halfY = Math.floor(MAP_SIZE_Y / 2)
+    return visibleTiles
+      .filter(t => {
+        const [tx, ty] = t
+        // Exclude tiles where the 2×2 footprint would go outside map bounds
+        if (tx + 1 >= halfX || ty + 1 >= halfY || tx < -halfX || ty < -halfY) return false
+        return isNearRiverFive(tx, ty) && !isMountainAt(tx, ty) &&
+          !state.roads.some(r => r.x === tx && r.y === ty)
+      })
+      .map(t => ({ x: t[0], y: t[1] }))
+  }, [visibleTiles, state.roads, state.selectedTool])
   // 茶园可开垦标记（山地，去除建筑与道路；仅茶园工具时显示）
   const visibleMountainArableTiles = React.useMemo(() =>
     state.selectedTool === 'teaZone'

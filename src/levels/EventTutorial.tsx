@@ -257,12 +257,16 @@ function findSuggestedFarmTile(
     GRASSLAND_TILES.filter(t => ok(t.x, t.y)).map(t => `${t.x},${t.y}`)
   )
 
+  // Map uses centered coords: tiles are in [-HALF, HALF-1] for both axes
+  const HALF_X = Math.floor(MAP_SIZE_X / 2)
+  const HALF_Y = Math.floor(MAP_SIZE_Y / 2)
+
   // Find 2×2 blocks where all 4 tiles are arable, sorted by dist from origin
   let best: { x: number; y: number } | null = null
   let bestDist = Infinity
   for (const { x, y } of GRASSLAND_TILES) {
     // The block occupies (x,y)..(x+1,y+1) — ensure all 4 tiles are within map bounds
-    if (x + 1 >= MAP_SIZE_X || y + 1 >= MAP_SIZE_Y) continue
+    if (x < -(HALF_X - 1) || x + 1 >= HALF_X || y < -(HALF_Y - 1) || y + 1 >= HALF_Y) continue
     if (
       arableSet.has(`${x},${y}`) && arableSet.has(`${x+1},${y}`) &&
       arableSet.has(`${x},${y+1}`) && arableSet.has(`${x+1},${y+1}`)
