@@ -1,27 +1,35 @@
 import React from 'react'
 import { useFrame } from '@react-three/fiber'
-import * as THREE from 'three'
-import { useCharacterAnim, tileH, SMOOTH } from './_shared'
+import { useCharacterAnim, tileH } from './_shared'
 
 /** 粮仓牛车（granary ↔ 农场往返） */
 export default function OxCartMesh({ x, y, loaded }: { x: number; y: number; loaded: boolean }) {
   const { ref, animRef } = useCharacterAnim(x, y)
+  // Track last known target to detect movement direction each sim tick
+  const prevTarget = React.useRef({ x, y })
 
   useFrame((_, delta) => {
     if (!ref.current) return
     const a = animRef.current; a.time += delta
-    const px = ref.current.position.x, pz = ref.current.position.z
-    const f = Math.min(1, SMOOTH * delta)
-    const newX = px + (a.targetX - px) * f
-    const newZ = pz + (a.targetY - pz) * f
-    const dx = newX - px, dz = newZ - pz
-    ref.current.position.x = newX
-    ref.current.position.z = newZ
-    ref.current.position.y = tileH(Math.round(newX), Math.round(newZ))
-    if (Math.abs(dx) + Math.abs(dz) > 0.0001) {
-      a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 8))
-      ref.current.rotation.y = a.facing
+
+    // Detect when target changes (once per sim tick) and snap facing toward movement direction
+    if (a.targetX !== prevTarget.current.x || a.targetY !== prevTarget.current.y) {
+      const mdx = a.targetX - prevTarget.current.x
+      const mdz = a.targetY - prevTarget.current.y
+      if (Math.abs(mdx) + Math.abs(mdz) > 0.001) {
+        // Snap facing immediately to the correct direction — no lerp lag
+        a.facing = Math.atan2(mdx, mdz)
+      }
+      prevTarget.current = { x: a.targetX, y: a.targetY }
     }
+
+    // Smooth position toward target (exponential decay)
+    const px = ref.current.position.x, pz = ref.current.position.z
+    const f = Math.min(1, 10 * delta)
+    ref.current.position.x = px + (a.targetX - px) * f
+    ref.current.position.z = pz + (a.targetY - pz) * f
+    ref.current.position.y = tileH(Math.round(ref.current.position.x), Math.round(ref.current.position.z))
+    ref.current.rotation.y = a.facing
   })
 
   return (

@@ -2,28 +2,37 @@ import React from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { palette } from '../../theme/palette'
-import { useCharacterAnim, tileH, SMOOTH } from './_shared'
+import { useCharacterAnim, tileH } from './_shared'
 
 /** 市场行商（market ↔ 粮仓，肩挑货篓） */
 export default function MarketBuyerMesh({ x, y, loaded }: { x: number; y: number; loaded: boolean }) {
   const { ref, animRef } = useCharacterAnim(x, y)
   const bodyRef = React.useRef<THREE.Mesh>(null)
+  const prevTarget = React.useRef({ x, y })
 
   useFrame((_, delta) => {
     if (!ref.current) return
     const a = animRef.current; a.time += delta
+
+    // Snap facing to movement direction when target changes (per sim tick)
+    if (a.targetX !== prevTarget.current.x || a.targetY !== prevTarget.current.y) {
+      const mdx = a.targetX - prevTarget.current.x
+      const mdz = a.targetY - prevTarget.current.y
+      if (Math.abs(mdx) + Math.abs(mdz) > 0.001) {
+        a.facing = Math.atan2(mdx, mdz)
+      }
+      prevTarget.current = { x: a.targetX, y: a.targetY }
+    }
+
     const px = ref.current.position.x, pz = ref.current.position.z
-    const f = Math.min(1, SMOOTH * delta)
+    const f = Math.min(1, 10 * delta)
     const newX = px + (a.targetX - px) * f
     const newZ = pz + (a.targetY - pz) * f
     const dx = newX - px, dz = newZ - pz
     ref.current.position.x = newX
     ref.current.position.z = newZ
     const moving = Math.abs(dx) + Math.abs(dz) > 0.0001
-    if (moving) {
-      a.facing = THREE.MathUtils.lerp(a.facing, Math.atan2(dx, dz), Math.min(1, delta * 10))
-      ref.current.rotation.y = a.facing
-    }
+    ref.current.rotation.y = a.facing
     ref.current.position.y = tileH(Math.round(newX), Math.round(newZ)) + (moving ? Math.abs(Math.sin(a.time * 9)) * 0.01 : 0)
     if (bodyRef.current) bodyRef.current.rotation.z = moving ? Math.sin(a.time * 9) * 0.05 : 0
   })

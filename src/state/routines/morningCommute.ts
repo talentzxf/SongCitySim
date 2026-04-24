@@ -135,10 +135,17 @@ export const morningCommuteRoutine: TickRoutine = (ctx) => {
     if (!granaries.length || inventoryTotal(granaryInv) < 2) continue
     const g = granaries.reduce((b, gr) =>
       (gr.x - market.x) ** 2 + (gr.y - market.y) ** 2 < (b.x - market.x) ** 2 + (b.y - market.y) ** 2 ? gr : b)
+    // Build a road-aligned route: market road tile → granary road tile → back.
+    // bestPath returns the road segment between both buildings' adjacent road tiles.
+    const roadSeg = bestPath(s.roads, market, g)
+    // Fall back to straight-line tile route if no road connection exists yet.
+    const route = roadSeg && roadSeg.length >= 2
+      ? [...roadSeg, ...[...roadSeg].reverse().slice(1)]
+      : [{ x: market.x, y: market.y }, { x: g.x, y: g.y }, { x: market.x, y: market.y }]
     const agent: BuildingAgent = {
       id: `mb-${nextTick}-${market.id.slice(-4)}`,
       kind: 'marketbuyer',
-      route: [{ x: market.x, y: market.y }, { x: g.x, y: g.y }, { x: market.x, y: market.y }],
+      route,
       routeIndex: 0, routeT: 0, speed: MARKET_BUYER_SPEED, pickedUp: false,
       cargoType: 'rice', cargoAmount: 0,
       srcGranaryId: g.id,

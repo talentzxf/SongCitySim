@@ -282,7 +282,12 @@ export function buildOxCartRoute(
     if (p && (!bestSeg || p.length < bestSeg.length)) bestSeg = p
   }
   if (!bestSeg) return null
-  const toFarm = [{ x: granary.x, y: granary.y }, ...bestSeg, { x: pile.x, y: pile.y }]
+  // Route: start/end at the road tile adjacent to the granary (bestSeg[0]),
+  // NOT at granary.x/granary.y.  For a 2×2 building the top-left tile is often
+  // far from the road side, which caused a diagonal first/last segment making
+  // the cart appear to walk sideways.  Starting directly on the road tile keeps
+  // the entire route road-aligned.
+  const toFarm = [...bestSeg, { x: pile.x, y: pile.y }]
   const route = [...toFarm, ...[...toFarm].reverse().slice(1)]
   return { route, pileWaypointIndex: toFarm.length - 1 }
 }
