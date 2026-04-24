@@ -11,7 +11,7 @@ import { WALKER_SPEED, MARKET_BUYER_SPEED, SHOP_INTERVAL_DAYS } from '../../conf
 import {
   CROP_KEYS, PEDDLER_MAX_STEPS, PEDDLER_SPEED,
   PEDDLER_CARRY_FOOD, PEDDLER_CARRY_TOOLS, FARM_TOOL_PRICE, TOOL_DURABILITY_LOW,
-  inventoryTotal, buildingHasRoadAccess, roadsAdjacent, findRoadPath, bestPath, isRoadAt,
+  inventoryTotal, buildingHasRoadAccess, roadsAdjacent, roadsAdjacentToBuilding, findRoadPath, bestPath, isRoadAt,
   getMarketCfg, transferInventory, createEmptyPeddlerCargo,
   getAggregateCrops, getAggregateBldgUnit, addBldgUnit, createEmptyInventory,
   getResidentData,
@@ -149,7 +149,7 @@ export const morningCommuteRoutine: TickRoutine = (ctx) => {
   // ── Spawn peddlers from real market workers ────────────────────────────────
   for (const [marketId, citizenIds] of peddlerAssignments) {
     const market = buildingMap.get(marketId); if (!market) continue
-    const startRoads = roadsAdjacent(s.roads, market.x, market.y)
+    const startRoads = roadsAdjacentToBuilding(s.roads, market)
     if (!startRoads.length) continue
     for (let i = 0; i < citizenIds.length; i++) {
       const citizenId = citizenIds[i]

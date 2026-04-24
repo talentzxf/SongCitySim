@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { palette } from '../../../theme/palette'
 import { useSimulation } from '../../../state/simulation'
 import type { BuildingMeshProps } from '../_mesh_types'
+import { useBuildingFacing } from '../_useBuildingFacing'
 
 /**
  * 粮仓 — sturdy storage, minimal night effect (just a guard lamp)
@@ -13,6 +14,8 @@ export default function GranaryMesh({ x, y, baseY, level }: BuildingMeshProps) {
   const matRef = React.useRef<THREE.MeshStandardMaterial>(null)
   const dayRef = React.useRef(state.dayTime)
   React.useEffect(() => { dayRef.current = state.dayTime }, [state.dayTime])
+
+  const rotY = useBuildingFacing(x, y, 2, 2)
 
   useFrame(() => {
     if (!matRef.current) return
@@ -26,7 +29,7 @@ export default function GranaryMesh({ x, y, baseY, level }: BuildingMeshProps) {
   if (level >= 2) {
     // ── 太仓（Level 2）：国家级大型粮储，砖砌高墙连排仓 ──
     return (
-      <group position={[x + 0.5, baseY, y + 0.5]}>
+      <group position={[x + 0.5, baseY, y + 0.5]} rotation={[0, rotY, 0]}>
         {/* 围墙 */}
         <mesh position={[0, 0.18, 0]}>
           <boxGeometry args={[1.96, 0.36, 1.96]} />
@@ -67,7 +70,7 @@ export default function GranaryMesh({ x, y, baseY, level }: BuildingMeshProps) {
 
   // ── 常平仓（Level 1） ──
   return (
-    <group position={[x + 0.5, baseY, y + 0.5]}>
+    <group position={[x + 0.5, baseY, y + 0.5]} rotation={[0, rotY, 0]}>
       {/* 仓体主楼 (2×2 footprint) */}
       <mesh position={[0, 0.36, 0]} castShadow>
         <boxGeometry args={[1.78, 0.72, 1.78]} />

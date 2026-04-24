@@ -2,6 +2,7 @@ import React from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useSimulation } from '../../../state/simulation'
+import { useBuildingFacing } from '../_useBuildingFacing'
 import type { BuildingMeshProps } from '../_mesh_types'
 
 /**
@@ -50,9 +51,11 @@ export default function ManorMesh({ x, y, baseY, occupants }: BuildingMeshProps)
   // Manor is 2×2; center at (x+0.5, z+0.5) relative to tile origin
   const cx = x + 0.5
   const cz = y + 0.5
+  // Manor's moon-gate entrance faces -Z (opposite of default convention), so add π offset
+  const rotY = useBuildingFacing(x, y, 2, 2)
 
   return (
-    <group position={[cx, baseY, cz]}>
+    <group position={[cx, baseY, cz]} rotation={[0, rotY + Math.PI, 0]}>
       {/* ── 围墙 ── */}
       {/* 南墙 */}
       <mesh position={[0, 0.22, -0.95]} castShadow receiveShadow>

@@ -1,13 +1,15 @@
 import React from 'react'
 import type { BuildingMeshProps } from '../_mesh_types'
+import { useBuildingFacing } from '../_useBuildingFacing'
 
 /**
  * 囹圄（大牢）— 宋代监狱
  * 阴暗石砌方院，四角有望楼
  */
 export default function PrisonMesh({ x, y, baseY }: BuildingMeshProps) {
+  const rotY = useBuildingFacing(x, y)
   return (
-    <group position={[x, baseY, y]}>
+    <group position={[x, baseY, y]} rotation={[0, rotY, 0]}>
       {/* 主体石砌墙 */}
       <mesh position={[0, 0.18, 0]} castShadow>
         <boxGeometry args={[0.90, 0.36, 0.90]} />
@@ -36,4 +38,3 @@ export default function PrisonMesh({ x, y, baseY }: BuildingMeshProps) {
     </group>
   )
 }
-

@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { palette } from '../../../theme/palette'
 import { useSimulation } from '../../../state/simulation'
 import type { BuildingMeshProps } from '../_mesh_types'
+import { useBuildingFacing } from '../_useBuildingFacing'
 
 /**
  * 铁匠铺
@@ -11,6 +12,7 @@ import type { BuildingMeshProps } from '../_mesh_types'
  */
 export default function BlacksmithMesh({ x, y, baseY }: BuildingMeshProps) {
   const { state } = useSimulation()
+  const rotY = useBuildingFacing(x, y)
   const forgeRef = React.useRef<THREE.MeshStandardMaterial>(null)
   const sparkRef = React.useRef<THREE.MeshStandardMaterial>(null)
   const dayRef   = React.useRef(state.dayTime)
@@ -32,7 +34,7 @@ export default function BlacksmithMesh({ x, y, baseY }: BuildingMeshProps) {
   })
 
   return (
-    <group position={[x, baseY, y]}>
+    <group position={[x, baseY, y]} rotation={[0, rotY, 0]}>
       {/* 主体 */}
       <mesh position={[0, 0.22, 0]} castShadow>
         <boxGeometry args={[0.85, 0.44, 0.85]} />

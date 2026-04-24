@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { palette } from '../../../theme/palette'
 import { useSimulation } from '../../../state/simulation'
+import { useBuildingFacing } from '../_useBuildingFacing'
 import type { BuildingMeshProps } from '../_mesh_types'
 
 /**
@@ -11,6 +12,7 @@ import type { BuildingMeshProps } from '../_mesh_types'
  */
 export default function AcademyMesh({ x, y, baseY, occupants }: BuildingMeshProps) {
   const { state } = useSimulation()
+  const rotY = useBuildingFacing(x, y, 2, 1)
   const matRef = React.useRef<THREE.MeshStandardMaterial>(null)
   const dayRef = React.useRef(state.dayTime)
   const occRef = React.useRef(occupants)
@@ -27,7 +29,7 @@ export default function AcademyMesh({ x, y, baseY, occupants }: BuildingMeshProp
   })
 
   return (
-    <group position={[x, baseY, y]}>
+    <group position={[x, baseY, y]} rotation={[0, rotY, 0]}>
       {/* 大殿 */}
       <mesh position={[0, 0.3, 0]} castShadow>
         <boxGeometry args={[0.95, 0.6, 0.75]} />

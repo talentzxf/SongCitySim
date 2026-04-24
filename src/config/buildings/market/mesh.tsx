@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { palette } from '../../../theme/palette'
 import { useSimulation } from '../../../state/simulation'
 import type { BuildingMeshProps } from '../_mesh_types'
+import { useBuildingFacing } from '../_useBuildingFacing'
 
 export default function MarketMesh({ x, y, baseY, occupants, level }: BuildingMeshProps) {
   const { state } = useSimulation()
@@ -12,6 +13,8 @@ export default function MarketMesh({ x, y, baseY, occupants, level }: BuildingMe
   const occRef = React.useRef(occupants)
   React.useEffect(() => { dayRef.current = state.dayTime }, [state.dayTime])
   React.useEffect(() => { occRef.current = occupants }, [occupants])
+
+  const rotY = useBuildingFacing(x, y, 2, 2)
 
   useFrame(() => {
     if (!matRef.current) return
@@ -25,7 +28,7 @@ export default function MarketMesh({ x, y, baseY, occupants, level }: BuildingMe
   if (level >= 2) {
     // ── 牙市（Level 2）：官府认可的牙行，两层楼，更宏大 ──
     return (
-      <group position={[x + 0.5, baseY, y + 0.5]}>
+      <group position={[x + 0.5, baseY, y + 0.5]} rotation={[0, rotY, 0]}>
         {/* 底层宽体主楼 */}
         <mesh position={[0, 0.32, 0]} castShadow>
           <boxGeometry args={[1.88, 0.64, 1.88]} />
@@ -71,7 +74,7 @@ export default function MarketMesh({ x, y, baseY, occupants, level }: BuildingMe
 
   // ── 草市（Level 1） ──
   return (
-    <group position={[x + 0.5, baseY, y + 0.5]}>
+    <group position={[x + 0.5, baseY, y + 0.5]} rotation={[0, rotY, 0]}>
       <mesh position={[0, 0.30, 0]} castShadow>
         <boxGeometry args={[1.80, 0.60, 1.80]} />
         <meshStandardMaterial color={palette.building.marketBody} />

@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useSimulation } from '../../../state/simulation'
 import type { BuildingMeshProps } from '../_mesh_types'
+import { useBuildingFacing } from '../_useBuildingFacing'
 
 // ── 六种宋代民居风格（墙色、瓦色、烟囱色、屋高变化） ──────────────────────────
 const HOUSE_STYLES = [
@@ -51,21 +52,8 @@ export default function HouseMesh({ x, y, baseY, occupants }: BuildingMeshProps)
 
   const winColor = occupants > 0 ? '#ffe8a0' : '#555'
 
-  // Rotate the WHOLE building to face the nearest road.
-  // Positive Y rotation (CCW from above) maps +Z→+X, so:
-  //   0      = south face (z+) faces road at y+1
-  //   Math.PI = north face (z-) faces road at y-1
-  //   Math.PI/2  = east face (x+) faces road at x+1   ← was -π/2 (swapped)
-  //   -Math.PI/2 = west face (x-) faces road at x-1   ← was +π/2 (swapped)
-  const buildingRotY = React.useMemo(() => {
-    const r = state.roads
-    const has = (dx: number, dy: number) => r.some(t => t.x === x + dx && t.y === y + dy)
-    if (has( 0,  1)) return 0                // south (z+)
-    if (has( 0, -1)) return Math.PI          // north (z-)
-    if (has( 1,  0)) return  Math.PI / 2    // east  (x+)
-    if (has(-1,  0)) return -Math.PI / 2    // west  (x-)
-    return 0
-  }, [state.roads, x, y])
+  // Rotate the WHOLE building to face the nearest road (shared hook).
+  const buildingRotY = useBuildingFacing(x, y)
 
   // 烟囱偏向（基于坐标偶奇交替）
   const chimneyX = ((x + y) & 1) ? 0.21 : -0.21

@@ -1,13 +1,15 @@
 import React from 'react'
 import * as THREE from 'three'
 import type { BuildingMeshProps } from '../_mesh_types'
+import { useBuildingFacing } from '../_useBuildingFacing'
 
 /**
  * 采木场 — 伐木工棚 + 原木堆
  */
 export default function LumbercampMesh({ x, y, baseY }: BuildingMeshProps) {
+  const rotY = useBuildingFacing(x, y)
   return (
-    <group position={[x, baseY, y]}>
+    <group position={[x, baseY, y]} rotation={[0, rotY, 0]}>
       {/* 工棚主体 */}
       <mesh position={[0, 0.20, 0]} castShadow>
         <boxGeometry args={[0.80, 0.40, 0.70]} />
@@ -38,4 +40,3 @@ export default function LumbercampMesh({ x, y, baseY }: BuildingMeshProps) {
     </group>
   )
 }
-

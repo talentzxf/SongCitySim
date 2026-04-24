@@ -211,6 +211,29 @@ export function buildingHasRoadAccess(
 export function roadsAdjacent(roads: { x: number; y: number }[], bx: number, by: number) {
   return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(d => ({ x: bx + d[0], y: by + d[1] })).filter(c => isRoadAt(roads, c.x, c.y))
 }
+/**
+ * Returns all road tiles adjacent to ANY tile in a building's full footprint.
+ * Deduplicates by position. Use this instead of roadsAdjacent for multi-tile
+ * buildings (market, granary, manor are all 2×2).
+ */
+export function roadsAdjacentToBuilding(
+  roads: { x: number; y: number }[],
+  b: { x: number; y: number; w?: number; h?: number; type?: string },
+): { x: number; y: number }[] {
+  const w = b.w ?? (b.type ? (getBuildingSize(b.type as BuildingType).w) : 1)
+  const h = b.h ?? (b.type ? (getBuildingSize(b.type as BuildingType).h) : 1)
+  const seen = new Set<string>()
+  const result: { x: number; y: number }[] = []
+  for (let dx = 0; dx < w; dx++) {
+    for (let dy = 0; dy < h; dy++) {
+      for (const r of roadsAdjacent(roads, b.x + dx, b.y + dy)) {
+        const k = `${r.x},${r.y}`
+        if (!seen.has(k)) { seen.add(k); result.push(r) }
+      }
+    }
+  }
+  return result
+}
 export function findRoadPath(roads: { x: number; y: number }[], start: { x: number; y: number }, end: { x: number; y: number }) {
   const set = new Set(roads.map(r => tileKey(r.x, r.y)))
   const sk = tileKey(start.x, start.y), ek = tileKey(end.x, end.y)
@@ -234,8 +257,8 @@ export function findRoadPath(roads: { x: number; y: number }[], start: { x: numb
 }
 export function bestPath(roads: { x: number; y: number }[], from: Building, to: Building) {
   let best: { x: number; y: number }[] | null = null
-  for (const fr of roadsAdjacent(roads, from.x, from.y))
-    for (const tr of roadsAdjacent(roads, to.x, to.y)) {
+  for (const fr of roadsAdjacentToBuilding(roads, from))
+    for (const tr of roadsAdjacentToBuilding(roads, to)) {
       const p = findRoadPath(roads, fr, tr)
       if (p && (!best || p.length < best.length)) best = p
     }
@@ -244,7 +267,7 @@ export function bestPath(roads: { x: number; y: number }[], from: Building, to: 
 export function buildOxCartRoute(
   granary: Building, pile: { x: number; y: number }, roads: { x: number; y: number }[]
 ): { route: { x: number; y: number }[]; pileWaypointIndex: number } | null {
-  const granaryRoads = roadsAdjacent(roads, granary.x, granary.y)
+  const granaryRoads = roadsAdjacentToBuilding(roads, granary)
   if (!granaryRoads.length) return null
   const pileRoads: { x: number; y: number }[] = []
   for (let dx = 0; dx <= 1; dx++) for (let dy = 0; dy <= 1; dy++) {

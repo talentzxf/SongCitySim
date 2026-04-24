@@ -13,7 +13,7 @@ function seededRand(seed: number): number {
   return x - Math.floor(x)
 }
 
-// Throttle: only warn about isolated houses at most once every 15 seconds
+// Throttle: only warn about isolated buildings/houses at most once every 15 seconds
 let lastIsolatedWarnMs = 0
 
 export const migrantRoutine: TickRoutine = (ctx) => {
@@ -120,14 +120,32 @@ export const migrantRoutine: TickRoutine = (ctx) => {
         if (!reachable) { isolatedHouseFound = true; break }
       }
     }
-    // Warn user about isolated houses (throttled to once per 15 s)
-    if (isolatedHouseFound) {
+    // Warn user about any buildings (residential or not) not connected to Entry
+    // (throttled to once per 15 s)
+    const hasIsolatedBuilding = isolatedHouseFound || (() => {
+      // Check non-residential buildings that have a road but the road isn't connected to Entry
+      return s.buildings.some(b => {
+        if (b.type === 'house' || b.type === 'manor') return false
+        if (!buildingHasRoadAccess(s.roads, b)) return false
+        const { w, h } = { w: b.w ?? 1, h: b.h ?? 1 }
+        const adjRoads: { x: number; y: number }[] = []
+        for (let dx = 0; dx < w; dx++)
+          for (let dy = 0; dy < h; dy++)
+            for (const [ox, oy] of [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]) {
+              const rx = b.x + dx + ox, ry = b.y + dy + oy
+              if (s.roads.some(r => r.x === rx && r.y === ry)) adjRoads.push({ x: rx, y: ry })
+            }
+        return adjRoads.length > 0 &&
+          !adjRoads.some(tr => Boolean(findRoadPath(s.roads, ENTRY_TILE, tr)))
+      })
+    })()
+    if (hasIsolatedBuilding) {
       const now = Date.now()
       if (now - lastIsolatedWarnMs > 15_000) {
         lastIsolatedWarnMs = now
         const api = (window as any).__MESSAGE_API__
         if (api?.warning) {
-          api.warning('🏠 有住宅尚未连通入城道路，居民无法迁入，请修路将其与入城口相连。')
+          api.warning('🏗️ 有建筑的道路尚未连通入城口，居民/工人无法到达，请将其与入城口相连。')
         }
       }
     }
