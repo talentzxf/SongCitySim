@@ -440,6 +440,15 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const advTimerRef   = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const scheduledRef  = React.useRef(-1)
   const flashStartRef = React.useRef<number | null>(null)
+  // For close-stats: record whether the panel was open when the step became active.
+  // Advance only if it was open at entry and has since been closed (prevents
+  // skipping the step when the panel was already closed when the step started).
+  const closeStatsEntryOpenRef = React.useRef<boolean | null>(null)
+
+  // Reset the close-stats guard whenever the step changes
+  React.useEffect(() => {
+    closeStatsEntryOpenRef.current = null
+  }, [stepIdx])
 
   React.useEffect(() => {
     if (!activeSeq || dismissed) return
@@ -458,8 +467,15 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
       if (flashStartRef.current === null) flashStartRef.current = Date.now()
       done = Date.now() - flashStartRef.current >= 2500
     }
-    else if (id === 'close-stats')
-      done = !!document.querySelector('.stats-panel.collapsed')
+    else if (id === 'close-stats') {
+      const isNowCollapsed = !!document.querySelector('.stats-panel.collapsed')
+      // Record the panel state when this step first activates
+      if (closeStatsEntryOpenRef.current === null) {
+        closeStatsEntryOpenRef.current = !isNowCollapsed // true = was open at entry
+      }
+      // Only complete if the panel was open when we arrived AND has now been closed
+      done = (closeStatsEntryOpenRef.current === true) && isNowCollapsed
+    }
     else if (id === 'open-building')
       done = !!(window as any).__BUILDING_DRAWER_OPEN__
     else if (id === 'select-farm-tab') {
