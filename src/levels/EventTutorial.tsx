@@ -5,7 +5,7 @@ import React from 'react'
 import * as THREE from 'three'
 import { useSimulation } from '../state/simulation'
 import { useLevelContext } from '../levels/LevelContext'
-import { GRASSLAND_TILES, isNearRiverFive, isMountainAt, isRiverAt, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
+import { isNearRiverFive, isMountainAt, isRiverAt, MAP_SIZE_X, MAP_SIZE_Y } from '../state/worldgen'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +18,9 @@ type SeqStepId =
   | 'select-farm-tab'
   | 'place-farm'
   | 'connect-farm-road'
-  | 'done-farming'
+  | 'open-building-gran'
+  | 'select-storage-tab'
+  | 'place-granary'
 
 interface SeqStep {
   id: SeqStepId
@@ -85,30 +87,50 @@ const UNEMPLOY_SEQ: SeqStep[] = [
   },
   {
     id: 'place-farm',
-    emoji: '🌊', title: '选择粮田，放在河边',
+    emoji: '🌾', title: '开辟两块粮田',
     targetId: 'farmzone-tool',
-    body: '点击【🌾 粮田】按钮选中它。\n\n⚠️ 粮田只能放在河流五格之内的平地——地图上绿色高亮的格子就是可耕区域，找到河边放置。',
-    bodyTouch: '点击【🌾 粮田】选中，再点河边绿色区域放置。\n\n⚠️ 只有河流五格内的平地才能种粮。',
+    body: '点击【🌾 粮田】按钮选中，然后在河边绿色区域依次放置 2 块粮田。\n\n⚠️ 粮田只能放在河流五格之内的平地——绿色高亮格子即可耕区域。',
+    bodyTouch: '点击【🌾 粮田】选中，在河边绿色区域放置 2 块粮田。\n\n⚠️ 只有河流五格内的平地才能种粮。',
     hideSpotlight: (s) => s.selectedTool === 'farmZone',
   },
   {
     id: 'connect-farm-road',
     emoji: '🛤', title: '将道路连接至农田',
     targetId: 'road-tool',
-    body: '粮田已放置！农夫需要道路才能运粮进仓。\n\n选择【道路】工具，将道路延伸至紧邻粮田的格子。',
+    body: '两块粮田已放置！农夫需要道路才能运粮进仓。\n\n选择【道路】工具，将道路延伸至紧邻粮田的格子。',
     bodyTouch: '选择【道路】工具，将道路铺至粮田旁边。',
     hideSpotlight: (s) => s.selectedTool === 'road',
   },
-  {
-    id: 'done-farming',
-    emoji: '🎊', title: '农田已就绪！',
-    manual: true,
-    body: '太好了！农田与道路已连通。\n\n农夫将在每个季节播种、收割，并将粮食运入粮仓。\n\n接下来可以考虑：\n🏚 建造【常平仓】储存粮食\n🛒 建造【草市】让居民购粮',
-    bodyTouch: '太好了！农夫将开始耕作运粮。\n可以继续建造粮仓和集市。',
-  },
 ]
 
-// ─── Spotlight ────────────────────────────────────────────────────────────────
+const BUILD_GRANARY_SEQ: SeqStep[] = [
+  {
+    id: 'open-building-gran',
+    emoji: '🏚️', title: '粮食已收获！',
+    targetId: 'building-btn',
+    body: '农田已产出粮食，但没有粮仓来储存，粮食将堆积在田间无法利用。\n\n点击底部【🏗 建筑】按钮，打开建造面板。',
+    bodyTouch: '粮食已收获！点击【🏗 建筑】按钮打开建造面板。',
+    hideSpotlight: () => !!(window as any).__BUILDING_DRAWER_OPEN__,
+  },
+  {
+    id: 'select-storage-tab',
+    emoji: '📦', title: '切换到仓储标签',
+    targetId: 'storage-tab',
+    body: '在建造面板中，点击【仓储】标签。',
+    hideSpotlight: () => {
+      const el = document.querySelector('[data-tutorial="granary-tool"]') as HTMLElement | null
+      return !!el && el.offsetParent !== null
+    },
+  },
+  {
+    id: 'place-granary',
+    emoji: '🏚️', title: '建造常平仓',
+    targetId: 'granary-tool',
+    body: '点击【🏚️ 常平仓】选中，然后在靠近农田的空地上放置一座。\n\n牛车会从农田取粮运入粮仓，行商再从粮仓批发运往集市。',
+    bodyTouch: '点击【🏚️ 常平仓】选中，放置在农田附近。',
+    hideSpotlight: (s) => s.selectedTool === 'granary',
+  },
+]
 
 const PAD = 8
 
@@ -238,39 +260,39 @@ function FlashSpotlight({ targetId }: { targetId: string }) {
 
 // ─── Farm tile beacon ─────────────────────────────────────────────────────────
 
-/** Find the nearest free 2×2 arable block to the map centre. */
+/** Find the nearest free valid 2×2 farm block to the map centre.
+ *  Uses the same placement rules as simulation.tsx:placeFarmZone —
+ *  no mountain, no river on footprint, at least one tile isNearRiverFive. */
 function findSuggestedFarmTile(
   roads:     { x: number; y: number }[],
   buildings: { x: number; y: number }[],
   farmZones: { x: number; y: number }[],
 ): { x: number; y: number } | null {
-  const occupied = new Set([
-    ...roads.map(r => `${r.x},${r.y}`),
-    ...buildings.flatMap(b => [`${b.x},${b.y}`, `${b.x+1},${b.y}`, `${b.x},${b.y+1}`, `${b.x+1},${b.y+1}`]),
-    ...farmZones.flatMap(z => [`${z.x},${z.y}`, `${z.x+1},${z.y}`, `${z.x},${z.y+1}`, `${z.x+1},${z.y+1}`]),
-  ])
-  const ok = (x: number, y: number) =>
-    isNearRiverFive(x, y) && !isMountainAt(x, y) && !isRiverAt(x, y) && !occupied.has(`${x},${y}`)
+  const halfX = Math.floor(MAP_SIZE_X / 2)
+  const halfY = Math.floor(MAP_SIZE_Y / 2)
 
-  // Build set of all valid individual tiles for quick lookup
-  const arableSet = new Set(
-    GRASSLAND_TILES.filter(t => ok(t.x, t.y)).map(t => `${t.x},${t.y}`)
-  )
+  const roadSet     = new Set(roads.map(r => `${r.x},${r.y}`))
+  const buildingSet = new Set(buildings.flatMap(b => [
+    `${b.x},${b.y}`, `${b.x+1},${b.y}`, `${b.x},${b.y+1}`, `${b.x+1},${b.y+1}`,
+  ]))
+  const farmSet = new Set(farmZones.flatMap(z => [
+    `${z.x},${z.y}`, `${z.x+1},${z.y}`, `${z.x},${z.y+1}`, `${z.x+1},${z.y+1}`,
+  ]))
 
-  // Map uses centered coords: tiles are in [-HALF, HALF-1] for both axes
-  const HALF_X = Math.floor(MAP_SIZE_X / 2)
-  const HALF_Y = Math.floor(MAP_SIZE_Y / 2)
+  const tileOk = (x: number, y: number) =>
+    !isRiverAt(x, y) && !isMountainAt(x, y) &&
+    !roadSet.has(`${x},${y}`) && !buildingSet.has(`${x},${y}`) && !farmSet.has(`${x},${y}`)
 
-  // Find 2×2 blocks where all 4 tiles are arable, sorted by dist from origin
   let best: { x: number; y: number } | null = null
   let bestDist = Infinity
-  for (const { x, y } of GRASSLAND_TILES) {
-    // The block occupies (x,y)..(x+1,y+1) — ensure all 4 tiles are within map bounds
-    if (x < -(HALF_X - 1) || x + 1 >= HALF_X || y < -(HALF_Y - 1) || y + 1 >= HALF_Y) continue
-    if (
-      arableSet.has(`${x},${y}`) && arableSet.has(`${x+1},${y}`) &&
-      arableSet.has(`${x},${y+1}`) && arableSet.has(`${x+1},${y+1}`)
-    ) {
+
+  for (let x = -halfX; x < halfX - 1; x++) {
+    for (let y = -halfY; y < halfY - 1; y++) {
+      const fp = [
+        { x, y }, { x: x+1, y }, { x, y: y+1 }, { x: x+1, y: y+1 },
+      ]
+      if (!fp.every(t => tileOk(t.x, t.y))) continue
+      if (!fp.some(t => isNearRiverFive(t.x, t.y))) continue
       const d = Math.hypot(x + 0.5, y + 0.5)
       if (d < bestDist) { bestDist = d; best = { x, y } }
     }
@@ -283,8 +305,9 @@ function projectTileToScreen(tileX: number, tileY: number) {
   const ctrl = (window as any).__THREE_CONTROLS__
   const camera = ctrl?.object as THREE.Camera | undefined
   if (!camera) return null
-  // Centre of the 2×2 block
-  const v = new THREE.Vector3(tileX + 1, 0.5, tileY + 1)
+  // Point to tile (tileX, tileY) — the top-left of the valid 2×2 block.
+  // The player clicks there and the farm is placed at exactly (tileX, tileY).
+  const v = new THREE.Vector3(tileX, 0.5, tileY)
   v.project(camera)
   const sw = window.innerWidth, sh = window.innerHeight
   const sx = (v.x * 0.5 + 0.5) * sw
@@ -294,7 +317,7 @@ function projectTileToScreen(tileX: number, tileY: number) {
   return { x: sx, y: sy, onScreen, angle }
 }
 
-function FarmBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
+function FarmBeacon({ tileX, tileY, placed }: { tileX: number; tileY: number; placed: number }) {
   const [pos, setPos] = React.useState<ReturnType<typeof projectTileToScreen>>(null)
   React.useEffect(() => {
     let raf: number
@@ -342,7 +365,7 @@ function FarmBeacon({ tileX, tileY }: { tileX: number; tileY: number }) {
           boxShadow: '0 2px 12px rgba(0,0,0,0.7)',
           animation: 'evt-farm-float 1.0s ease-in-out infinite',
         }}>
-          🌾 此处可辟良田
+          🌾 此处可辟良田（{placed}/2）
           <span style={{
             position: 'absolute', bottom: -7, left: '50%', transform: 'translateX(-50%)',
             width: 0, height: 0,
@@ -436,7 +459,22 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     setDismissed(false)
   }, [mainDone, farmingAvailable, state.citizens]) // eslint-disable-line
 
-  // ── Auto-advance + flash timer ────────────────────────────────────────────
+  // ── Trigger: food produced, no granary yet → build-granary tutorial ───────
+  React.useEffect(() => {
+    if (!mainDone) return
+    if (!farmingAvailable) return
+    if (!firedRef.current.has('unemployment-farming')) return  // farming tutorial must have run first
+    if (firedRef.current.has('build-granary')) return
+    if (state.farmZones.length === 0) return
+    const foodProduced = state.farmZones.some(z => z.piles.length > 0 || z.growthProgress >= 0.5)
+    if (!foodProduced) return
+    const hasGranary = state.buildings.some(b => b.type === 'granary')
+    if (hasGranary) return
+    firedRef.current.add('build-granary')
+    setActiveSeq(BUILD_GRANARY_SEQ)
+    setStepIdx(0)
+    setDismissed(false)
+  }, [mainDone, farmingAvailable, state.farmZones, state.buildings]) // eslint-disable-line
   const advTimerRef   = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const scheduledRef  = React.useRef(-1)
   const flashStartRef = React.useRef<number | null>(null)
@@ -484,8 +522,8 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
       done = !!el && el.offsetParent !== null
     }
     else if (id === 'place-farm') {
-      // only count zones placed AFTER the tutorial started
-      done = state.farmZones.some(z => !initFarmZoneIdsRef.current.has(z.id))
+      // require 2 new zones placed AFTER the tutorial started
+      done = state.farmZones.filter(z => !initFarmZoneIdsRef.current.has(z.id)).length >= 2
     }
     else if (id === 'connect-farm-road') {
       // only count road access on zones placed AFTER the tutorial started
@@ -498,14 +536,27 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
         )
       )
     }
+    else if (id === 'open-building-gran')
+      done = !!(window as any).__BUILDING_DRAWER_OPEN__
+    else if (id === 'select-storage-tab') {
+      const el = document.querySelector('[data-tutorial="granary-tool"]') as HTMLElement | null
+      done = !!el && el.offsetParent !== null
+    }
+    else if (id === 'place-granary')
+      done = state.buildings.some(b => b.type === 'granary')
 
     if (!done) return
     scheduledRef.current = stepIdx
     if (advTimerRef.current) clearTimeout(advTimerRef.current)
+    const isLast = stepIdx === activeSeq.length - 1
     advTimerRef.current = setTimeout(() => {
       advTimerRef.current = null
       scheduledRef.current = -1
-      setStepIdx(i => Math.min(i + 1, activeSeq.length - 1))
+      if (isLast) {
+        setDismissed(true)
+      } else {
+        setStepIdx(i => Math.min(i + 1, activeSeq.length - 1))
+      }
     }, step.flash ? 100 : 600)
   }) // intentional: runs every render to poll DOM + flash timer
 
@@ -526,6 +577,11 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   // ── Pan tool for connect-farm-road ────────────────────────────────────────
   React.useEffect(() => {
     if (step?.id === 'connect-farm-road') selectTool('pan')
+  }, [step?.id]) // eslint-disable-line
+
+  // ── Pan tool for open-building-gran (reset after farming, close drawer) ───
+  React.useEffect(() => {
+    if (step?.id === 'open-building-gran') selectTool('pan')
   }, [step?.id]) // eslint-disable-line
 
 
@@ -550,8 +606,8 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
   const suggestedFarmTile = React.useMemo(() => {
     if (step?.id !== 'place-farm') return null
     if (state.selectedTool !== 'farmZone') return null
-    // hide beacon once the player has placed a NEW zone (not pre-existing ones)
-    if (state.farmZones.some(z => !initFarmZoneIdsRef.current.has(z.id))) return null
+    // hide beacon once the player has placed 2 NEW zones
+    if (state.farmZones.filter(z => !initFarmZoneIdsRef.current.has(z.id)).length >= 2) return null
     return findSuggestedFarmTile(state.roads, state.buildings, state.farmZones)
   }, [step?.id, state.selectedTool, state.farmZones, state.roads, state.buildings])
 
@@ -564,7 +620,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
 
   if (!activeSeq || dismissed || !step) return null
 
-  const isDone   = step.id === 'done-farming'
+  const isDone   = false // done-farming step removed; tutorial auto-dismisses
   const isManual = step.manual === true
   const stepBody = (isTouch && step.bodyTouch) ? step.bodyTouch : step.body
 
@@ -617,7 +673,7 @@ export default function EventTutorial({ mainDone, onDismiss }: Props) {
     <>
       {showSpotlight      && <Spotlight      targetId={step.targetId!} />}
       {showFlashSpotlight && <FlashSpotlight targetId={step.targetId!} />}
-      {suggestedFarmTile  && <FarmBeacon tileX={suggestedFarmTile.x} tileY={suggestedFarmTile.y} />}
+      {suggestedFarmTile  && <FarmBeacon tileX={suggestedFarmTile.x} tileY={suggestedFarmTile.y} placed={state.farmZones.filter(z => !initFarmZoneIdsRef.current.has(z.id)).length} />}
 
       {/* ── Instruction panel ── */}
       <div data-evt-tutorial-panel style={{

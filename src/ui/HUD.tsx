@@ -265,7 +265,7 @@ function StatsPanel({
       errorCount: advice.filter(a => a.severity === 'error').length,
       warnCount:  advice.filter(a => a.severity === 'warning').length,
     }
-  }, [state.citizens, state.buildings, state.roads, state.taxRates]) // eslint-disable-line
+  }, [state.citizens, state.buildings, state.roads, state.taxRates, state.farmZones]) // eslint-disable-line
 
   return (
     <>
@@ -980,7 +980,41 @@ function computeAdvice(state: ReturnType<typeof useSimulation>['state']): Advice
     })
   }
 
-  // 8. 一切尚好 ──────────────────────────────────────────────────────────────
+  // 8. 工坊缺人 ──────────────────────────────────────────────────────────────
+  const idleWorkers = state.citizens.filter(c => !c.workplaceId && !c.farmZoneId).length
+  const hasRoadNeighbor = (bx: number, by: number) =>
+    [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) => state.roads.some(r => r.x === bx+dx && r.y === by+dy))
+  const unfilledBuildings = state.buildings.filter(b => {
+    const slots = BUILDING_REGISTRY[b.type]?.workerSlots ?? 0
+    if (slots <= 0) return false
+    if (!hasRoadNeighbor(b.x, b.y)) return false
+    const filled = state.citizens.filter(c => c.workplaceId === b.id).length
+    return filled < slots
+  })
+  // Unfilled farm zones with road access
+  const unfilledFarmZones = state.farmZones.filter(z => {
+    const hasFarmRoad = [[0,0],[1,0],[0,1],[1,1]].some(([dx,dy]) =>
+      [[1,0],[-1,0],[0,1],[0,-1]].some(([nx,ny]) =>
+        state.roads.some(r => r.x === z.x+dx+nx && r.y === z.y+dy+ny)
+      )
+    )
+    if (!hasFarmRoad) return false
+    const farmers = state.citizens.filter(c => c.farmZoneId === z.id).length
+    return farmers < 2  // FARM_MAX_WORKERS is 2
+  })
+  const totalUnfilled = unfilledBuildings.length + unfilledFarmZones.length
+  if (totalUnfilled > 0 && idleWorkers === 0 && pop > 0) {
+    const buildingNames = [...new Set(unfilledBuildings.map(b => BUILDING_REGISTRY[b.type]?.label ?? b.type))]
+    const nameStr = buildingNames.slice(0, 3).join('、') + (buildingNames.length > 3 ? '等' : '')
+    items.push({
+      severity: 'warning',
+      icon: '👷',
+      title: `劳力不足（${totalUnfilled}处缺人）`,
+      body: `${nameStr ? nameStr + '等建筑' : '部分建筑与农田'}人手不足，无闲散劳力可调配。\n\n可建造更多【民居】以吸引流民入城，扩充劳动人口。`,
+    })
+  }
+
+  // 9. 一切尚好 ──────────────────────────────────────────────────────────────
   if (items.length === 0 && pop > 0) {
     items.push({
       severity: 'info',
@@ -1013,7 +1047,7 @@ function AdvicePanel() {
   const { state } = useSimulation()
   const advice = React.useMemo(() => computeAdvice(state), [
     state.citizens, state.buildings, state.roads,
-    state.taxRates,
+    state.taxRates, state.farmZones,
   ])
 
   if (advice.length === 0) return null

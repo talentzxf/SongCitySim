@@ -966,7 +966,7 @@ export default function Tutorial({ onDismiss }: Props) {
               }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(90,180,60,0.5)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'rgba(80,160,50,0.35)')}
-              >🎊 开始大展宏图</button>
+              >知道了，开始游戏 →</button>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {isManual && (
