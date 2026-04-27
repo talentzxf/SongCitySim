@@ -560,6 +560,11 @@ export default function Tutorial({ onDismiss }: Props) {
 
   const advanceTimerRef     = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const scheduledForStepRef = React.useRef<number>(-1)
+  // For steps that should be silently skipped when the condition is ALREADY met at entry
+  // (e.g. house-road when the house was placed next to an existing road).
+  // Stores whether the condition was satisfied the first time the step ran.
+  const stepEntryDoneRef = React.useRef<Record<string, boolean>>({})
+  React.useEffect(() => { stepEntryDoneRef.current = {} }, []) // clear on mount only
 
   const advance = React.useCallback(() => {
     if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current)
@@ -618,7 +623,15 @@ export default function Tutorial({ onDismiss }: Props) {
     // waiting-resident-2: no auto-advance; residentSettledRef handles jump to resident-settle
     else if (id === 'resident-settle') done = beaconHouse !== null && state.selectedBuildingId === beaconHouse.id
 
+    // For 'house-road': record whether done was true the FIRST time this step ran.
+    // If already done at entry → skip silently (0 ms) so it doesn't flash.
+    if (id === 'house-road' && stepEntryDoneRef.current[id] === undefined) {
+      stepEntryDoneRef.current[id] = done  // capture first-seen state
+    }
+
     if (!done) return
+
+    const skipDelay = (id === 'house-road' && stepEntryDoneRef.current[id] === true) ? 0 : 600
 
     scheduledForStepRef.current = stepIdx
     if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current)
@@ -626,7 +639,7 @@ export default function Tutorial({ onDismiss }: Props) {
       advanceTimerRef.current = null
       scheduledForStepRef.current = -1
       setStepIdx(i => Math.min(i + 1, STEPS.length - 1))
-    }, 600)
+    }, skipDelay)
   }, [state, stepIdx, step.id, step.manual, init, panDone, rotateDone, zoomDone, drawerOpen, beaconHouse]) // eslint-disable-line
 
   // ── resident-settle: watch for first citizen with houseId ────────────────
